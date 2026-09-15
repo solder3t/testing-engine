@@ -741,7 +741,7 @@ function initCompareModelPicker() {
   const updateCompareButtonLabel = () => {
     const checkedCount = document.querySelectorAll('input[name="compareStrategy"]:checked').length;
     if (btnCompare && !btnCompare.disabled) {
-      btnCompare.innerText = `⚖️ COMPARE (${checkedCount})`;
+      btnCompare.innerHTML = `<span class="btn-icon">⚖️</span><span class="btn-text">COMPARE (${checkedCount})</span>`;
     }
   };
 
@@ -840,7 +840,7 @@ async function runComparison() {
   };
 
   btn.disabled = true;
-  btn.innerText = `⚖️ COMPARING (${selectedStrats.length})...`;
+  btn.innerHTML = `<span class="btn-icon">⚖️</span><span class="btn-text">COMPARING (${selectedStrats.length})...</span>`;
   status.innerText = `Benchmarking ${selectedStrats.length} strategies across [${selectedDates.join(", ")}]...`;
   status.style.color = "var(--accent-cyan)";
 
@@ -867,7 +867,7 @@ async function runComparison() {
     status.style.color = "var(--red)";
   } finally {
     btn.disabled = false;
-    btn.innerText = `⚖️ COMPARE (${selectedStrats.length})`;
+    btn.innerHTML = `<span class="btn-icon">⚖️</span><span class="btn-text">COMPARE (${selectedStrats.length})</span>`;
   }
 }
 

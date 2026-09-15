@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/css/dashboard.css?v=2.5">
+  <link rel="stylesheet" href="/static/css/dashboard.css?v=2.6">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
@@ -573,9 +573,9 @@
           <!-- Action Buttons -->
           <div style="margin-top: 16px;">
             <div style="display: flex; gap: 8px; align-items: stretch;">
-              <button id="btnRun" class="btn-run" style="flex: 2; height: 44px; font-size: 0.95rem;">⚡ RUN BACKTEST</button>
-              <button id="btnCompare" class="btn-secondary" style="flex: 1; height: 44px; font-size: 0.85rem;" title="Compare selected strategies on chosen dates">⚖️ COMPARE (16)</button>
-              <button id="btnToggleCompareModels" class="btn-secondary" style="width: 44px; height: 44px; padding: 0; font-size: 1.05rem;" title="Select strategy models to compare">⚙️</button>
+              <button id="btnRun" class="btn-run" style="flex: 2; height: 44px; font-size: 0.95rem; display: inline-flex; align-items: center; justify-content: center; gap: 8px;"><span class="btn-icon">⚡</span><span class="btn-text">RUN BACKTEST</span></button>
+              <button id="btnCompare" class="btn-secondary" style="flex: 1; height: 44px; font-size: 0.85rem; display: inline-flex; align-items: center; justify-content: center; gap: 8px;" title="Compare selected strategies on chosen dates"><span class="btn-icon">⚖️</span><span class="btn-text">COMPARE (16)</span></button>
+              <button id="btnToggleCompareModels" class="btn-secondary" style="width: 44px; height: 44px; padding: 0; font-size: 1.05rem; display: inline-flex; align-items: center; justify-content: center;" title="Select strategy models to compare">⚙️</button>
             </div>
 
             <!-- Strategy Checkboxes Drawer for Multi-Strategy Comparison -->
@@ -1290,6 +1290,6 @@
     </div>
   </div>
 
-  <script src="/static/js/dashboard.js?v=4.0"></script>
+  <script src="/static/js/dashboard.js?v=4.1"></script>
 </body>
 </html>

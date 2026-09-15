@@ -314,7 +314,43 @@ body {
   transition: all 0.2s;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+}
+
+#btnCompare {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+}
+
+#btnCompare .btn-icon,
+.btn-run .btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  font-size: 1.05rem;
+  vertical-align: middle;
+  transform: translateY(-0.5px);
+}
+
+#btnCompare .btn-text,
+.btn-run .btn-text {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+#btnToggleCompareModels {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
 }
 
 .btn-secondary:hover {
