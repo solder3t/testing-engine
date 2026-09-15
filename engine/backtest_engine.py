@@ -57,7 +57,12 @@ class BacktestEngine:
 
         # 1. Resolve symbols to test
         # 'auto' mode: discover all available equities from equity_master for this date
-        auto_discover = (symbols is None) or (symbols == ["auto"])
+        auto_discover = (
+            (symbols is None)
+            or (symbols == ["auto"])
+            or (symbols == [])
+            or (len(symbols) == 1 and str(symbols[0]).strip().lower() == "auto")
+        )
 
         # 2. Load instrument OHLC data
         ohlc_map: Dict[str, pd.DataFrame] = {}
@@ -104,7 +109,8 @@ class BacktestEngine:
             target_symbols = sorted(master_lookup.keys())[:20]
             logger.info(f"[{date_str}] Auto-discovered {len(target_symbols)} symbols from equity_master")
         else:
-            target_symbols = symbols or ["RELIANCE", "HDFCBANK", "INFY", "ICICIBANK", "TCS"]
+            filtered_syms = [str(s).strip().upper() for s in (symbols or []) if str(s).strip().lower() != "auto"]
+            target_symbols = filtered_syms or ["RELIANCE", "HDFCBANK", "INFY", "ICICIBANK", "TCS"]
 
         for sym in target_symbols:
             meta = master_lookup.get(sym, {"security_id": 0, "sector": "Other"})

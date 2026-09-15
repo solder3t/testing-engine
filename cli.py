@@ -61,53 +61,36 @@ ALL_STRATEGIES = [
 ]
 
 
+def _parse_cli_symbols(args_symbols) -> list:
+    """Safely normalizes symbols argument into uppercase list or ['auto'] default."""
+    raw = (args_symbols or "").strip()
+    if not raw or raw.lower() == "auto":
+        return ["auto"]
+    return [s.strip().upper() for s in raw.split(",") if s.strip()] or ["auto"]
+
+
 def _build_strategy(strategy_name: str, args):
     """Instantiates a strategy from CLI arguments."""
+    cli_symbols = _parse_cli_symbols(getattr(args, "symbols", "auto"))
+
     if strategy_name == "equity":
-        return EquityMomentumStrategy(), (
-            ["auto"] if getattr(args, "symbols", "") == "auto" else
-            [s.strip().upper() for s in getattr(args, "symbols", "").split(",") if s.strip()] or ["RELIANCE", "HDFCBANK", "INFY"]
-        )
+        return EquityMomentumStrategy(), cli_symbols
     elif strategy_name == "orb":
-        return OrbBreakoutStrategy(), (
-            ["auto"] if getattr(args, "symbols", "") == "auto" else
-            [s.strip().upper() for s in getattr(args, "symbols", "").split(",") if s.strip()] or ["RELIANCE", "HDFCBANK", "INFY"]
-        )
+        return OrbBreakoutStrategy(), cli_symbols
     elif strategy_name == "supertrend":
-        return SupertrendTrendStrategy(), (
-            ["auto"] if getattr(args, "symbols", "") == "auto" else
-            [s.strip().upper() for s in getattr(args, "symbols", "").split(",") if s.strip()] or ["RELIANCE", "HDFCBANK", "INFY"]
-        )
+        return SupertrendTrendStrategy(), cli_symbols
     elif strategy_name == "camarilla":
-        return CamarillaBreakoutStrategy(), (
-            ["auto"] if getattr(args, "symbols", "") == "auto" else
-            [s.strip().upper() for s in getattr(args, "symbols", "").split(",") if s.strip()] or ["RELIANCE", "HDFCBANK", "INFY"]
-        )
+        return CamarillaBreakoutStrategy(), cli_symbols
     elif strategy_name == "ema-ribbon":
-        return EmaRibbonStrategy(), (
-            ["auto"] if getattr(args, "symbols", "") == "auto" else
-            [s.strip().upper() for s in getattr(args, "symbols", "").split(",") if s.strip()] or ["RELIANCE", "HDFCBANK", "INFY"]
-        )
+        return EmaRibbonStrategy(), cli_symbols
     elif strategy_name == "bollinger-b":
-        return BollingerPercentBStrategy(), (
-            ["auto"] if getattr(args, "symbols", "") == "auto" else
-            [s.strip().upper() for s in getattr(args, "symbols", "").split(",") if s.strip()] or ["RELIANCE", "HDFCBANK", "INFY"]
-        )
+        return BollingerPercentBStrategy(), cli_symbols
     elif strategy_name == "macd-accel":
-        return MacdAccelerationStrategy(), (
-            ["auto"] if getattr(args, "symbols", "") == "auto" else
-            [s.strip().upper() for s in getattr(args, "symbols", "").split(",") if s.strip()] or ["RELIANCE", "HDFCBANK", "INFY"]
-        )
+        return MacdAccelerationStrategy(), cli_symbols
     elif strategy_name == "vwap-reversion":
-        return VwapReversionStrategy(), (
-            ["auto"] if getattr(args, "symbols", "") == "auto" else
-            [s.strip().upper() for s in getattr(args, "symbols", "").split(",") if s.strip()] or ["RELIANCE", "HDFCBANK", "INFY"]
-        )
+        return VwapReversionStrategy(), cli_symbols
     elif strategy_name == "rsi-momentum":
-        return RsiMomentumStrategy(), (
-            ["auto"] if getattr(args, "symbols", "") == "auto" else
-            [s.strip().upper() for s in getattr(args, "symbols", "").split(",") if s.strip()] or ["RELIANCE", "HDFCBANK", "INFY"]
-        )
+        return RsiMomentumStrategy(), cli_symbols
     elif strategy_name == "options":
         return NiftyOptionsStrategy(), ["NIFTY"]
     elif strategy_name == "ai-replay":
@@ -357,7 +340,7 @@ def handle_walk_forward(args):
         return
 
     strat_cls, param_grid = strat_map[args.strategy]
-    symbols = ["auto"] if args.symbols == "auto" else ([s.strip().upper() for s in args.symbols.split(",") if s.strip()] or None)
+    symbols = _parse_cli_symbols(args.symbols)
 
     runner = MultiDayRunner(capital=args.capital, risk_pct=args.risk, source_dir=data_dir, compound_capital=False)
     wfo = WalkForwardOptimizer(runner=runner, in_sample_len=args.in_sample, out_of_sample_len=args.out_of_sample)
@@ -425,7 +408,7 @@ def main():
     p_run.add_argument("--dates", type=str, default="all", help="Target dates or 'all'")
     p_run.add_argument("--data-dir", type=str, default=DOWNLOADS_DIR, help="Path to archive/data directory")
     p_run.add_argument("--timeframe", type=str, default="1min", choices=["1min", "5min", "15min"], help="Bar timeframe")
-    p_run.add_argument("--symbols", type=str, default="", help="Comma-separated symbols or 'auto'")
+    p_run.add_argument("--symbols", type=str, default="auto", help="Comma-separated symbols or 'auto' (default: auto)")
     p_run.add_argument("--capital", type=float, default=DEFAULT_CAPITAL, help="Initial capital in INR")
     p_run.add_argument("--risk", type=float, default=DEFAULT_RISK_PCT_PER_TRADE, help="Risk pct per trade (e.g. 0.01)")
     p_run.add_argument("--confidence", type=float, default=0.70, help="Confidence threshold for AI replay")

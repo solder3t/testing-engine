@@ -66,6 +66,19 @@ CORS(app)
 latest_run_result: Dict[str, Any] = {}
 
 
+def resolve_server_symbols(sym_in) -> list:
+    """Safely normalizes symbols payload into clean uppercase list or ['auto'] default."""
+    if sym_in is None or sym_in == ["auto"] or sym_in == "auto" or sym_in == [] or sym_in == "":
+        return ["auto"]
+    if isinstance(sym_in, str):
+        cleaned = [s.strip().upper() for s in sym_in.split(",") if s.strip()]
+        return ["auto"] if (not cleaned or cleaned == ["AUTO"]) else cleaned
+    if isinstance(sym_in, list):
+        cleaned = [str(s).strip().upper() for s in sym_in if str(s).strip()]
+        return ["auto"] if (not cleaned or cleaned == ["AUTO"]) else cleaned
+    return ["auto"]
+
+
 def create_strategy_instance(strategy_name: str, data: dict, symbols: list):
     """Instantiates a strategy by name with extracted parameters and resolved symbols."""
     if strategy_name == "equity":
@@ -449,7 +462,7 @@ def run_backtest_stream():
     capital = float(data.get("capital", DEFAULT_CAPITAL))
     risk_pct = float(data.get("risk_pct", DEFAULT_RISK_PCT_PER_TRADE))
     timeframe = data.get("timeframe", "1min")
-    symbols = data.get("symbols", ["RELIANCE", "HDFCBANK", "INFY"])
+    symbols = resolve_server_symbols(data.get("symbols"))
 
     def event_stream():
         global latest_run_result
@@ -478,17 +491,15 @@ def run_backtest_stream():
                 yield f"data: {json.dumps(event)}\n\n"
         except Exception as e:
             logger.error(f"Stream error: {e}\n{traceback.format_exc()}")
-            err_event = {"type": "error", "message": f"{type(e).__name__}: {str(e)}"}
-            yield f"data: {json.dumps(err_event)}\n\n"
-
     return Response(event_stream(), mimetype="text/event-stream")
 
 
 @app.route("/api/compare", methods=["POST"])
-def compare_strategies():
+@app.route("/api/compare_models", methods=["POST"])
+def api_compare_models():
     """
-    Executes multiple strategies across the same dates and returns comparative metrics
-    and equity curves for side-by-side evaluation.
+    Executes multiple strategies across selected sessions in parallel,
+    returning a comparative summary matrix and equity curves for direct benchmarking.
     """
     data = request.json or {}
     source_dir = data.get("directory") or DOWNLOADS_DIR
@@ -510,7 +521,7 @@ def compare_strategies():
     capital = float(data.get("capital", DEFAULT_CAPITAL))
     risk_pct = float(data.get("risk_pct", DEFAULT_RISK_PCT_PER_TRADE))
     timeframe = data.get("timeframe", "1min")
-    symbols = data.get("symbols", ["RELIANCE", "HDFCBANK", "INFY"])
+    symbols = resolve_server_symbols(data.get("symbols"))
 
     for d in selected_dates:
         mgr.extract_archive(d, target_dir=source_dir)
@@ -621,8 +632,7 @@ def run_walk_forward_api():
     rank_by = data.get("rank_by", "sharpe_ratio")
     capital = float(data.get("capital", DEFAULT_CAPITAL))
     risk_pct = float(data.get("risk_pct", DEFAULT_RISK_PCT_PER_TRADE))
-    sym_in = data.get("symbols", ["RELIANCE", "HDFCBANK", "INFY"])
-    symbols = ["auto"] if (isinstance(sym_in, str) and sym_in.lower() == "auto") else (sym_in if isinstance(sym_in, list) else None)
+    symbols = resolve_server_symbols(data.get("symbols"))
 
     try:
         strat_cls = get_strategy_class(strategy_name)
@@ -681,8 +691,7 @@ def run_optimize_api():
     rank_by = data.get("rank_by", "sharpe_ratio")
     capital = float(data.get("capital", DEFAULT_CAPITAL))
     risk_pct = float(data.get("risk_pct", DEFAULT_RISK_PCT_PER_TRADE))
-    sym_in = data.get("symbols", ["RELIANCE", "HDFCBANK", "INFY"])
-    symbols = ["auto"] if (isinstance(sym_in, str) and sym_in.lower() == "auto") else (sym_in if isinstance(sym_in, list) else None)
+    symbols = resolve_server_symbols(data.get("symbols"))
 
     try:
         strat_cls = get_strategy_class(strategy_name)

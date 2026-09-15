@@ -471,6 +471,15 @@ async function loadArchives(customDir = "") {
   }
 }
 
+// ── Symbol Discovery Helper ──────────────────────────────────────────────────
+function getSymbolsFromInput(elemId) {
+  const el = document.getElementById(elemId);
+  if (!el) return ["auto"];
+  const symRaw = el.value.trim().toLowerCase();
+  if (!symRaw || symRaw === "auto") return ["auto"];
+  return symRaw.toUpperCase().split(",").map(s => s.trim()).filter(Boolean);
+}
+
 // ── Run Real Backtest Simulation ─────────────────────────────────────────────
 async function runBacktest() {
   const btn = document.getElementById("btnRun");
@@ -511,31 +520,30 @@ async function runBacktest() {
   if (strat === "equity") {
     payload.min_score = parseInt(document.getElementById("minScoreInput").value) || 55;
     payload.atr_sl_mult = parseFloat(document.getElementById("atrSlInput").value) || 1.5;
-    const symRaw = document.getElementById("symbolsInput").value.trim().toLowerCase();
-    payload.symbols = symRaw === "auto" ? ["auto"] : symRaw.toUpperCase().split(",").map(s => s.trim()).filter(Boolean);
+    payload.symbols = getSymbolsFromInput("symbolsInput");
 
   } else if (strat === "orb") {
     payload.opening_minutes = parseInt(document.getElementById("orbMinutesInput").value) || 15;
     payload.risk_reward = parseFloat(document.getElementById("orbRrInput").value) || 2.0;
     payload.breakout_atr_mult = parseFloat(document.getElementById("orbAtrMultInput").value) || 1.0;
-    payload.symbols = document.getElementById("orbSymbolsInput").value.split(",").map(s => s.trim()).filter(Boolean);
+    payload.symbols = getSymbolsFromInput("orbSymbolsInput");
   } else if (strat === "supertrend") {
     payload.atr_period = parseInt(document.getElementById("stAtrPeriodInput").value) || 10;
     payload.multiplier = parseFloat(document.getElementById("stMultiplierInput").value) || 3.0;
     payload.ema_filter = parseInt(document.getElementById("stEmaFilterInput").value) || 50;
     payload.risk_reward = parseFloat(document.getElementById("stRrInput").value) || 2.0;
-    payload.symbols = document.getElementById("stSymbolsInput").value.split(",").map(s => s.trim()).filter(Boolean);
+    payload.symbols = getSymbolsFromInput("stSymbolsInput");
   } else if (strat === "camarilla") {
     payload.risk_reward = parseFloat(document.getElementById("camRrInput").value) || 2.0;
     payload.sl_buffer_pts = parseFloat(document.getElementById("camBufferPtsInput").value) || 5.0;
-    payload.symbols = document.getElementById("camSymbolsInput").value.split(",").map(s => s.trim()).filter(Boolean);
+    payload.symbols = getSymbolsFromInput("camSymbolsInput");
   } else if (strat === "ema-ribbon") {
     payload.fast_ema = parseInt(document.getElementById("ribbonFastInput").value) || 9;
     payload.med_ema = parseInt(document.getElementById("ribbonMedInput").value) || 21;
     payload.slow_ema = parseInt(document.getElementById("ribbonSlowInput").value) || 50;
     payload.sl_pts = parseFloat(document.getElementById("ribbonSlPtsInput").value) || 15.0;
     payload.target_pts = parseFloat(document.getElementById("ribbonTgtPtsInput").value) || 30.0;
-    payload.symbols = document.getElementById("ribbonSymbolsInput").value.split(",").map(s => s.trim()).filter(Boolean);
+    payload.symbols = getSymbolsFromInput("ribbonSymbolsInput");
   } else if (strat === "bollinger-b") {
     payload.bb_period = parseInt(document.getElementById("bbPeriodInput").value) || 20;
     payload.bb_std = parseFloat(document.getElementById("bbStdDevInput").value) || 2.0;
@@ -543,26 +551,26 @@ async function runBacktest() {
     payload.overbought_b = parseFloat(document.getElementById("bbOverboughtInput").value) || 0.95;
     payload.sl_pts = parseFloat(document.getElementById("bbSlPtsInput").value) || 15.0;
     payload.target_pts = parseFloat(document.getElementById("bbTgtPtsInput").value) || 30.0;
-    payload.symbols = document.getElementById("bbBandsSymbolsInput").value.split(",").map(s => s.trim()).filter(Boolean);
+    payload.symbols = getSymbolsFromInput("bbBandsSymbolsInput");
   } else if (strat === "macd-accel") {
     payload.fast_period = parseInt(document.getElementById("macdFastInput").value) || 12;
     payload.slow_period = parseInt(document.getElementById("macdSlowInput").value) || 26;
     payload.signal_period = parseInt(document.getElementById("macdSignalInput").value) || 9;
     payload.sl_pts = parseFloat(document.getElementById("macdSlPtsInput").value) || 15.0;
     payload.target_pts = parseFloat(document.getElementById("macdTgtPtsInput").value) || 35.0;
-    payload.symbols = document.getElementById("macdSymbolsInput").value.split(",").map(s => s.trim()).filter(Boolean);
+    payload.symbols = getSymbolsFromInput("macdSymbolsInput");
   } else if (strat === "vwap-reversion") {
     payload.bb_period = parseInt(document.getElementById("vwapBbPeriodInput").value) || 20;
     payload.bb_std = parseFloat(document.getElementById("vwapBbStdInput").value) || 2.0;
     payload.sl_pts = parseFloat(document.getElementById("vwapSlPtsInput").value) || 15.0;
     payload.target_pts = parseFloat(document.getElementById("vwapTgtPtsInput").value) || 30.0;
-    payload.symbols = document.getElementById("vwapSymbolsInput").value.split(",").map(s => s.trim()).filter(Boolean);
+    payload.symbols = getSymbolsFromInput("vwapSymbolsInput");
   } else if (strat === "rsi-momentum") {
     payload.fast_ema = parseInt(document.getElementById("rsiFastEmaInput").value) || 9;
     payload.slow_ema = parseInt(document.getElementById("rsiSlowEmaInput").value) || 21;
     payload.rsi_period = parseInt(document.getElementById("rsiPeriodInput").value) || 14;
     payload.rsi_long_cutoff = parseFloat(document.getElementById("rsiLongCutoffInput").value) || 60.0;
-    payload.symbols = document.getElementById("rsiSymbolsInput").value.split(",").map(s => s.trim()).filter(Boolean);
+    payload.symbols = getSymbolsFromInput("rsiSymbolsInput");
   } else if (strat === "options") {
     payload.sl_points = parseFloat(document.getElementById("optionSlInput").value) || 12.0;
     payload.target_multiplier = parseFloat(document.getElementById("optionTgtInput").value) || 1.8;
@@ -826,8 +834,7 @@ async function runComparison() {
   const capital = parseFloat(document.getElementById("capitalInput").value) || 500000.0;
   const maxLoss = (parseFloat(document.getElementById("maxLossInput").value) || 1.5) / 100.0;
   const archiveDir = dirInput ? dirInput.value.trim() : "";
-  const symRaw = document.getElementById("symbolsInput") ? document.getElementById("symbolsInput").value.trim().toLowerCase() : "";
-  const symbols = symRaw === "auto" ? ["auto"] : symRaw.toUpperCase().split(",").map(s => s.trim()).filter(Boolean);
+  const symbols = getSymbolsFromInput("symbolsInput");
 
   const payload = {
     directory: archiveDir,
@@ -1994,8 +2001,7 @@ async function runWalkForward() {
 
   const strat = document.getElementById("wfoStrategySelect").value;
   const rankBy = document.getElementById("wfoRankBySelect").value;
-  const symRaw = document.getElementById("symbolsInput") ? document.getElementById("symbolsInput").value.trim().toLowerCase() : "";
-  const symbols = symRaw === "auto" ? ["auto"] : symRaw.toUpperCase().split(",").map(s => s.trim()).filter(Boolean);
+  const symbols = getSymbolsFromInput("symbolsInput");
 
   btn.disabled = true;
   btn.innerText = "🧪 RUNNING WFO...";
@@ -2225,8 +2231,7 @@ async function runParameterOptimization() {
 
   const strat = select.value;
   const rankBy = rankBySelect.value;
-  const symRaw = document.getElementById("symbolsInput") ? document.getElementById("symbolsInput").value.trim().toLowerCase() : "";
-  const symbols = symRaw === "auto" ? ["auto"] : symRaw.toUpperCase().split(",").map(s => s.trim()).filter(Boolean);
+  const symbols = getSymbolsFromInput("symbolsInput");
 
   btn.disabled = true;
   btn.innerText = "🚀 OPTIMIZING...";
