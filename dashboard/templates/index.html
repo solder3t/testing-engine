@@ -426,9 +426,59 @@
 
           <!-- Action Buttons -->
           <div style="margin-top: 16px;">
-            <div style="display: flex; gap: 8px;">
+            <div style="display: flex; gap: 8px; align-items: stretch;">
               <button id="btnRun" class="btn-run" style="flex: 2; height: 44px; font-size: 0.95rem;">⚡ RUN BACKTEST</button>
-              <button id="btnCompare" class="btn-secondary" style="flex: 1; height: 44px; font-size: 0.85rem;" title="Compare all strategies on selected dates">⚖️ COMPARE</button>
+              <button id="btnCompare" class="btn-secondary" style="flex: 1; height: 44px; font-size: 0.85rem;" title="Compare selected strategies on chosen dates">⚖️ COMPARE (6)</button>
+              <button id="btnToggleCompareModels" class="btn-secondary" style="width: 44px; height: 44px; padding: 0; font-size: 1.05rem;" title="Select strategy models to compare">⚙️</button>
+            </div>
+
+            <!-- Strategy Checkboxes Drawer for Multi-Strategy Comparison -->
+            <div id="compareModelsPanel" style="display: none; margin-top: 10px; background: rgba(0,0,0,0.35); border: 1px solid var(--panel-border); border-radius: 8px; padding: 12px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
+                <span style="font-size: 0.78rem; font-weight: 700; color: #fff;">Compare Strategy Models:</span>
+                <div style="display: flex; gap: 6px; font-size: 0.72rem;">
+                  <button id="btnSelectAllCompare" type="button" class="link-btn" style="background:none; border:none; color:var(--accent-cyan); cursor:pointer;">All (11)</button>
+                  <span style="color:var(--text-muted);">|</span>
+                  <button id="btnSelectEquityCompare" type="button" class="link-btn" style="background:none; border:none; color:var(--accent-cyan); cursor:pointer;">Equity (9)</button>
+                  <span style="color:var(--text-muted);">|</span>
+                  <button id="btnSelectDefaultCompare" type="button" class="link-btn" style="background:none; border:none; color:var(--accent-cyan); cursor:pointer;">Default (6)</button>
+                </div>
+              </div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 0.75rem; max-height: 180px; overflow-y: auto; padding-right: 4px;">
+                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                  <input type="checkbox" name="compareStrategy" value="equity" checked> Equity Momentum
+                </label>
+                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                  <input type="checkbox" name="compareStrategy" value="orb" checked> ORB Breakout
+                </label>
+                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                  <input type="checkbox" name="compareStrategy" value="supertrend" checked> Supertrend Follower
+                </label>
+                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                  <input type="checkbox" name="compareStrategy" value="camarilla" checked> Camarilla Breakout
+                </label>
+                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                  <input type="checkbox" name="compareStrategy" value="ema-ribbon" checked> EMA Ribbon
+                </label>
+                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                  <input type="checkbox" name="compareStrategy" value="bollinger-b" checked> Bollinger %B
+                </label>
+                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                  <input type="checkbox" name="compareStrategy" value="macd-accel"> MACD Acceleration
+                </label>
+                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                  <input type="checkbox" name="compareStrategy" value="vwap-reversion"> VWAP Reversion
+                </label>
+                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                  <input type="checkbox" name="compareStrategy" value="rsi-momentum"> RSI Momentum
+                </label>
+                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                  <input type="checkbox" name="compareStrategy" value="options"> NIFTY Options
+                </label>
+                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                  <input type="checkbox" name="compareStrategy" value="ai-replay"> AI Decision Replay
+                </label>
+              </div>
             </div>
             <!-- Live Streaming Progress Bar -->
             <div id="runProgressContainer" style="display: none; margin-top: 10px;">
@@ -1067,6 +1117,6 @@
     </div>
   </div>
 
-  <script src="/static/js/dashboard.js?v=3.5"></script>
+  <script src="/static/js/dashboard.js?v=3.6"></script>
 </body>
 </html>

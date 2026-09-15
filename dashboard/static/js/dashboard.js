@@ -25,6 +25,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initModal();
   initWalkForward();
   initParameterOptimizer();
+  initCompareModelPicker();
 
   // Load default directory
   loadArchives();
@@ -678,6 +679,61 @@ async function loadLatestResults() {
 // ── Multi-Strategy Comparison Mode ───────────────────────────────────────────
 let compareChart = null;
 
+function initCompareModelPicker() {
+  const btnToggle = document.getElementById("btnToggleCompareModels");
+  const panel = document.getElementById("compareModelsPanel");
+  const btnAll = document.getElementById("btnSelectAllCompare");
+  const btnEquity = document.getElementById("btnSelectEquityCompare");
+  const btnDefault = document.getElementById("btnSelectDefaultCompare");
+  const btnCompare = document.getElementById("btnCompare");
+
+  const updateCompareButtonLabel = () => {
+    const checkedCount = document.querySelectorAll('input[name="compareStrategy"]:checked').length;
+    if (btnCompare && !btnCompare.disabled) {
+      btnCompare.innerText = `⚖️ COMPARE (${checkedCount})`;
+    }
+  };
+
+  if (btnToggle && panel) {
+    btnToggle.addEventListener("click", () => {
+      panel.style.display = panel.style.display === "none" ? "block" : "none";
+    });
+  }
+
+  if (btnAll) {
+    btnAll.addEventListener("click", () => {
+      document.querySelectorAll('input[name="compareStrategy"]').forEach(cb => cb.checked = true);
+      updateCompareButtonLabel();
+    });
+  }
+
+  if (btnEquity) {
+    btnEquity.addEventListener("click", () => {
+      const equityStrats = ["equity", "orb", "supertrend", "camarilla", "ema-ribbon", "bollinger-b", "macd-accel", "vwap-reversion", "rsi-momentum"];
+      document.querySelectorAll('input[name="compareStrategy"]').forEach(cb => {
+        cb.checked = equityStrats.includes(cb.value);
+      });
+      updateCompareButtonLabel();
+    });
+  }
+
+  if (btnDefault) {
+    btnDefault.addEventListener("click", () => {
+      const defaultStrats = ["equity", "orb", "supertrend", "camarilla", "ema-ribbon", "bollinger-b"];
+      document.querySelectorAll('input[name="compareStrategy"]').forEach(cb => {
+        cb.checked = defaultStrats.includes(cb.value);
+      });
+      updateCompareButtonLabel();
+    });
+  }
+
+  document.querySelectorAll('input[name="compareStrategy"]').forEach(cb => {
+    cb.addEventListener("change", updateCompareButtonLabel);
+  });
+
+  updateCompareButtonLabel();
+}
+
 async function runComparison() {
   const btn = document.getElementById("btnCompare");
   const status = document.getElementById("runStatus");
@@ -694,6 +750,17 @@ async function runComparison() {
     return;
   }
 
+  const selectedStrats = [];
+  document.querySelectorAll('input[name="compareStrategy"]:checked').forEach(cb => {
+    selectedStrats.push(cb.value);
+  });
+
+  if (selectedStrats.length === 0) {
+    status.innerText = "Error: Please select at least one strategy model from the ⚙️ Models picker!";
+    status.style.color = "var(--red)";
+    return;
+  }
+
   const tf = document.getElementById("timeframeSelect").value;
   const capital = parseFloat(document.getElementById("capitalInput").value) || 500000.0;
   const maxLoss = (parseFloat(document.getElementById("maxLossInput").value) || 1.5) / 100.0;
@@ -704,7 +771,7 @@ async function runComparison() {
   const payload = {
     directory: archiveDir,
     dates: selectedDates,
-    strategies: ["equity", "orb", "supertrend", "camarilla", "ema-ribbon", "bollinger-b"],
+    strategies: selectedStrats,
     timeframe: tf,
     capital: capital,
     risk_pct: maxLoss,
@@ -712,8 +779,8 @@ async function runComparison() {
   };
 
   btn.disabled = true;
-  btn.innerText = "⚖️ COMPARING...";
-  status.innerText = `Benchmarking 6 strategies across [${selectedDates.join(", ")}]...`;
+  btn.innerText = `⚖️ COMPARING (${selectedStrats.length})...`;
+  status.innerText = `Benchmarking ${selectedStrats.length} strategies across [${selectedDates.join(", ")}]...`;
   status.style.color = "var(--accent-cyan)";
 
   try {
@@ -739,7 +806,7 @@ async function runComparison() {
     status.style.color = "var(--red)";
   } finally {
     btn.disabled = false;
-    btn.innerText = "⚖️ COMPARE";
+    btn.innerText = `⚖️ COMPARE (${selectedStrats.length})`;
   }
 }
 
@@ -754,7 +821,8 @@ function renderComparisonResults(comparisonList) {
   const chartDatasets = [];
   const palette = [
     "#00f2fe", "#4facfe", "#43e97b", "#fa709a",
-    "#fee140", "#f38181", "#a18cd1", "#fbc2eb"
+    "#fee140", "#f38181", "#a18cd1", "#fbc2eb",
+    "#20bf6b", "#fd9644", "#a55eea", "#2bcbba"
   ];
 
   comparisonList.forEach((item, idx) => {
