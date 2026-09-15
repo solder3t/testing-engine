@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Testing Engine // Advanced Strategy Testing Terminal</title>
+  <link rel="stylesheet" href="/static/css/dashboard.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+  <!-- Top Bar -->
+  <header class="topbar">
+    <div class="brand">
+      <h1>⚡ STOCKS ENGINE</h1>
+      <span class="badge">TESTING ENGINE</span>
+      <span class="badge" style="background: rgba(16, 185, 129, 0.15); color: var(--green); border-color: rgba(16, 185, 129, 0.3);">REAL DATA SIMULATOR</span>
+    </div>
+    <div class="topbar-status">
+      <div class="status-pill">
+        <span class="dot"></span>
+        <span id="headerStatusText">ENGINE READY</span>
+      </div>
+      <div class="status-pill">
+        <span style="color: var(--accent-cyan)">PORT: 5690</span>
+      </div>
+      <div class="status-pill">
+        <span id="currentScannedDir">DIR: ~/Downloads</span>
+      </div>
+    </div>
+  </header>
+
+  <div class="container">
+    <!-- Sidebar Controls -->
+    <aside class="sidebar">
+      <!-- 1. Directory & Archive Selection -->
+      <div>
+        <h2>1. Data Directory & Sessions</h2>
+        <div class="form-group">
+          <label for="dirInput">Archive / Data Directory:</label>
+          <div style="display: flex; gap: 6px;">
+            <input type="text" id="dirInput" value="~/Downloads" placeholder="/path/to/archives/or/folders" style="flex: 1;">
+            <button id="btnScanDir" class="btn-secondary" title="Scan directory for RARs or folders">Scan</button>
+          </div>
+          <div class="quick-chips">
+            <span class="chip" data-dir="~/Downloads">~/Downloads</span>
+            <span class="chip" data-dir="/home/adityas/Downloads/trade">trade/</span>
+            <span class="chip" data-dir="./data_cache">./data_cache</span>
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-top: 8px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <label>Detected Sessions:</label>
+            <span id="selectAllBtn" class="link-btn">Select All</span>
+          </div>
+          <div class="archive-list" id="archiveList">
+            <div class="empty-state" style="padding: 10px;">Scanning directory...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. Strategy & Timeframe -->
+      <div>
+        <h2>2. Strategy & Timeframe</h2>
+        <div class="form-group">
+          <label for="strategySelect">Strategy Model:</label>
+          <select id="strategySelect">
+            <option value="equity">Equity Momentum (v4/v5)</option>
+            <option value="vwap-reversion">VWAP Mean Reversion (Bollinger/VWAP)</option>
+            <option value="rsi-momentum">Dual EMA + RSI Momentum Filter</option>
+            <option value="options">NIFTY Index Options Breakout</option>
+            <option value="ai-replay">AI Decision Replay (Gemini Snapshots)</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="timeframeSelect">Bar Timeframe:</label>
+          <select id="timeframeSelect">
+            <option value="1min">1 Minute (Primary)</option>
+            <option value="5min">5 Minutes</option>
+            <option value="15min">15 Minutes</option>
+          </select>
+        </div>
+
+        <!-- Strategy Specific Parameters -->
+        <div id="equityParams" class="strat-params-block">
+          <div class="form-group">
+            <label for="symbolsInput">Equities to Test:</label>
+            <input type="text" id="symbolsInput" value="RELIANCE, HDFCBANK, INFY, ICICIBANK, TCS">
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="minScoreInput">Min Score (0-100):</label>
+              <input type="number" id="minScoreInput" value="55" min="40" max="90">
+            </div>
+            <div class="form-group">
+              <label for="atrSlInput">ATR SL Multiplier:</label>
+              <input type="number" id="atrSlInput" value="1.5" step="0.1">
+            </div>
+          </div>
+        </div>
+
+        <div id="vwapParams" class="strat-params-block" style="display: none;">
+          <div class="form-group">
+            <label for="vwapSymbolsInput">Equities / Index to Test:</label>
+            <input type="text" id="vwapSymbolsInput" value="RELIANCE, HDFCBANK, INFY, ICICIBANK, TCS">
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="vwapBbPeriodInput">BB Period:</label>
+              <input type="number" id="vwapBbPeriodInput" value="20" min="5" max="50">
+            </div>
+            <div class="form-group">
+              <label for="vwapBbStdInput">BB Std Dev:</label>
+              <input type="number" id="vwapBbStdInput" value="2.0" step="0.1" min="1.0" max="3.5">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="vwapSlPtsInput">SL Points:</label>
+              <input type="number" id="vwapSlPtsInput" value="15.0" step="1.0">
+            </div>
+            <div class="form-group">
+              <label for="vwapTgtPtsInput">Target Points:</label>
+              <input type="number" id="vwapTgtPtsInput" value="30.0" step="1.0">
+            </div>
+          </div>
+        </div>
+
+        <div id="rsiParams" class="strat-params-block" style="display: none;">
+          <div class="form-group">
+            <label for="rsiSymbolsInput">Equities / Index to Test:</label>
+            <input type="text" id="rsiSymbolsInput" value="RELIANCE, HDFCBANK, INFY, ICICIBANK, TCS">
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="rsiFastEmaInput">Fast EMA:</label>
+              <input type="number" id="rsiFastEmaInput" value="9" min="3" max="50">
+            </div>
+            <div class="form-group">
+              <label for="rsiSlowEmaInput">Slow EMA:</label>
+              <input type="number" id="rsiSlowEmaInput" value="21" min="10" max="100">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="rsiPeriodInput">RSI Period:</label>
+              <input type="number" id="rsiPeriodInput" value="14" min="5" max="30">
+            </div>
+            <div class="form-group">
+              <label for="rsiLongCutoffInput">RSI Long Trigger:</label>
+              <input type="number" id="rsiLongCutoffInput" value="60" min="50" max="80">
+            </div>
+          </div>
+        </div>
+
+        <div id="optionsParams" class="strat-params-block" style="display: none;">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="slPointsInput">SL Points (Option):</label>
+              <input type="number" id="slPointsInput" value="12" step="1">
+            </div>
+            <div class="form-group">
+              <label for="tgtMultInput">Target Multiplier:</label>
+              <input type="number" id="tgtMultInput" value="1.8" step="0.1">
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="lotSizeInput">Contract Lot Size:</label>
+            <input type="number" id="lotSizeInput" value="25" step="25">
+          </div>
+        </div>
+
+        <div id="aiParams" class="strat-params-block" style="display: none;">
+          <div class="form-group">
+            <label for="confInput">Min AI Confidence Threshold:</label>
+            <input type="number" id="confInput" value="0.70" step="0.05" min="0.50" max="0.95">
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. Capital & Risk -->
+      <div>
+        <h2>3. Capital & Risk Allocation</h2>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="capitalInput">Initial Capital (₹):</label>
+            <input type="number" id="capitalInput" value="500000" step="50000">
+          </div>
+          <div class="form-group">
+            <label for="riskInput">Risk % per Trade:</label>
+            <input type="number" id="riskInput" value="1.0" step="0.5" min="0.1" max="5.0">
+          </div>
+        </div>
+      </div>
+
+      <button id="btnRun" class="btn-run">RUN BACKTEST ⚡</button>
+      <div id="runStatus" class="run-status"></div>
+    </aside>
+
+    <!-- Main View Area -->
+    <main class="main-view">
+      <!-- KPIs Grid -->
+      <section class="kpi-grid">
+        <div class="kpi-card">
+          <span class="kpi-label">Net Realized P&L</span>
+          <span class="kpi-value" id="kpiNetPnl">₹0.00</span>
+          <span class="kpi-sub" id="kpiReturn">0.00% return</span>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">Win Rate</span>
+          <span class="kpi-value" id="kpiWinRate">0.0%</span>
+          <span class="kpi-sub" id="kpiTradesCount">0 trades (0W / 0L)</span>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">Profit Factor</span>
+          <span class="kpi-value" id="kpiProfitFactor">0.00</span>
+          <span class="kpi-sub" id="kpiExpectancy">Exp: ₹0.00</span>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">Sharpe / Sortino</span>
+          <span class="kpi-value" id="kpiSharpe">0.00</span>
+          <span class="kpi-sub" id="kpiSortino">Sortino: 0.00</span>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">Max Drawdown</span>
+          <span class="kpi-value neg" id="kpiMaxDD">0.00%</span>
+          <span class="kpi-sub" id="kpiMaxDDRs">₹0.00</span>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">Regulatory Charges</span>
+          <span class="kpi-value" id="kpiCharges">₹0.00</span>
+          <span class="kpi-sub">STT, GST, Exchange fees</span>
+        </div>
+      </section>
+
+      <!-- Charts Area -->
+      <section class="charts-section">
+        <div class="charts-row">
+          <div class="chart-card">
+            <h3>Cumulative Portfolio Equity (₹)</h3>
+            <div class="chart-container">
+              <canvas id="equityChart"></canvas>
+              <div class="chart-placeholder" id="equityPlaceholder">
+                <span>📈</span>
+                <p>Run a backtest to generate portfolio equity curve</p>
+              </div>
+            </div>
+          </div>
+          <div class="chart-card">
+            <h3>Daily Session Net P&L (₹)</h3>
+            <div class="chart-container">
+              <canvas id="dailyChart"></canvas>
+              <div class="chart-placeholder" id="dailyPlaceholder">
+                <span>📊</span>
+                <p>Session-by-session P&L breakdown</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="charts-row" style="margin-top: 16px;">
+          <div class="chart-card" style="grid-column: 1 / -1;">
+            <h3>Underwater Drawdown Profile (%)</h3>
+            <div class="chart-container" style="height: 180px;">
+              <canvas id="drawdownChart"></canvas>
+              <div class="chart-placeholder" id="drawdownPlaceholder">
+                <span>📉</span>
+                <p>Drawdown percentage over time</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Trade Log Section -->
+      <section class="trades-card">
+        <div class="trades-header">
+          <div>
+            <h3>Real Executed Trade Log</h3>
+            <span id="tradesCountBadge" class="trades-count-badge">0 trades</span>
+          </div>
+          <div style="display: flex; gap: 10px; align-items: center;">
+            <input type="text" id="tradeSearchInput" placeholder="Filter by symbol, reason, side..." class="search-input">
+            <button id="btnExportCsv" class="btn-export">📥 Export CSV</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table id="tradesTable">
+            <thead>
+              <tr>
+                <th data-sort="entry_time">Time ⬍</th>
+                <th data-sort="symbol">Symbol ⬍</th>
+                <th data-sort="side">Side ⬍</th>
+                <th data-sort="qty">Qty ⬍</th>
+                <th data-sort="entry_price">Entry Price ⬍</th>
+                <th data-sort="exit_price">Exit Price ⬍</th>
+                <th data-sort="gross_pnl">Gross P&L ⬍</th>
+                <th data-sort="charges">Charges ⬍</th>
+                <th data-sort="net_pnl">Net P&L ⬍</th>
+                <th data-sort="exit_reason">Exit Reason ⬍</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="tradesBody">
+              <tr>
+                <td colspan="11" class="empty-state">Select archive dates or folders and click "Run Backtest" to compute results from real market data.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Trade Detail Modal -->
+  <div id="tradeModal" class="modal-backdrop" style="display: none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="modalTitle">Trade Details</h3>
+        <button id="modalCloseBtn" class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body" id="modalContent">
+        <!-- Injected via JS -->
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/dashboard.js"></script>
+</body>
+</html>
