@@ -53,6 +53,13 @@ class Portfolio:
 
         return True, "OK"
 
+    def get_position(self, symbol: str) -> Optional[Trade]:
+        """Returns active open trade for symbol if present, else None."""
+        for t in self.open_trades:
+            if t.symbol == symbol:
+                return t
+        return None
+
     def calculate_position_size(
         self,
         entry_price: float,

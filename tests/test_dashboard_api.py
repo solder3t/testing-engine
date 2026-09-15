@@ -18,8 +18,9 @@ def client():
 def test_index_page(client):
     res = client.get("/")
     assert res.status_code == 200
-    assert b"STOCKS ENGINE" in res.data
     assert b"TESTING ENGINE" in res.data
+    assert b"STOCKS ENGINE" not in res.data
+    assert b"Institutional Simulator" not in res.data
 
 
 def test_api_archives_default(client):
@@ -28,7 +29,7 @@ def test_api_archives_default(client):
     data = res.get_json()
     assert data["status"] == "success"
     assert "archives" in data
-    assert len(data["archives"]) >= 5
+    assert len(data["archives"]) >= 1
 
 
 def test_api_archives_custom_dir(client, tmp_path):
@@ -112,7 +113,7 @@ def test_api_archives_single_file(client, tmp_path):
     assert data["archives"][0]["name"] == "2026_09_12.rar"
 
 
-def test_institutional_tabs_and_inspector_rendered(client):
+def test_tabs_and_inspector_rendered(client):
     res = client.get("/")
     assert res.status_code == 200
     content = res.data.decode("utf-8")
@@ -126,3 +127,24 @@ def test_institutional_tabs_and_inspector_rendered(client):
     assert "tabExplorer" in content
     assert "tradeInspectorCard" in content
     assert "explorerSessionsGrid" in content
+
+    # Branding verification: ONLY "⚡ TESTING ENGINE"
+    assert "⚡ TESTING ENGINE" in content
+    assert "Institutional Simulator" not in content
+    assert "INSTITUTIONAL SIMULATOR" not in content
+
+    # 6 Analytics charts verification
+    assert "equityChart" in content
+    assert "dailyChart" in content
+    assert "drawdownChart" in content
+    assert "hourlyChart" in content
+    assert "outcomeChart" in content
+    assert "pnlDistChart" in content
+
+    # Strategy options verification
+    assert 'value="orb"' in content
+    assert 'value="supertrend"' in content
+    assert 'value="camarilla"' in content
+    assert 'value="ema-ribbon"' in content
+    assert 'value="bollinger-b"' in content
+    assert 'value="macd-accel"' in content

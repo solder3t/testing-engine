@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Testing Engine // Institutional Strategy Testing Terminal</title>
+  <title>Testing Engine</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/css/dashboard.css?v=2.4">
+  <link rel="stylesheet" href="/static/css/dashboard.css?v=2.5">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
@@ -15,9 +15,7 @@
   <!-- Top Bar -->
   <header class="topbar">
     <div class="brand">
-      <h1>⚡ STOCKS ENGINE</h1>
-      <span class="badge">TESTING ENGINE</span>
-      <span class="badge" style="background: rgba(16, 185, 129, 0.15); color: var(--green); border-color: rgba(16, 185, 129, 0.3);">INSTITUTIONAL SIMULATOR</span>
+      <h1>⚡ TESTING ENGINE</h1>
     </div>
     <div class="topbar-status">
       <div class="status-pill">
@@ -107,6 +105,12 @@
               <label for="strategySelect">Strategy Model:</label>
               <select id="strategySelect">
                 <option value="equity">Equity Momentum (v4/v5)</option>
+                <option value="orb">Opening Range Breakout (ORB 15-Min)</option>
+                <option value="supertrend">Supertrend Trend Follower (10, 3 + 50 EMA)</option>
+                <option value="camarilla">Camarilla Floor Pivot Breakout (H4/L4)</option>
+                <option value="ema-ribbon">Triple EMA Ribbon Alignment (9/21/50)</option>
+                <option value="bollinger-b">Bollinger %B Mean Reversion</option>
+                <option value="macd-accel">MACD Momentum Acceleration</option>
                 <option value="vwap-reversion">VWAP Mean Reversion (Bollinger/VWAP)</option>
                 <option value="rsi-momentum">Dual EMA + RSI Momentum Filter</option>
                 <option value="options">NIFTY Index Options Breakout</option>
@@ -138,6 +142,176 @@
               <div class="form-group">
                 <label for="atrSlInput">ATR SL Multiplier:</label>
                 <input type="number" id="atrSlInput" value="1.5" step="0.1">
+              </div>
+            </div>
+          </div>
+
+          <!-- ORB Params -->
+          <div id="orbParams" class="strat-params-block" style="display: none;">
+            <div class="form-group">
+              <label for="orbSymbolsInput">Equities / Index to Test:</label>
+              <input type="text" id="orbSymbolsInput" value="RELIANCE, HDFCBANK, INFY, ICICIBANK, TCS">
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="orbMinutesInput">Opening Range (Mins):</label>
+                <input type="number" id="orbMinutesInput" value="15" min="5" max="60" step="5">
+              </div>
+              <div class="form-group">
+                <label for="orbRrInput">Risk:Reward Ratio:</label>
+                <input type="number" id="orbRrInput" value="2.0" step="0.1" min="1.0">
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="orbAtrMultInput">ATR Buffer Multiplier:</label>
+              <input type="number" id="orbAtrMultInput" value="1.0" step="0.1">
+            </div>
+          </div>
+
+          <!-- Supertrend Params -->
+          <div id="supertrendParams" class="strat-params-block" style="display: none;">
+            <div class="form-group">
+              <label for="stSymbolsInput">Equities / Index to Test:</label>
+              <input type="text" id="stSymbolsInput" value="RELIANCE, HDFCBANK, INFY, ICICIBANK, TCS">
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="stAtrPeriodInput">ATR Period:</label>
+                <input type="number" id="stAtrPeriodInput" value="10" min="5" max="30">
+              </div>
+              <div class="form-group">
+                <label for="stMultiplierInput">ATR Multiplier:</label>
+                <input type="number" id="stMultiplierInput" value="3.0" step="0.5" min="1.0">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="stEmaFilterInput">Trend EMA Filter:</label>
+                <input type="number" id="stEmaFilterInput" value="50" min="20" max="200">
+              </div>
+              <div class="form-group">
+                <label for="stRrInput">Risk:Reward Ratio:</label>
+                <input type="number" id="stRrInput" value="2.0" step="0.1">
+              </div>
+            </div>
+          </div>
+
+          <!-- Camarilla Params -->
+          <div id="camarillaParams" class="strat-params-block" style="display: none;">
+            <div class="form-group">
+              <label for="camSymbolsInput">Equities / Index to Test:</label>
+              <input type="text" id="camSymbolsInput" value="RELIANCE, HDFCBANK, INFY, ICICIBANK, TCS">
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="camRrInput">Risk:Reward Ratio:</label>
+                <input type="number" id="camRrInput" value="2.0" step="0.1">
+              </div>
+              <div class="form-group">
+                <label for="camBufferPtsInput">SL Buffer Points:</label>
+                <input type="number" id="camBufferPtsInput" value="5.0" step="1.0">
+              </div>
+            </div>
+          </div>
+
+          <!-- EMA Ribbon Params -->
+          <div id="emaRibbonParams" class="strat-params-block" style="display: none;">
+            <div class="form-group">
+              <label for="ribbonSymbolsInput">Equities / Index to Test:</label>
+              <input type="text" id="ribbonSymbolsInput" value="RELIANCE, HDFCBANK, INFY, ICICIBANK, TCS">
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="ribbonFastInput">Fast EMA:</label>
+                <input type="number" id="ribbonFastInput" value="9" min="3" max="20">
+              </div>
+              <div class="form-group">
+                <label for="ribbonMedInput">Medium EMA:</label>
+                <input type="number" id="ribbonMedInput" value="21" min="10" max="50">
+              </div>
+              <div class="form-group">
+                <label for="ribbonSlowInput">Slow EMA:</label>
+                <input type="number" id="ribbonSlowInput" value="50" min="30" max="100">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="ribbonSlPtsInput">SL Points:</label>
+                <input type="number" id="ribbonSlPtsInput" value="15.0" step="1.0">
+              </div>
+              <div class="form-group">
+                <label for="ribbonTgtPtsInput">Target Points:</label>
+                <input type="number" id="ribbonTgtPtsInput" value="30.0" step="1.0">
+              </div>
+            </div>
+          </div>
+
+          <!-- Bollinger %B Params -->
+          <div id="bollingerBParams" class="strat-params-block" style="display: none;">
+            <div class="form-group">
+              <label for="bbBandsSymbolsInput">Equities / Index to Test:</label>
+              <input type="text" id="bbBandsSymbolsInput" value="RELIANCE, HDFCBANK, INFY, ICICIBANK, TCS">
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="bbPeriodInput">Period:</label>
+                <input type="number" id="bbPeriodInput" value="20" min="5" max="50">
+              </div>
+              <div class="form-group">
+                <label for="bbStdDevInput">Std Dev:</label>
+                <input type="number" id="bbStdDevInput" value="2.0" step="0.1">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="bbOversoldInput">Oversold %B:</label>
+                <input type="number" id="bbOversoldInput" value="0.05" step="0.05" min="0.0" max="0.2">
+              </div>
+              <div class="form-group">
+                <label for="bbOverboughtInput">Overbought %B:</label>
+                <input type="number" id="bbOverboughtInput" value="0.95" step="0.05" min="0.8" max="1.0">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="bbSlPtsInput">SL Points:</label>
+                <input type="number" id="bbSlPtsInput" value="15.0" step="1.0">
+              </div>
+              <div class="form-group">
+                <label for="bbTgtPtsInput">Target Points:</label>
+                <input type="number" id="bbTgtPtsInput" value="30.0" step="1.0">
+              </div>
+            </div>
+          </div>
+
+          <!-- MACD Acceleration Params -->
+          <div id="macdAccelParams" class="strat-params-block" style="display: none;">
+            <div class="form-group">
+              <label for="macdSymbolsInput">Equities / Index to Test:</label>
+              <input type="text" id="macdSymbolsInput" value="RELIANCE, HDFCBANK, INFY, ICICIBANK, TCS">
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="macdFastInput">Fast Period:</label>
+                <input type="number" id="macdFastInput" value="12" min="5" max="30">
+              </div>
+              <div class="form-group">
+                <label for="macdSlowInput">Slow Period:</label>
+                <input type="number" id="macdSlowInput" value="26" min="15" max="60">
+              </div>
+              <div class="form-group">
+                <label for="macdSignalInput">Signal Period:</label>
+                <input type="number" id="macdSignalInput" value="9" min="3" max="20">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="macdSlPtsInput">SL Points:</label>
+                <input type="number" id="macdSlPtsInput" value="15.0" step="1.0">
+              </div>
+              <div class="form-group">
+                <label for="macdTgtPtsInput">Target Points:</label>
+                <input type="number" id="macdTgtPtsInput" value="35.0" step="1.0">
               </div>
             </div>
           </div>
@@ -253,7 +427,7 @@
 
     <!-- ── TAB 2: RESULTS & ANALYTICS ──────────────────────────────────────── -->
     <div class="tab-pane" id="tabAnalytics">
-      <!-- Institutional KPI Header Bar -->
+      <!-- Performance KPI Header Bar -->
       <section class="kpi-grid">
         <div class="kpi-card">
           <span class="kpi-label">Net Realized P&L</span>
@@ -287,8 +461,9 @@
         </div>
       </section>
 
-      <!-- Institutional Charts -->
+      <!-- Performance Analytics Charts (6-Chart Suite) -->
       <section class="charts-section">
+        <!-- Row 1: Equity Curve & Drawdown Profile -->
         <div class="charts-row">
           <div class="chart-card">
             <div class="chart-header-row">
@@ -305,6 +480,23 @@
           </div>
           <div class="chart-card">
             <div class="chart-header-row">
+              <h3>Underwater Drawdown Profile (%)</h3>
+              <span class="chart-badge" style="color: var(--red);">Risk Curve</span>
+            </div>
+            <div class="chart-container">
+              <canvas id="drawdownChart"></canvas>
+              <div class="chart-placeholder" id="drawdownPlaceholder">
+                <span>📉</span>
+                <p>Portfolio drawdown percentage over time</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Row 2: Daily Session P&L & Hourly Time-of-Day P&L -->
+        <div class="charts-row" style="margin-top: 16px;">
+          <div class="chart-card">
+            <div class="chart-header-row">
               <h3>Daily Session Net P&L (₹)</h3>
               <span class="chart-badge">Session Returns</span>
             </div>
@@ -316,19 +508,46 @@
               </div>
             </div>
           </div>
+          <div class="chart-card">
+            <div class="chart-header-row">
+              <h3>Time-of-Day / Hourly Net P&L (₹)</h3>
+              <span class="chart-badge">Intraday Distribution</span>
+            </div>
+            <div class="chart-container">
+              <canvas id="hourlyChart"></canvas>
+              <div class="chart-placeholder" id="hourlyPlaceholder">
+                <span>⏱️</span>
+                <p>P&L broken down by trade entry hour</p>
+              </div>
+            </div>
+          </div>
         </div>
 
+        <!-- Row 3: Trade Outcome Breakdown & P&L Frequency Spread -->
         <div class="charts-row" style="margin-top: 16px;">
-          <div class="chart-card" style="grid-column: 1 / -1;">
+          <div class="chart-card">
             <div class="chart-header-row">
-              <h3>Underwater Drawdown Profile (%)</h3>
-              <span class="chart-badge" style="color: var(--red);">Risk Curve</span>
+              <h3>Trade Outcome Breakdown</h3>
+              <span class="chart-badge">Win / Loss / BE</span>
             </div>
-            <div class="chart-container" style="height: 190px;">
-              <canvas id="drawdownChart"></canvas>
-              <div class="chart-placeholder" id="drawdownPlaceholder">
-                <span>📉</span>
-                <p>Portfolio drawdown percentage over time</p>
+            <div class="chart-container">
+              <canvas id="outcomeChart"></canvas>
+              <div class="chart-placeholder" id="outcomePlaceholder">
+                <span>🎯</span>
+                <p>Trade outcome ratio</p>
+              </div>
+            </div>
+          </div>
+          <div class="chart-card">
+            <div class="chart-header-row">
+              <h3>Trade P&L Distribution (₹)</h3>
+              <span class="chart-badge">Return Spread</span>
+            </div>
+            <div class="chart-container">
+              <canvas id="pnlDistChart"></canvas>
+              <div class="chart-placeholder" id="pnlDistPlaceholder">
+                <span>📶</span>
+                <p>Trade P&L distribution frequency histogram</p>
               </div>
             </div>
           </div>
@@ -385,7 +604,7 @@
           </div>
         </div>
 
-        <!-- Right: Dedicated Institutional Trade Inspector Panel -->
+        <!-- Right: Dedicated Trade Inspector Panel -->
         <div class="card inspector-card" id="tradeInspectorCard">
           <div class="card-header" style="margin-bottom: 12px;">
             <div style="display: flex; align-items: center; gap: 8px;">
@@ -496,6 +715,6 @@
     </div>
   </div>
 
-  <script src="/static/js/dashboard.js?v=2.4"></script>
+  <script src="/static/js/dashboard.js?v=2.5"></script>
 </body>
 </html>

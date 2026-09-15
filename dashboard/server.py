@@ -35,6 +35,12 @@ from strategies.nifty_options import NiftyOptionsStrategy
 from strategies.ai_evaluator import AiSnapshotStrategy
 from strategies.vwap_reversion import VwapReversionStrategy
 from strategies.rsi_momentum import RsiMomentumStrategy
+from strategies.orb_breakout import OrbBreakoutStrategy
+from strategies.supertrend_trend import SupertrendTrendStrategy
+from strategies.camarilla_breakout import CamarillaBreakoutStrategy
+from strategies.ema_ribbon import EmaRibbonStrategy
+from strategies.bollinger_percent_b import BollingerPercentBStrategy
+from strategies.macd_acceleration import MacdAccelerationStrategy
 from engine.multi_day_runner import MultiDayRunner
 from analytics.trade_exporter import TradeExporter
 
@@ -237,6 +243,67 @@ def run_backtest():
             strat = RsiMomentumStrategy(params=strat_params)
             res = runner.run(dates=selected_dates, strategy=strat, symbols=symbols, timeframe=timeframe)
 
+        elif strategy_name == "orb":
+            strat_params = {
+                "opening_minutes": int(data.get("opening_minutes", 15)),
+                "risk_reward": float(data.get("risk_reward", 2.0)),
+                "breakout_atr_mult": float(data.get("breakout_atr_mult", 0.5)),
+            }
+            strat = OrbBreakoutStrategy(params=strat_params)
+            res = runner.run(dates=selected_dates, strategy=strat, symbols=symbols, timeframe=timeframe)
+
+        elif strategy_name == "supertrend":
+            strat_params = {
+                "atr_period": int(data.get("atr_period", 10)),
+                "multiplier": float(data.get("multiplier", 3.0)),
+                "ema_filter": int(data.get("ema_filter", 50)),
+                "risk_reward": float(data.get("risk_reward", 2.0)),
+            }
+            strat = SupertrendTrendStrategy(params=strat_params)
+            res = runner.run(dates=selected_dates, strategy=strat, symbols=symbols, timeframe=timeframe)
+
+        elif strategy_name == "camarilla":
+            strat_params = {
+                "risk_reward": float(data.get("risk_reward", 2.0)),
+                "sl_buffer_pts": float(data.get("sl_buffer_pts", 5.0)),
+            }
+            strat = CamarillaBreakoutStrategy(params=strat_params)
+            res = runner.run(dates=selected_dates, strategy=strat, symbols=symbols, timeframe=timeframe)
+
+        elif strategy_name == "ema-ribbon":
+            strat_params = {
+                "fast_ema": int(data.get("fast_ema", 9)),
+                "med_ema": int(data.get("med_ema", 21)),
+                "slow_ema": int(data.get("slow_ema", 50)),
+                "sl_pts": float(data.get("sl_pts", 15.0)),
+                "target_pts": float(data.get("target_pts", 30.0)),
+            }
+            strat = EmaRibbonStrategy(params=strat_params)
+            res = runner.run(dates=selected_dates, strategy=strat, symbols=symbols, timeframe=timeframe)
+
+        elif strategy_name == "bollinger-b":
+            strat_params = {
+                "period": int(data.get("bb_period", 20)),
+                "std_dev": float(data.get("bb_std", 2.0)),
+                "oversold_b": float(data.get("oversold_b", 0.05)),
+                "overbought_b": float(data.get("overbought_b", 0.95)),
+                "sl_pts": float(data.get("sl_pts", 15.0)),
+                "target_pts": float(data.get("target_pts", 30.0)),
+            }
+            strat = BollingerPercentBStrategy(params=strat_params)
+            res = runner.run(dates=selected_dates, strategy=strat, symbols=symbols, timeframe=timeframe)
+
+        elif strategy_name == "macd-accel":
+            strat_params = {
+                "fast_period": int(data.get("fast_period", 12)),
+                "slow_period": int(data.get("slow_period", 26)),
+                "signal_period": int(data.get("signal_period", 9)),
+                "sl_pts": float(data.get("sl_pts", 15.0)),
+                "target_pts": float(data.get("target_pts", 35.0)),
+            }
+            strat = MacdAccelerationStrategy(params=strat_params)
+            res = runner.run(dates=selected_dates, strategy=strat, symbols=symbols, timeframe=timeframe)
+
         elif strategy_name == "options":
             strat_params = {
                 "sl_points": float(data.get("sl_points", 12.0)),
@@ -256,12 +323,6 @@ def run_backtest():
         else:
             return jsonify({"status": "error", "message": f"Unknown strategy: {strategy_name}"}), 400
 
-        # Save to disk
-        out_json = os.path.join(RESULTS_DIR, "latest_backtest.json")
-        TradeExporter.export_json(res, out_json)
-        out_csv = os.path.join(RESULTS_DIR, "latest_trades.csv")
-        TradeExporter.export_csv(res["trades"], out_csv)
-
         # Convert Trade objects to serializable dicts
         trades_df = TradeExporter.to_dataframe(res["trades"])
         trades_list = trades_df.to_dict(orient="records") if not trades_df.empty else []
@@ -278,6 +339,14 @@ def run_backtest():
             "drawdown_curve": res["metrics"].get("drawdown_curve", []),
             "trades": trades_list
         }
+
+        # Save clean serializable JSON & CSV to disk
+        out_json = os.path.join(RESULTS_DIR, "latest_backtest.json")
+        with open(out_json, "w") as f:
+            json.dump(serializable_res, f, indent=2)
+
+        out_csv = os.path.join(RESULTS_DIR, "latest_trades.csv")
+        TradeExporter.export_csv(res["trades"], out_csv)
 
         latest_run_result = serializable_res
         return jsonify({

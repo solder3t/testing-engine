@@ -1,9 +1,12 @@
-// dashboard.js — Institutional Real-Data Dashboard Engine (BOT 2.0 Inspired)
+// dashboard.js — Real-Data Dashboard Engine
 // Strictly zero hardcoded data: all metrics, charts, and tables are generated from real databases.
 
 let equityChart = null;
 let dailyChart = null;
 let drawdownChart = null;
+let hourlyChart = null;
+let outcomeChart = null;
+let pnlDistChart = null;
 let allTrades = [];
 let filteredTrades = [];
 let currentSortColumn = "entry_time";
@@ -94,31 +97,55 @@ window.switchTab = switchTab;
 function initStrategySelector() {
   const select = document.getElementById("strategySelect");
   const eqGroup = document.getElementById("equityParams");
+  const orbGroup = document.getElementById("orbParams");
+  const stGroup = document.getElementById("supertrendParams");
+  const camGroup = document.getElementById("camarillaParams");
+  const ribbonGroup = document.getElementById("emaRibbonParams");
+  const bbBandsGroup = document.getElementById("bollingerBParams");
+  const macdGroup = document.getElementById("macdAccelParams");
   const vwapGroup = document.getElementById("vwapParams");
   const rsiGroup = document.getElementById("rsiParams");
   const optGroup = document.getElementById("optionsParams");
   const aiGroup = document.getElementById("aiParams");
 
   const hideAll = () => {
-    eqGroup.style.display = "none";
+    if (eqGroup) eqGroup.style.display = "none";
+    if (orbGroup) orbGroup.style.display = "none";
+    if (stGroup) stGroup.style.display = "none";
+    if (camGroup) camGroup.style.display = "none";
+    if (ribbonGroup) ribbonGroup.style.display = "none";
+    if (bbBandsGroup) bbBandsGroup.style.display = "none";
+    if (macdGroup) macdGroup.style.display = "none";
     if (vwapGroup) vwapGroup.style.display = "none";
     if (rsiGroup) rsiGroup.style.display = "none";
-    optGroup.style.display = "none";
-    aiGroup.style.display = "none";
+    if (optGroup) optGroup.style.display = "none";
+    if (aiGroup) aiGroup.style.display = "none";
   };
 
   select.addEventListener("change", () => {
     hideAll();
     const val = select.value;
-    if (val === "equity") {
+    if (val === "equity" && eqGroup) {
       eqGroup.style.display = "block";
+    } else if (val === "orb" && orbGroup) {
+      orbGroup.style.display = "block";
+    } else if (val === "supertrend" && stGroup) {
+      stGroup.style.display = "block";
+    } else if (val === "camarilla" && camGroup) {
+      camGroup.style.display = "block";
+    } else if (val === "ema-ribbon" && ribbonGroup) {
+      ribbonGroup.style.display = "block";
+    } else if (val === "bollinger-b" && bbBandsGroup) {
+      bbBandsGroup.style.display = "block";
+    } else if (val === "macd-accel" && macdGroup) {
+      macdGroup.style.display = "block";
     } else if (val === "vwap-reversion" && vwapGroup) {
       vwapGroup.style.display = "block";
     } else if (val === "rsi-momentum" && rsiGroup) {
       rsiGroup.style.display = "block";
-    } else if (val === "options") {
+    } else if (val === "options" && optGroup) {
       optGroup.style.display = "block";
-    } else if (val === "ai-replay") {
+    } else if (val === "ai-replay" && aiGroup) {
       aiGroup.style.display = "block";
     }
   });
@@ -454,6 +481,43 @@ async function runBacktest() {
     payload.min_score = parseInt(document.getElementById("minScoreInput").value) || 55;
     payload.atr_sl_mult = parseFloat(document.getElementById("atrSlInput").value) || 1.5;
     payload.symbols = document.getElementById("symbolsInput").value.split(",").map(s => s.trim()).filter(Boolean);
+  } else if (strat === "orb") {
+    payload.opening_minutes = parseInt(document.getElementById("orbMinutesInput").value) || 15;
+    payload.risk_reward = parseFloat(document.getElementById("orbRrInput").value) || 2.0;
+    payload.breakout_atr_mult = parseFloat(document.getElementById("orbAtrMultInput").value) || 1.0;
+    payload.symbols = document.getElementById("orbSymbolsInput").value.split(",").map(s => s.trim()).filter(Boolean);
+  } else if (strat === "supertrend") {
+    payload.atr_period = parseInt(document.getElementById("stAtrPeriodInput").value) || 10;
+    payload.multiplier = parseFloat(document.getElementById("stMultiplierInput").value) || 3.0;
+    payload.ema_filter = parseInt(document.getElementById("stEmaFilterInput").value) || 50;
+    payload.risk_reward = parseFloat(document.getElementById("stRrInput").value) || 2.0;
+    payload.symbols = document.getElementById("stSymbolsInput").value.split(",").map(s => s.trim()).filter(Boolean);
+  } else if (strat === "camarilla") {
+    payload.risk_reward = parseFloat(document.getElementById("camRrInput").value) || 2.0;
+    payload.sl_buffer_pts = parseFloat(document.getElementById("camBufferPtsInput").value) || 5.0;
+    payload.symbols = document.getElementById("camSymbolsInput").value.split(",").map(s => s.trim()).filter(Boolean);
+  } else if (strat === "ema-ribbon") {
+    payload.fast_ema = parseInt(document.getElementById("ribbonFastInput").value) || 9;
+    payload.med_ema = parseInt(document.getElementById("ribbonMedInput").value) || 21;
+    payload.slow_ema = parseInt(document.getElementById("ribbonSlowInput").value) || 50;
+    payload.sl_pts = parseFloat(document.getElementById("ribbonSlPtsInput").value) || 15.0;
+    payload.target_pts = parseFloat(document.getElementById("ribbonTgtPtsInput").value) || 30.0;
+    payload.symbols = document.getElementById("ribbonSymbolsInput").value.split(",").map(s => s.trim()).filter(Boolean);
+  } else if (strat === "bollinger-b") {
+    payload.bb_period = parseInt(document.getElementById("bbPeriodInput").value) || 20;
+    payload.bb_std = parseFloat(document.getElementById("bbStdDevInput").value) || 2.0;
+    payload.oversold_b = parseFloat(document.getElementById("bbOversoldInput").value) || 0.05;
+    payload.overbought_b = parseFloat(document.getElementById("bbOverboughtInput").value) || 0.95;
+    payload.sl_pts = parseFloat(document.getElementById("bbSlPtsInput").value) || 15.0;
+    payload.target_pts = parseFloat(document.getElementById("bbTgtPtsInput").value) || 30.0;
+    payload.symbols = document.getElementById("bbBandsSymbolsInput").value.split(",").map(s => s.trim()).filter(Boolean);
+  } else if (strat === "macd-accel") {
+    payload.fast_period = parseInt(document.getElementById("macdFastInput").value) || 12;
+    payload.slow_period = parseInt(document.getElementById("macdSlowInput").value) || 26;
+    payload.signal_period = parseInt(document.getElementById("macdSignalInput").value) || 9;
+    payload.sl_pts = parseFloat(document.getElementById("macdSlPtsInput").value) || 15.0;
+    payload.target_pts = parseFloat(document.getElementById("macdTgtPtsInput").value) || 35.0;
+    payload.symbols = document.getElementById("macdSymbolsInput").value.split(",").map(s => s.trim()).filter(Boolean);
   } else if (strat === "vwap-reversion") {
     payload.bb_period = parseInt(document.getElementById("vwapBbPeriodInput").value) || 20;
     payload.bb_std = parseFloat(document.getElementById("vwapBbStdInput").value) || 2.0;
@@ -565,10 +629,21 @@ function renderResults(raw) {
 
   chargesEl.innerText = `₹${(m.total_charges || 0.0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
 
-  // 2. Charts
-  renderEquityChart(m.equity_curve || []);
-  renderDailyChart(m.daily_pnls || []);
-  renderDrawdownChart(m.drawdown_curve || []);
+  // 2. Charts (6-Chart Quantitative Suite)
+  const equityCurve = data.equity_curve || m.equity_curve || [];
+  let dailyPnls = data.daily_breakdown || data.daily_pnls || m.daily_pnls || [];
+  if ((!dailyPnls || dailyPnls.length === 0) && (data.date || (allTrades.length > 0 && allTrades[0].exit_time))) {
+    const sessionDate = data.date || (allTrades[0].exit_time ? allTrades[0].exit_time.split(" ")[0] : "Session");
+    dailyPnls = [{ date: sessionDate, net_pnl: m.net_pnl || 0 }];
+  }
+  const drawdownCurve = m.drawdown_curve || data.drawdown_curve || [];
+
+  renderEquityChart(equityCurve);
+  renderDailyChart(dailyPnls);
+  renderDrawdownChart(drawdownCurve);
+  renderHourlyChart(allTrades);
+  renderOutcomeChart(m, allTrades);
+  renderPnlDistChart(allTrades);
 
   // 3. Trades Table & Trade Inspector
   filterAndRenderTrades();
@@ -767,6 +842,221 @@ function renderDrawdownChart(curve) {
           ticks: {
             color: "#64748b",
             callback: (v) => `${v.toFixed(1)}%`
+          },
+          grid: { color: "rgba(255,255,255,0.05)" }
+        }
+      }
+    }
+  });
+}
+
+function renderHourlyChart(trades) {
+  const canvas = document.getElementById("hourlyChart");
+  const placeholder = document.getElementById("hourlyPlaceholder");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  if (hourlyChart) hourlyChart.destroy();
+
+  if (!trades || trades.length === 0) {
+    if (placeholder) placeholder.style.display = "flex";
+    return;
+  }
+  if (placeholder) placeholder.style.display = "none";
+
+  const hourBuckets = {
+    "09:00": 0, "10:00": 0, "11:00": 0, "12:00": 0,
+    "13:00": 0, "14:00": 0, "15:00": 0
+  };
+
+  trades.forEach(t => {
+    if (!t.entry_time) return;
+    const timeStr = t.entry_time.split(" ").pop() || "";
+    const hourPart = timeStr.split(":")[0];
+    const key = `${hourPart.padStart(2, '0')}:00`;
+    if (hourBuckets[key] !== undefined) {
+      hourBuckets[key] += (t.net_pnl || 0);
+    } else {
+      hourBuckets[key] = (t.net_pnl || 0);
+    }
+  });
+
+  const labels = Object.keys(hourBuckets).sort();
+  const values = labels.map(k => Math.round(hourBuckets[k] * 100) / 100);
+  const colors = values.map(v => v >= 0 ? "#10b981" : "#ef4444");
+
+  hourlyChart = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: labels,
+      datasets: [{
+        label: "Hourly Net P&L (₹)",
+        data: values,
+        backgroundColor: colors,
+        borderRadius: 4
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: "rgba(10, 16, 28, 0.95)",
+          borderColor: "rgba(255, 255, 255, 0.1)",
+          borderWidth: 1,
+          callbacks: {
+            label: (ctx) => `Net P&L: ₹${ctx.parsed.y.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`
+          }
+        }
+      },
+      scales: {
+        x: { ticks: { color: "#64748b" }, grid: { display: false } },
+        y: {
+          ticks: {
+            color: "#64748b",
+            callback: (v) => `₹${v.toLocaleString("en-IN")}`
+          },
+          grid: { color: "rgba(255,255,255,0.05)" }
+        }
+      }
+    }
+  });
+}
+
+function renderOutcomeChart(m, trades) {
+  const canvas = document.getElementById("outcomeChart");
+  const placeholder = document.getElementById("outcomePlaceholder");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  if (outcomeChart) outcomeChart.destroy();
+
+  const total = (trades && trades.length) || m.total_trades || 0;
+  if (total === 0) {
+    if (placeholder) placeholder.style.display = "flex";
+    return;
+  }
+  if (placeholder) placeholder.style.display = "none";
+
+  let wins = m.wins || 0;
+  let losses = m.losses || 0;
+  let breakeven = 0;
+
+  if (trades && trades.length > 0) {
+    wins = trades.filter(t => (t.net_pnl || 0) > 0).length;
+    losses = trades.filter(t => (t.net_pnl || 0) < 0).length;
+    breakeven = trades.filter(t => (t.net_pnl || 0) === 0).length;
+  }
+
+  outcomeChart = new Chart(ctx, {
+    type: "doughnut",
+    data: {
+      labels: ["Winning Trades", "Losing Trades", "Breakeven"],
+      datasets: [{
+        data: [wins, losses, breakeven],
+        backgroundColor: ["#10b981", "#ef4444", "#64748b"],
+        borderWidth: 2,
+        borderColor: "rgba(10, 16, 28, 0.95)"
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: "68%",
+      plugins: {
+        legend: {
+          position: "bottom",
+          labels: { color: "#94a3b8", font: { family: "'JetBrains Mono', monospace", size: 11 }, padding: 14 }
+        },
+        tooltip: {
+          backgroundColor: "rgba(10, 16, 28, 0.95)",
+          borderColor: "rgba(255, 255, 255, 0.1)",
+          borderWidth: 1,
+          callbacks: {
+            label: (ctx) => {
+              const val = ctx.parsed;
+              const pct = total > 0 ? ((val / total) * 100).toFixed(1) : 0;
+              return `${ctx.label}: ${val} (${pct}%)`;
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
+function renderPnlDistChart(trades) {
+  const canvas = document.getElementById("pnlDistChart");
+  const placeholder = document.getElementById("pnlDistPlaceholder");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  if (pnlDistChart) pnlDistChart.destroy();
+
+  if (!trades || trades.length === 0) {
+    if (placeholder) placeholder.style.display = "flex";
+    return;
+  }
+  if (placeholder) placeholder.style.display = "none";
+
+  const pnls = trades.map(t => t.net_pnl || 0);
+  const minPnl = Math.min(...pnls);
+  const maxPnl = Math.max(...pnls);
+
+  const binCount = 6;
+  const range = (maxPnl - minPnl) || 100;
+  const binSize = range / binCount;
+
+  const binLabels = [];
+  const binCounts = new Array(binCount).fill(0);
+  const binColors = [];
+
+  for (let i = 0; i < binCount; i++) {
+    const low = minPnl + i * binSize;
+    const high = low + binSize;
+    const mid = (low + high) / 2;
+    binLabels.push(`₹${Math.round(low)}..₹${Math.round(high)}`);
+    binColors.push(mid >= 0 ? "#10b981" : "#ef4444");
+  }
+
+  pnls.forEach(p => {
+    let idx = Math.floor((p - minPnl) / binSize);
+    if (idx >= binCount) idx = binCount - 1;
+    if (idx < 0) idx = 0;
+    binCounts[idx]++;
+  });
+
+  pnlDistChart = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: binLabels,
+      datasets: [{
+        label: "Trade Frequency",
+        data: binCounts,
+        backgroundColor: binColors,
+        borderRadius: 4
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: "rgba(10, 16, 28, 0.95)",
+          borderColor: "rgba(255, 255, 255, 0.1)",
+          borderWidth: 1,
+          callbacks: {
+            label: (ctx) => `${ctx.parsed.y} trades in this return bin`
+          }
+        }
+      },
+      scales: {
+        x: { ticks: { color: "#64748b", font: { size: 10 } }, grid: { display: false } },
+        y: {
+          beginAtZero: true,
+          ticks: {
+            color: "#64748b",
+            precision: 0,
+            stepSize: 1
           },
           grid: { color: "rgba(255,255,255,0.05)" }
         }

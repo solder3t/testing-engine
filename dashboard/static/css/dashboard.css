@@ -1,6 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap');
 
-/* Bloomberg Terminal Dark Glassmorphism Theme (Institutional BOT 2.0 Style) */
+/* Terminal Dark Glassmorphism Theme */
 :root {
   --bg-dark: #070b14;
   --panel-bg: rgba(13, 20, 36, 0.75);
@@ -94,7 +94,7 @@ body {
   box-shadow: 0 0 8px var(--green);
 }
 
-/* ── Institutional Top Navigation Bar ───────────────────────────────────────── */
+/* ── Top Navigation Bar ───────────────────────────────────────────────────── */
 .nav-bar {
   display: flex;
   background: rgba(10, 16, 28, 0.9);
@@ -434,7 +434,7 @@ body {
   font-family: 'JetBrains Mono', monospace;
 }
 
-/* ── Institutional KPI Grid (Tab 2) ─────────────────────────────────────────── */
+/* ── KPI Grid (Tab 2) ──────────────────────────────────────────────────────── */
 .kpi-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
