@@ -108,6 +108,16 @@ let currentExplorerPath = "~/Downloads";
 let currentSelectedPath = "";
 let explorerRawItems = [];
 
+function openFileBrowser() {
+  const modal = document.getElementById("fileBrowserModal");
+  const dirInput = document.getElementById("dirInput");
+  if (!modal) return;
+  modal.style.display = "flex";
+  const startPath = (dirInput ? dirInput.value.trim() : "") || "~/Downloads";
+  browsePath(startPath);
+}
+window.openFileBrowser = openFileBrowser;
+
 function initFileBrowser() {
   const modal = document.getElementById("fileBrowserModal");
   const btnOpen = document.getElementById("btnBrowseDir");
@@ -120,17 +130,17 @@ function initFileBrowser() {
   const btnConfirm = document.getElementById("btnConfirmSelection");
   const dirInput = document.getElementById("dirInput");
 
-  if (!modal || !btnOpen) return;
+  if (!modal) return;
 
-  btnOpen.addEventListener("click", () => {
-    modal.style.display = "flex";
-    const startPath = dirInput.value.trim() || "~/Downloads";
-    browsePath(startPath);
-  });
+  if (btnOpen) {
+    btnOpen.addEventListener("click", openFileBrowser);
+  }
 
-  btnClose.addEventListener("click", () => {
-    modal.style.display = "none";
-  });
+  if (btnClose) {
+    btnClose.addEventListener("click", () => {
+      modal.style.display = "none";
+    });
+  }
 
   modal.addEventListener("click", (e) => {
     if (e.target === modal) modal.style.display = "none";
@@ -717,13 +727,13 @@ function filterAndRenderTrades() {
     tr.innerHTML = `
       <td>${timeShort}</td>
       <td style="font-weight: 600; color: #fff;">${t.symbol}</td>
-      <td style="color: ${t.side === "BUY" ? "var(--green)" : "var(--red)}; font-weight: 600;">${t.side}</td>
+      <td style="color: ${t.side === "BUY" ? "var(--green)" : "var(--red)"}; font-weight: 600;">${t.side}</td>
       <td>${t.qty}</td>
       <td>₹${(t.entry_price || 0).toFixed(2)}</td>
       <td>${t.exit_price ? "₹" + t.exit_price.toFixed(2) : "-"}</td>
-      <td style="color: ${(t.gross_pnl || 0) >= 0 ? "var(--green)" : "var(--red)};">₹${(t.gross_pnl || 0).toFixed(2)}</td>
+      <td style="color: ${(t.gross_pnl || 0) >= 0 ? "var(--green)" : "var(--red)"};">₹${(t.gross_pnl || 0).toFixed(2)}</td>
       <td style="color: var(--text-muted);">₹${(t.charges || 0).toFixed(2)}</td>
-      <td style="font-weight: 700; color: ${isWin ? "var(--green)" : "var(--red)};">
+      <td style="font-weight: 700; color: ${isWin ? "var(--green)" : "var(--red)"};">
         ${isWin ? "+" : ""}₹${(t.net_pnl || 0).toFixed(2)}
       </td>
       <td><span class="badge" style="font-size: 0.7rem; background: rgba(255,255,255,0.08);">${t.exit_reason || "-"}</span></td>

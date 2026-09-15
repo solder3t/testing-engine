@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Testing Engine // Advanced Strategy Testing Terminal</title>
-  <link rel="stylesheet" href="/static/css/dashboard.css">
+  <link rel="stylesheet" href="/static/css/dashboard.css?v=2.2">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
@@ -40,7 +40,7 @@
           <label for="dirInput">Archive or Directory Path:</label>
           <div style="display: flex; gap: 6px;">
             <input type="text" id="dirInput" value="~/Downloads" placeholder="Folder, .rar archive, or .db path" style="flex: 1;">
-            <button id="btnBrowseDir" class="btn-secondary" title="Open interactive file & folder selector" style="white-space: nowrap;">📁 Browse</button>
+            <button id="btnBrowseDir" onclick="openFileBrowser()" class="btn-secondary" title="Open interactive file & folder selector" style="white-space: nowrap;">📁 Browse</button>
             <button id="btnScanDir" class="btn-secondary" title="Scan directory for RARs or folders">Scan</button>
           </div>
           <div class="quick-chips">
@@ -381,6 +381,6 @@
     </div>
   </div>
 
-  <script src="/static/js/dashboard.js"></script>
+  <script src="/static/js/dashboard.js?v=2.2"></script>
 </body>
 </html>
