@@ -280,7 +280,12 @@ def run_backtest():
         }
 
         latest_run_result = serializable_res
-        return jsonify({"status": "success", "result": serializable_res})
+        return jsonify({
+            "status": "success",
+            "result": serializable_res,
+            "metrics": serializable_res["metrics"],
+            "trades": serializable_res["trades"]
+        })
     except Exception as e:
         logger.error(f"Backtest execution failure: {e}\n{traceback.format_exc()}")
         return jsonify({

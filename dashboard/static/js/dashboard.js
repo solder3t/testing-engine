@@ -489,9 +489,11 @@ async function runBacktest() {
 
     const data = await res.json();
     if (data.status === "success") {
-      status.innerText = `Simulation complete! Processed ${data.trades ? data.trades.length : 0} executed trades.`;
+      const payload = data.result || data;
+      const tradeCount = payload.trades ? payload.trades.length : 0;
+      status.innerText = `Simulation complete! Processed ${tradeCount} executed trades.`;
       status.style.color = "var(--green)";
-      renderResults(data);
+      renderResults(payload);
       // Auto-switch to Results & Analytics tab
       switchTab("tabAnalytics");
     } else {
@@ -513,8 +515,8 @@ async function loadLatestResults() {
   try {
     const res = await fetch("/api/results");
     const data = await res.json();
-    if (data.status === "success" && data.metrics) {
-      renderResults(data);
+    if (data.status === "success" && (data.result || data.metrics)) {
+      renderResults(data.result || data);
     }
   } catch (err) {
     // Fresh session, no latest run yet
@@ -522,7 +524,8 @@ async function loadLatestResults() {
 }
 
 // ── Render Results: Institutional KPIs, Charts, and Trades Table ─────────────
-function renderResults(data) {
+function renderResults(raw) {
+  const data = raw.result || raw;
   const m = data.metrics || {};
   allTrades = data.trades || [];
 
