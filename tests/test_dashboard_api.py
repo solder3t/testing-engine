@@ -110,3 +110,19 @@ def test_api_archives_single_file(client, tmp_path):
     assert len(data["archives"]) == 1
     assert data["archives"][0]["date"] == "2026_09_12"
     assert data["archives"][0]["name"] == "2026_09_12.rar"
+
+
+def test_institutional_tabs_and_inspector_rendered(client):
+    res = client.get("/")
+    assert res.status_code == 200
+    content = res.data.decode("utf-8")
+    assert "btnTabConsole" in content
+    assert "btnTabAnalytics" in content
+    assert "btnTabInspector" in content
+    assert "btnTabExplorer" in content
+    assert "tabConsole" in content
+    assert "tabAnalytics" in content
+    assert "tabInspector" in content
+    assert "tabExplorer" in content
+    assert "tradeInspectorCard" in content
+    assert "explorerSessionsGrid" in content
