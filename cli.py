@@ -419,7 +419,7 @@ def main():
     # compare command
     p_cmp = subparsers.add_parser("compare", help="Compare multiple strategies on identical data")
     p_cmp.add_argument("--dates", type=str, default="all", help="Target dates or 'all'")
-    p_cmp.add_argument("--strategies", type=str, default="equity,orb,supertrend,camarilla,ema-ribbon,bollinger-b", help="Comma-separated strategy keys")
+    p_cmp.add_argument("--strategies", type=str, default="equity,orb,supertrend,camarilla,ema-ribbon,bollinger-b,macd-accel,vwap-reversion,rsi-momentum,options,ai-replay", help="Comma-separated strategy keys")
     p_cmp.add_argument("--data-dir", type=str, default=DOWNLOADS_DIR, help="Path to archive/data directory")
     p_cmp.add_argument("--timeframe", type=str, default="1min", help="Bar timeframe")
     p_cmp.add_argument("--symbols", type=str, default="auto", help="Symbols or 'auto'")

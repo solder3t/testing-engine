@@ -442,7 +442,10 @@ def compare_strategies():
     if not selected_dates:
         return jsonify({"status": "error", "message": "No archive dates found to test"}), 400
 
-    strat_list = data.get("strategies", ["equity", "orb", "supertrend", "camarilla", "ema-ribbon", "bollinger-b"])
+    strat_list = data.get("strategies", [
+        "equity", "orb", "supertrend", "camarilla", "ema-ribbon", "bollinger-b",
+        "macd-accel", "vwap-reversion", "rsi-momentum", "options", "ai-replay"
+    ])
     capital = float(data.get("capital", DEFAULT_CAPITAL))
     risk_pct = float(data.get("risk_pct", DEFAULT_RISK_PCT_PER_TRADE))
     timeframe = data.get("timeframe", "1min")
