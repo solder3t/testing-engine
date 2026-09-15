@@ -37,12 +37,12 @@ class TradeExporter:
                 "target": t.target,
                 "gross_pnl": t.gross_pnl,
                 "charges": t.charges,
-                "charges_breakdown": t.metadata.get("charges_breakdown", {}),
+                "charges_breakdown": (t.metadata or {}).get("charges_breakdown", {}),
                 "net_pnl": t.net_pnl,
                 "pnl_pct": t.pnl_pct,
                 "holding_bars": t.holding_bars,
                 "status": t.status,
-                "metadata": t.metadata
+                "metadata": t.metadata or {}
             })
         return pd.DataFrame(records)
 

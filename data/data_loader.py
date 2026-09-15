@@ -30,6 +30,26 @@ class DataLoader:
         self.cache_dir = os.path.expanduser(cache_dir)
         self.source_dir = os.path.expanduser(source_dir) if source_dir else None
         self.archive_manager = archive_manager or ArchiveManager(downloads_dir=self.source_dir or DOWNLOADS_DIR, cache_dir=self.cache_dir)
+        self._connections: Dict[str, sqlite3.Connection] = {}
+
+    def _get_connection(self, db_path: str) -> sqlite3.Connection:
+        """Returns a cached read-only connection to the SQLite database."""
+        if db_path not in self._connections:
+            self._connections[db_path] = sqlite3.connect(
+                f"file:{db_path}?mode=ro",
+                uri=True,
+                check_same_thread=False
+            )
+        return self._connections[db_path]
+
+    def close(self):
+        """Closes all open cached SQLite connections."""
+        for conn in self._connections.values():
+            try:
+                conn.close()
+            except Exception:
+                pass
+        self._connections.clear()
 
     def _get_db_path(self, date_str: str, db_name: str) -> Optional[str]:
         return self.archive_manager.get_database_path(date_str, db_name, target_dir=self.source_dir)
@@ -43,7 +63,7 @@ class DataLoader:
             logger.warning(f"equities.db not found for {date_str}")
             return pd.DataFrame()
 
-        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        conn = self._get_connection(db_path)
         cur = conn.cursor()
 
         # Find matching table name: eq_{security_id}_{symbol}
@@ -58,18 +78,16 @@ class DataLoader:
 
         if not table_name:
             match = cur.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE ?", (f"eq_{security_id}_%",)
+                "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE ? LIMIT 1",
+                (f"eq_{security_id}_%",)
             ).fetchone()
             if match:
                 table_name = match[0]
 
         if not table_name:
-            conn.close()
             return pd.DataFrame()
 
-        query = f"SELECT * FROM \"{table_name}\" ORDER BY id ASC"
-        df = pd.read_sql_query(query, conn)
-        conn.close()
+        df = pd.read_sql_query(f"SELECT * FROM \"{table_name}\" ORDER BY id ASC", conn)
         return df
 
     def get_equity_ohlc(
@@ -96,7 +114,7 @@ class DataLoader:
         if not db_path:
             return pd.DataFrame()
 
-        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        conn = self._get_connection(db_path)
         cur = conn.cursor()
 
         table_name = None
@@ -111,11 +129,9 @@ class DataLoader:
             table_name = match[0]
 
         if not table_name:
-            conn.close()
             return pd.DataFrame()
 
         df = pd.read_sql_query(f"SELECT * FROM \"{table_name}\" ORDER BY id ASC", conn)
-        conn.close()
         return df
 
     def get_index_ohlc(self, date_str: str, identifier: str = "NIFTY", timeframe: str = "1min") -> pd.DataFrame:
@@ -133,14 +149,13 @@ class DataLoader:
         if not db_path:
             return pd.DataFrame()
 
-        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        conn = self._get_connection(db_path)
         if security_id is not None:
             query = "SELECT * FROM indicators_equity WHERE security_id=? ORDER BY calc_time ASC"
             df = pd.read_sql_query(query, conn, params=(security_id,))
         else:
             query = "SELECT * FROM indicators_equity ORDER BY calc_time ASC"
             df = pd.read_sql_query(query, conn)
-        conn.close()
         return df
 
     def get_market_indicators(self, date_str: str) -> pd.DataFrame:
@@ -149,9 +164,8 @@ class DataLoader:
         if not db_path:
             return pd.DataFrame()
 
-        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        conn = self._get_connection(db_path)
         df = pd.read_sql_query("SELECT * FROM indicators_market ORDER BY calc_time ASC", conn)
-        conn.close()
         return df
 
     # ── Real Execution Logs & AI Snapshots ────────────────────────────────────
@@ -162,9 +176,8 @@ class DataLoader:
         if not db_path:
             return pd.DataFrame()
 
-        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        conn = self._get_connection(db_path)
         df = pd.read_sql_query("SELECT * FROM ai_snapshots ORDER BY snapshot_time ASC", conn)
-        conn.close()
         return df
 
     def get_recorded_trades(self, date_str: str) -> pd.DataFrame:
@@ -173,9 +186,8 @@ class DataLoader:
         if not db_path:
             return pd.DataFrame()
 
-        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        conn = self._get_connection(db_path)
         df = pd.read_sql_query("SELECT * FROM trades ORDER BY entry_time ASC", conn)
-        conn.close()
         return df
 
     # ── Master Scrip Data ─────────────────────────────────────────────────────
@@ -186,7 +198,7 @@ class DataLoader:
         if not db_path:
             return pd.DataFrame()
 
-        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        conn = self._get_connection(db_path)
         df = pd.read_sql_query("SELECT * FROM equity_master", conn)
-        conn.close()
         return df
+

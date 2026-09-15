@@ -24,13 +24,15 @@ class MultiDayRunner:
         capital: float = DEFAULT_CAPITAL,
         risk_pct: float = DEFAULT_RISK_PCT_PER_TRADE,
         compound_capital: bool = True,
-        source_dir: Optional[str] = None
+        source_dir: Optional[str] = None,
+        parallel: bool = False
     ):
         self.source_dir = source_dir
         self.engine = engine or BacktestEngine(capital=capital, risk_pct=risk_pct, source_dir=source_dir)
         self.capital = capital
         self.risk_pct = risk_pct
         self.compound_capital = compound_capital
+        self.parallel = parallel
 
     def run(
         self,
@@ -41,12 +43,72 @@ class MultiDayRunner:
     ) -> Dict[str, Any]:
         """
         Runs the backtest across all specified dates in chronological order.
+        If parallel=True and compound_capital=False, runs independent sessions in parallel.
         """
         sorted_dates = sorted(dates)
         current_capital = self.capital
         all_closed_trades = []
         full_equity_curve = []
         daily_summaries = []
+
+        # Parallel path for independent sessions (compound_capital=False)
+        if self.parallel and not self.compound_capital and len(sorted_dates) > 1:
+            from concurrent.futures import ThreadPoolExecutor
+
+            def _run_single_day(d_str: str):
+                p = Portfolio(
+                    initial_capital=self.capital,
+                    risk_pct_per_trade=self.risk_pct,
+                    simulator=self.engine.simulator
+                )
+                return d_str, self.engine.run_session(
+                    date_str=d_str,
+                    strategy=strategy,
+                    symbols=symbols,
+                    portfolio=p,
+                    timeframe=timeframe
+                )
+
+            max_workers = min(len(sorted_dates), 8)
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                parallel_results = list(executor.map(_run_single_day, sorted_dates))
+
+            # Maintain strict chronological ordering
+            parallel_results.sort(key=lambda x: x[0])
+            for d, session_res in parallel_results:
+                day_trades = session_res["trades"]
+                all_closed_trades.extend(day_trades)
+                full_equity_curve.extend(session_res["equity_curve"])
+
+                m = session_res["metrics"]
+                daily_summaries.append({
+                    "date": d,
+                    "trades_count": m["total_trades"],
+                    "win_rate": m["win_rate"],
+                    "gross_pnl": m["gross_pnl"],
+                    "charges": m["total_charges"],
+                    "net_pnl": m["net_pnl"],
+                    "ending_equity": session_res["final_equity"]
+                })
+                current_capital = session_res["final_equity"]
+
+            overall_metrics = calculate_performance_metrics(
+                trades=all_closed_trades,
+                initial_capital=self.capital,
+                equity_curve=full_equity_curve
+            )
+
+            return {
+                "strategy": strategy.name,
+                "dates_tested": sorted_dates,
+                "source_directory": self.source_dir,
+                "initial_capital": self.capital,
+                "final_equity": round(current_capital, 2),
+                "metrics": overall_metrics,
+                "daily_breakdown": daily_summaries,
+                "trades": all_closed_trades,
+                "equity_curve": full_equity_curve
+            }
 
         portfolio = Portfolio(
             initial_capital=current_capital,
@@ -58,6 +120,7 @@ class MultiDayRunner:
             logger.info(f"Running backtest for session {d}...")
             # Reset daily P&L counter each session so intraday risk limits work correctly
             portfolio.daily_pnl = 0.0
+
             if not self.compound_capital:
                 # Reset portfolio per day
                 portfolio = Portfolio(

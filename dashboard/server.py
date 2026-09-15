@@ -451,7 +451,7 @@ def compare_strategies():
     for s_name in strat_list:
         try:
             strat, strat_symbols = create_strategy_instance(s_name, data, symbols)
-            runner = MultiDayRunner(capital=capital, risk_pct=risk_pct, source_dir=source_dir, compound_capital=False)
+            runner = MultiDayRunner(capital=capital, risk_pct=risk_pct, source_dir=source_dir, compound_capital=False, parallel=True)
             res = runner.run(dates=selected_dates, strategy=strat, symbols=strat_symbols, timeframe=timeframe)
             m = res["metrics"]
             comparison_results.append({

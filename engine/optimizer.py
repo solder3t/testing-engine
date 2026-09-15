@@ -2,7 +2,7 @@
 engine/optimizer.py — Grid Search Parameter Optimizer for Strategies.
 """
 
-from typing import List, Dict, Any, Type
+from typing import List, Dict, Any, Type, Optional
 import itertools
 import logging
 

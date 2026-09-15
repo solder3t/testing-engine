@@ -54,3 +54,26 @@ ENABLE_DEPTH_SLIPPAGE = True          # Use L2/L3 order book depth if available
 # ── Dashboard Server ──────────────────────────────────────────────────────────
 DASHBOARD_HOST = "0.0.0.0"
 DASHBOARD_PORT = 5690
+
+
+def validate_config():
+    """Validates configuration parameters and environment variables against valid bounds."""
+    errors = []
+    if DEFAULT_CAPITAL <= 0:
+        errors.append(f"DEFAULT_CAPITAL must be positive, got {DEFAULT_CAPITAL}")
+    if not (0.0 < DEFAULT_RISK_PCT_PER_TRADE <= 0.50):
+        errors.append(f"DEFAULT_RISK_PCT_PER_TRADE must be in (0.0, 0.50], got {DEFAULT_RISK_PCT_PER_TRADE}")
+    if MAX_POSITIONS <= 0:
+        errors.append(f"MAX_POSITIONS must be >= 1, got {MAX_POSITIONS}")
+    if MAX_QTY_PER_TRADE <= 0:
+        errors.append(f"MAX_QTY_PER_TRADE must be >= 1, got {MAX_QTY_PER_TRADE}")
+    if MIN_RR_RATIO <= 0:
+        errors.append(f"MIN_RR_RATIO must be positive, got {MIN_RR_RATIO}")
+    if TRADING_START >= TRADING_END:
+        errors.append(f"TRADING_START ({TRADING_START}) must precede TRADING_END ({TRADING_END})")
+    if errors:
+        raise ValueError("Testing Engine configuration validation failed:\n" + "\n".join(errors))
+
+
+validate_config()
+
