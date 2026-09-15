@@ -56,6 +56,8 @@ class MultiDayRunner:
 
         for d in sorted_dates:
             logger.info(f"Running backtest for session {d}...")
+            # Reset daily P&L counter each session so intraday risk limits work correctly
+            portfolio.daily_pnl = 0.0
             if not self.compound_capital:
                 # Reset portfolio per day
                 portfolio = Portfolio(

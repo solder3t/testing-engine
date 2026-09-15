@@ -215,20 +215,12 @@ class Portfolio:
                 continue
 
             # ── Check Target and SL Hits ──────────────────────────────────────
+            # Conservative bar-ambiguity rule: if both SL and target are breached
+            # within the same bar, SL is assumed to have triggered first.
             closed = False
             if trade.side == OrderSide.BUY:
-                # 1. Target Hit
-                if curr_high >= trade.target:
-                    exit_price = trade.target
-                    exit_charges_dict = self.simulator.calculate_charges(
-                        OrderSide.SELL, exit_price, trade.qty, trade.instrument_type
-                    )
-                    exit_charges = exit_charges_dict["total"]
-                    self._finalize_trade_charges(trade, exit_charges_dict)
-                    trade.close(timestamp, exit_price, "TARGET_HIT", trade.charges + exit_charges)
-                    closed = True
-                # 2. Stop Loss Hit
-                elif curr_low <= trade.current_sl:
+                # 1. Stop Loss Hit — checked BEFORE target to avoid optimistic bias
+                if curr_low <= trade.current_sl:
                     exit_price = trade.current_sl
                     exit_charges_dict = self.simulator.calculate_charges(
                         OrderSide.SELL, exit_price, trade.qty, trade.instrument_type
@@ -236,6 +228,16 @@ class Portfolio:
                     exit_charges = exit_charges_dict["total"]
                     self._finalize_trade_charges(trade, exit_charges_dict)
                     trade.close(timestamp, exit_price, "SL_HIT", trade.charges + exit_charges)
+                    closed = True
+                # 2. Target Hit — only if SL was NOT also hit on same bar
+                elif curr_high >= trade.target:
+                    exit_price = trade.target
+                    exit_charges_dict = self.simulator.calculate_charges(
+                        OrderSide.SELL, exit_price, trade.qty, trade.instrument_type
+                    )
+                    exit_charges = exit_charges_dict["total"]
+                    self._finalize_trade_charges(trade, exit_charges_dict)
+                    trade.close(timestamp, exit_price, "TARGET_HIT", trade.charges + exit_charges)
                     closed = True
                 # 3. Trailing / Breakeven SL Update
                 else:
@@ -247,18 +249,8 @@ class Portfolio:
                             trade.trailing_sl = trade.entry_price
 
             else:  # SELL
-                # 1. Target Hit
-                if curr_low <= trade.target:
-                    exit_price = trade.target
-                    exit_charges_dict = self.simulator.calculate_charges(
-                        OrderSide.BUY, exit_price, trade.qty, trade.instrument_type
-                    )
-                    exit_charges = exit_charges_dict["total"]
-                    self._finalize_trade_charges(trade, exit_charges_dict)
-                    trade.close(timestamp, exit_price, "TARGET_HIT", trade.charges + exit_charges)
-                    closed = True
-                # 2. Stop Loss Hit
-                elif curr_high >= trade.current_sl:
+                # 1. Stop Loss Hit — checked BEFORE target to avoid optimistic bias
+                if curr_high >= trade.current_sl:
                     exit_price = trade.current_sl
                     exit_charges_dict = self.simulator.calculate_charges(
                         OrderSide.BUY, exit_price, trade.qty, trade.instrument_type
@@ -267,6 +259,16 @@ class Portfolio:
                     self._finalize_trade_charges(trade, exit_charges_dict)
                     trade.close(timestamp, exit_price, "SL_HIT", trade.charges + exit_charges)
                     closed = True
+                # 2. Target Hit — only if SL was NOT also hit on same bar
+                elif curr_low <= trade.target:
+                    exit_price = trade.target
+                    exit_charges_dict = self.simulator.calculate_charges(
+                        OrderSide.BUY, exit_price, trade.qty, trade.instrument_type
+                    )
+                    exit_charges = exit_charges_dict["total"]
+                    self._finalize_trade_charges(trade, exit_charges_dict)
+                    trade.close(timestamp, exit_price, "TARGET_HIT", trade.charges + exit_charges)
+                    closed = True
                 # 3. Trailing / Breakeven SL Update
                 else:
                     initial_risk = trade.initial_sl - trade.entry_price
@@ -274,6 +276,7 @@ class Portfolio:
                         if trade.current_sl > trade.entry_price:
                             trade.current_sl = trade.entry_price
                             trade.trailing_sl = trade.entry_price
+
 
             if closed:
                 self.capital += trade.net_pnl

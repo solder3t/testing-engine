@@ -148,3 +148,10 @@ def test_tabs_and_inspector_rendered(client):
     assert 'value="ema-ribbon"' in content
     assert 'value="bollinger-b"' in content
     assert 'value="macd-accel"' in content
+
+    # New KPI cards verification (Sprint 1 additions)
+    assert "kpiCalmar" in content
+    assert "kpiMaxWinStreak" in content
+    assert "kpiMaxLossStreak" in content
+    assert "kpiBreakeven" in content
+    assert "0W / 0L / 0BE" in content

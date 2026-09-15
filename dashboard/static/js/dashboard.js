@@ -602,9 +602,14 @@ function renderResults(raw) {
   const expEl = document.getElementById("kpiExpectancy");
   const sharpeEl = document.getElementById("kpiSharpe");
   const sortinoEl = document.getElementById("kpiSortino");
+  const calmarEl = document.getElementById("kpiCalmar");
+  const calmarSubEl = document.getElementById("kpiCalmarSub");
   const maxDDEl = document.getElementById("kpiMaxDD");
   const maxDDRsEl = document.getElementById("kpiMaxDDRs");
+  const maxWinStreakEl = document.getElementById("kpiMaxWinStreak");
+  const maxLossStreakEl = document.getElementById("kpiMaxLossStreak");
   const chargesEl = document.getElementById("kpiCharges");
+  const breakevenEl = document.getElementById("kpiBreakeven");
 
   const netPnl = m.net_pnl || 0.0;
   const isProfit = netPnl >= 0;
@@ -616,7 +621,8 @@ function renderResults(raw) {
   returnEl.style.color = isProfit ? "var(--green)" : "var(--red)";
 
   winRateEl.innerText = `${(m.win_rate || 0.0).toFixed(1)}%`;
-  tradesCountEl.innerText = `${m.total_trades || 0} trades (${m.wins || 0}W / ${m.losses || 0}L)`;
+  const be = m.breakeven_count || 0;
+  tradesCountEl.innerText = `${m.total_trades || 0} trades (${m.wins || 0}W / ${m.losses || 0}L / ${be}BE)`;
 
   pfEl.innerText = (m.profit_factor || 0.0).toFixed(2);
   expEl.innerText = `Exp: ₹${(m.expectancy || 0.0).toFixed(2)}`;
@@ -624,10 +630,23 @@ function renderResults(raw) {
   sharpeEl.innerText = (m.sharpe_ratio || 0.0).toFixed(2);
   sortinoEl.innerText = `Sortino: ${(m.sortino_ratio || 0.0).toFixed(2)}`;
 
+  // Calmar Ratio
+  const calmarVal = m.calmar_ratio || 0.0;
+  calmarEl.innerText = calmarVal.toFixed(2);
+  calmarEl.className = `kpi-value ${calmarVal >= 1.0 ? "pos" : calmarVal > 0 ? "" : "neg"}`;
+  calmarSubEl.innerText = `Return ${retPct >= 0 ? "+" : ""}${retPct.toFixed(2)}% / DD ${(m.max_drawdown_pct || 0.0).toFixed(2)}%`;
+
   maxDDEl.innerText = `${(m.max_drawdown_pct || 0.0).toFixed(2)}%`;
   maxDDRsEl.innerText = `₹${(m.max_drawdown_rs || 0.0).toLocaleString("en-IN", { minimumFractionDigits: 2 })} peak-to-trough`;
 
+  // Streak cards
+  const mxWins = m.max_consecutive_wins || 0;
+  const mxLoss = m.max_consecutive_losses || 0;
+  maxWinStreakEl.innerText = `${mxWins} consecutive win${mxWins !== 1 ? "s" : ""}`;
+  maxLossStreakEl.innerText = `${mxLoss} consecutive loss${mxLoss !== 1 ? "es" : ""}`;
+
   chargesEl.innerText = `₹${(m.total_charges || 0.0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
+  breakevenEl.innerText = `${be} breakeven trade${be !== 1 ? "s" : ""} · STT, GST, Exchange, SEBI`;
 
   // 2. Charts (6-Chart Quantitative Suite)
   const equityCurve = data.equity_curve || m.equity_curve || [];
