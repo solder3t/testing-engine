@@ -1,0 +1,31 @@
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Testing & linting caches
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local databases & extracted caches (Do NOT commit multi-gigabyte data dumps)
+data_cache/
+*.db
+*.db-wal
+*.db-shm
+*.rar
+*.zip
+
+# Generated results & logs
+results/*.json
+results/*.csv
+!results/.gitkeep
+*.log
+
+# Environments & OS files
+.env
+.venv
+env/
+venv/
+.DS_Store
