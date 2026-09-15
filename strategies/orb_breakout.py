@@ -54,12 +54,11 @@ class OrbBreakoutStrategy(BaseStrategy):
         context: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
         time_part = timestamp.split(" ")[-1] if " " in timestamp else timestamp
-        market_open = "09:15"
-        if not (market_open <= time_part <= TRADING_END):
+        if not (TRADING_START <= time_part <= TRADING_END):
             return []
 
         mins_now = self._parse_minute_of_day(time_part)
-        market_open_mins = self._parse_minute_of_day(market_open)
+        market_open_mins = self._parse_minute_of_day(TRADING_START)
         orb_cutoff_mins = market_open_mins + int(self.params["opening_minutes"])
 
         signals = []

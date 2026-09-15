@@ -480,7 +480,9 @@ async function runBacktest() {
   if (strat === "equity") {
     payload.min_score = parseInt(document.getElementById("minScoreInput").value) || 55;
     payload.atr_sl_mult = parseFloat(document.getElementById("atrSlInput").value) || 1.5;
-    payload.symbols = document.getElementById("symbolsInput").value.split(",").map(s => s.trim()).filter(Boolean);
+    const symRaw = document.getElementById("symbolsInput").value.trim().toLowerCase();
+    payload.symbols = symRaw === "auto" ? ["auto"] : symRaw.toUpperCase().split(",").map(s => s.trim()).filter(Boolean);
+
   } else if (strat === "orb") {
     payload.opening_minutes = parseInt(document.getElementById("orbMinutesInput").value) || 15;
     payload.risk_reward = parseFloat(document.getElementById("orbRrInput").value) || 2.0;

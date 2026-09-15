@@ -69,12 +69,21 @@ class Portfolio:
     ) -> int:
         """
         Calculates position size strictly bounded by risk-per-trade.
+
+        Uses effective capital (realized cash + unrealized P&L from open positions)
+        so that ongoing losing trades reduce the available risk budget for new entries.
         """
         risk_per_unit = abs(entry_price - stop_loss)
         if risk_per_unit <= 0:
             return lot_size
 
-        risk_capital = self.capital * self.risk_pct_per_trade
+        # Effective capital includes unrealized P&L from open trades (from last equity snapshot)
+        # Falls back to realized capital if no equity points recorded yet
+        effective_capital = (
+            self.equity_curve[-1]["equity"] if self.equity_curve else self.capital
+        )
+
+        risk_capital = effective_capital * self.risk_pct_per_trade
 
         # Score scaling
         if score >= 80:

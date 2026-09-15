@@ -121,16 +121,19 @@ def calculate_bollinger_bands(series, period=20, std_dev=2.0):
     - lower: Lower band (SMA - 2*SD)
     - percent_b: %B position of price within bands (0=lower, 0.5=middle, 1=upper)
     - bandwidth: Band width as % of middle band (squeeze detector — low = compression)
+
+    NOTE: First (period-1) bars produce upper=lower=sma (std undefined), so
+    percent_b=0.5 (neutral). Strategies should only act after len(bars) >= period.
     """
-    sma = series.rolling(window=period, min_periods=1).mean()
-    std = series.rolling(window=period, min_periods=1).std().fillna(0)
+    sma = series.rolling(window=period, min_periods=period).mean()
+    std = series.rolling(window=period, min_periods=period).std().fillna(0)
 
     upper = sma + (std_dev * std)
     lower = sma - (std_dev * std)
 
     band_range = (upper - lower).replace(0, np.nan)
     percent_b = (series - lower) / band_range
-    bandwidth = (band_range / sma) * 100
+    bandwidth = (band_range / sma.replace(0, np.nan)) * 100
 
     return pd.DataFrame({
         "upper":     upper,
@@ -139,6 +142,7 @@ def calculate_bollinger_bands(series, period=20, std_dev=2.0):
         "percent_b": percent_b.fillna(0.5),
         "bandwidth": bandwidth.fillna(0)
     })
+
 
 
 def calculate_supertrend(df, period=10, multiplier=3.0):

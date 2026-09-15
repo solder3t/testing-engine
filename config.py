@@ -31,7 +31,7 @@ MAX_QTY_PER_TRADE = int(os.getenv("MAX_QTY_PER_TRADE", "500"))
 MIN_RR_RATIO = float(os.getenv("MIN_RR_RATIO", "1.5"))
 
 # ── Session Timings (IST) ─────────────────────────────────────────────────────
-TRADING_START = "09:30"
+TRADING_START = "09:15"   # NSE market open (was incorrectly "09:30")
 TRADING_END = "15:00"
 FORCE_SQUARE_OFF_TIME = "15:15"
 EXPIRY_CUTOFF_TIME = "13:00"

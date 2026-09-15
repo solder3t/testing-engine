@@ -56,7 +56,8 @@ class BacktestEngine:
         )
 
         # 1. Resolve symbols to test
-        target_symbols = symbols or ["RELIANCE", "HDFCBANK", "INFY", "ICICIBANK", "TCS"]
+        # 'auto' mode: discover all available equities from equity_master for this date
+        auto_discover = (symbols is None) or (symbols == ["auto"])
 
         # 2. Load instrument OHLC data
         ohlc_map: Dict[str, pd.DataFrame] = {}
@@ -68,12 +69,18 @@ class BacktestEngine:
             ohlc_map["NIFTY"] = df_nifty
             symbol_meta["NIFTY"] = {"security_id": 13, "sector": "Index"}
 
-        # Load VIX for filter
+        # Load VIX for volatility filter
         df_vix = self.data_loader.get_index_ohlc(date_str, "INDIA_VIX", timeframe=timeframe)
         vix_series = {}
-        if not df_vix.empty:
+        vix_available = not df_vix.empty
+        if vix_available:
             for _, r in df_vix.iterrows():
                 vix_series[str(r["timestamp"])] = float(r["close"])
+        else:
+            logger.warning(
+                f"[{date_str}] INDIA_VIX data not found — VIX filter will use fallback 15.0. "
+                "Strategies relying on vix_available=False should gate their VIX logic."
+            )
 
         # Load Equities
         # First check equity_master for security_ids
@@ -85,6 +92,14 @@ class BacktestEngine:
                     "security_id": int(r["security_id"]),
                     "sector": str(r.get("sector") or "Other")
                 }
+
+        if auto_discover and master_lookup:
+            # Universe mode: use all symbols present in equity_master (capped at 20 to avoid perf issues)
+            # Sort by security_id for determinism; user can pass explicit list to override
+            target_symbols = sorted(master_lookup.keys())[:20]
+            logger.info(f"[{date_str}] Auto-discovered {len(target_symbols)} symbols from equity_master")
+        else:
+            target_symbols = symbols or ["RELIANCE", "HDFCBANK", "INFY", "ICICIBANK", "TCS"]
 
         for sym in target_symbols:
             meta = master_lookup.get(sym, {"security_id": 0, "sector": "Other"})
@@ -134,6 +149,7 @@ class BacktestEngine:
             "ohlc_data": ohlc_map,
             "metadata": symbol_meta,
             "current_vix": 15.0,
+            "vix_available": vix_available,   # False → VIX is the 15.0 fallback, gate your VIX logic
             "data_loader": self.data_loader,
             "option_loader": self.option_loader,
             "source_dir": self.source_dir
