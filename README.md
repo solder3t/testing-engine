@@ -126,5 +126,6 @@ Open `http://localhost:5690` in any web browser.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the GNU General Public License v3.0 (GPLv3) - see the [LICENSE](LICENSE) file for details.  
+Copyright (C) 2026 solder3t.
 
