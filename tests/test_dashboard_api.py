@@ -83,6 +83,38 @@ def test_api_results_and_run(client):
     assert "text/csv" in res_csv.content_type
 
 
+def test_api_run_stream(client):
+    payload = {
+        "dates": ["2026_09_11"],
+        "strategy": "options",
+        "timeframe": "1min",
+        "capital": 250000.0,
+        "risk_pct": 0.01
+    }
+    res = client.post("/api/run/stream", json=payload)
+    assert res.status_code == 200
+    assert "text/event-stream" in res.content_type
+    raw_data = res.data.decode("utf-8")
+    assert "data: " in raw_data
+    assert '"type": "complete"' in raw_data
+
+
+def test_api_compare(client):
+    payload = {
+        "dates": ["2026_09_11"],
+        "strategies": ["options", "orb"],
+        "capital": 250000.0
+    }
+    res = client.post("/api/compare", json=payload)
+    assert res.status_code == 200
+    data = res.get_json()
+    assert data["status"] == "success"
+    assert "comparison" in data
+    assert len(data["comparison"]) == 2
+    assert data["comparison"][0]["strategy_key"] == "options"
+    assert "metrics" in data["comparison"][0]
+
+
 def test_api_browse_filesystem(client, tmp_path):
     sub = tmp_path / "market_session_2026_09_02"
     sub.mkdir()

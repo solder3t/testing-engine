@@ -416,11 +416,25 @@
             <input type="number" id="trailingSlInput" value="1.0" step="0.1">
           </div>
 
-          <!-- Action Button -->
+          <!-- Action Buttons -->
           <div style="margin-top: 16px;">
-            <button id="btnRun" class="btn-run" style="width: 100%; height: 44px; font-size: 0.95rem;">⚡ RUN BACKTEST</button>
+            <div style="display: flex; gap: 8px;">
+              <button id="btnRun" class="btn-run" style="flex: 2; height: 44px; font-size: 0.95rem;">⚡ RUN BACKTEST</button>
+              <button id="btnCompare" class="btn-secondary" style="flex: 1; height: 44px; font-size: 0.85rem;" title="Compare all strategies on selected dates">⚖️ COMPARE</button>
+            </div>
+            <!-- Live Streaming Progress Bar -->
+            <div id="runProgressContainer" style="display: none; margin-top: 10px;">
+              <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px;">
+                <span id="runProgressLabel">Simulating...</span>
+                <span id="runProgressPct">0%</span>
+              </div>
+              <div class="progress-bar-bg" style="width: 100%; height: 6px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden;">
+                <div id="runProgressBar" style="width: 0%; height: 100%; background: linear-gradient(90deg, var(--accent-cyan), var(--green)); transition: width 0.2s ease;"></div>
+              </div>
+            </div>
             <div id="runStatus" class="run-status" style="margin-top: 8px;"></div>
           </div>
+
         </div>
 
       </div>
@@ -564,6 +578,52 @@
           </div>
         </div>
       </section>
+
+      <!-- Section: Multi-Strategy Comparison Matrix & Overlay -->
+      <div id="compareSection" style="display: none; margin-top: 24px;">
+        <div class="card" style="margin-bottom: 16px;">
+          <div class="card-header-row" style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <h3 style="color: #fff; font-size: 1.05rem; margin: 0;">⚖️ Multi-Strategy Performance Comparison</h3>
+              <p style="color: var(--text-muted); font-size: 0.8rem; margin: 4px 0 0 0;">
+                Side-by-side benchmark across strategies tested on the same market sessions.
+              </p>
+            </div>
+            <span class="chart-badge" style="color: var(--accent-cyan);">Institutional Matrix</span>
+          </div>
+          <div class="table-wrap" style="margin-top: 12px; overflow-x: auto;">
+            <table id="compareTable" style="width: 100%;">
+              <thead>
+                <tr>
+                  <th>Strategy</th>
+                  <th>Trades</th>
+                  <th>Win Rate</th>
+                  <th>Profit Factor</th>
+                  <th>Sharpe</th>
+                  <th>Sortino</th>
+                  <th>Calmar</th>
+                  <th>Max DD %</th>
+                  <th>Net P&L (₹)</th>
+                  <th>Return %</th>
+                </tr>
+              </thead>
+              <tbody id="compareBody">
+                <!-- Dynamically populated -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="chart-card">
+          <div class="chart-header-row">
+            <h3>Multi-Strategy Equity Comparison (₹)</h3>
+            <span class="chart-badge">Overlay Chart</span>
+          </div>
+          <div class="chart-container" style="height: 340px;">
+            <canvas id="compareChart"></canvas>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- ── TAB 3: TRADE INSPECTOR & LOG ────────────────────────────────────── -->
@@ -574,16 +634,21 @@
           <button class="filter-pill active" data-filter="all">All Trades</button>
           <button class="filter-pill" data-filter="win">🟢 Wins Only</button>
           <button class="filter-pill" data-filter="loss">🔴 Losses Only</button>
+          <button class="filter-pill" data-filter="breakeven">⚪ Breakeven</button>
           <button class="filter-pill" data-filter="buy">Longs (BUY)</button>
           <button class="filter-pill" data-filter="sell">Shorts (SELL)</button>
         </div>
 
-        <div style="display: flex; gap: 10px; align-items: center;">
+        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+          <select id="tradeSymbolFilter" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; color: #fff; height: 34px; padding: 0 10px; font-size: 0.8rem;">
+            <option value="">All Symbols</option>
+          </select>
           <span id="tradesCountBadge" class="trades-count-badge">0 trades</span>
-          <input type="text" id="tradeSearchInput" placeholder="Filter by symbol, reason, side, date..." class="search-input" style="width: 260px;">
+          <input type="text" id="tradeSearchInput" placeholder="Filter by symbol, reason, side, date..." class="search-input" style="width: 240px;">
           <button id="btnExportCsv" class="btn-export">📥 Export CSV</button>
         </div>
       </div>
+
 
       <!-- Split Layout: Trades Table on Left, Dedicated Inspector on Right -->
       <div class="inspector-split-layout">
@@ -726,6 +791,6 @@
     </div>
   </div>
 
-  <script src="/static/js/dashboard.js?v=2.5"></script>
+  <script src="/static/js/dashboard.js?v=3.0"></script>
 </body>
 </html>

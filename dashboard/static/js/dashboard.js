@@ -29,6 +29,10 @@ document.addEventListener("DOMContentLoaded", () => {
   loadLatestResults();
 
   document.getElementById("btnRun").addEventListener("click", runBacktest);
+  const btnCompare = document.getElementById("btnCompare");
+  if (btnCompare) {
+    btnCompare.addEventListener("click", runComparison);
+  }
   document.getElementById("btnExportCsv").addEventListener("click", () => {
     window.location.href = "/api/export_csv";
   });
@@ -542,39 +546,115 @@ async function runBacktest() {
 
   btn.disabled = true;
   btn.innerText = "⏳ SIMULATING...";
-  status.innerText = `Replaying real recorded ticks for [${selectedDates.join(", ")}]...`;
+  status.innerText = `Connecting session stream for [${selectedDates.join(", ")}]...`;
   status.style.color = "var(--accent-cyan)";
   if (headerStatus) headerStatus.innerText = "BACKTEST RUNNING";
 
+  const progressBox = document.getElementById("runProgressContainer");
+  const progressBar = document.getElementById("runProgressBar");
+  const progressLabel = document.getElementById("runProgressLabel");
+  const progressPct = document.getElementById("runProgressPct");
+
+  if (progressBox) {
+    progressBox.style.display = "block";
+    if (progressBar) progressBar.style.width = "0%";
+    if (progressLabel) progressLabel.innerText = `Starting replay for ${selectedDates.length} session(s)...`;
+    if (progressPct) progressPct.innerText = "0%";
+  }
+
+  let streamSucceeded = false;
+
   try {
-    const res = await fetch("/api/run", {
+    const res = await fetch("/api/run/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
     });
 
-    const data = await res.json();
-    if (data.status === "success") {
-      const payload = data.result || data;
-      const tradeCount = payload.trades ? payload.trades.length : 0;
-      status.innerText = `Simulation complete! Processed ${tradeCount} executed trades.`;
-      status.style.color = "var(--green)";
-      renderResults(payload);
-      // Auto-switch to Results & Analytics tab
-      switchTab("tabAnalytics");
-    } else {
-      status.innerText = `Error: ${data.message}`;
+    if (res.ok && res.body && window.ReadableStream) {
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let buffer = "";
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop(); // keep trailing incomplete chunk
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith("data:")) continue;
+          const jsonStr = trimmed.slice(5).trim();
+          try {
+            const event = JSON.parse(jsonStr);
+            if (event.type === "progress") {
+              const pct = Math.round((event.day / event.total) * 100);
+              if (progressBar) progressBar.style.width = `${pct}%`;
+              if (progressPct) progressPct.innerText = `${pct}%`;
+              if (progressLabel) {
+                progressLabel.innerText = `Session ${event.day}/${event.total} (${event.date}) · Trades: ${event.trades} · Day P&L: ₹${event.net_pnl}`;
+              }
+              status.innerText = `Replaying session ${event.day}/${event.total} [${event.date}] · Trades: ${event.trades} · Day P&L: ₹${event.net_pnl}`;
+            } else if (event.type === "complete") {
+              streamSucceeded = true;
+              const resultPayload = event.result;
+              const tradeCount = resultPayload.trades ? resultPayload.trades.length : 0;
+              if (progressBar) progressBar.style.width = "100%";
+              if (progressPct) progressPct.innerText = "100%";
+              status.innerText = `Simulation complete! Processed ${tradeCount} executed trades.`;
+              status.style.color = "var(--green)";
+              renderResults(resultPayload);
+              setTimeout(() => switchTab("tabAnalytics"), 250);
+            } else if (event.type === "error") {
+              status.innerText = `Error: ${event.message}`;
+              status.style.color = "var(--red)";
+            }
+          } catch (pe) {
+            // chunk parse error, wait for next chunk
+          }
+        }
+      }
+    }
+  } catch (streamErr) {
+    console.warn("Live stream fetch interrupted, falling back to /api/run:", streamErr);
+  }
+
+  // Fallback to standard /api/run if stream did not produce a complete result
+  if (!streamSucceeded) {
+    try {
+      status.innerText = `Processing simulation across selected dates...`;
+      const fallbackRes = await fetch("/api/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await fallbackRes.json();
+      if (data.status === "success") {
+        const resultPayload = data.result || data;
+        const tradeCount = resultPayload.trades ? resultPayload.trades.length : 0;
+        if (progressBar) progressBar.style.width = "100%";
+        if (progressPct) progressPct.innerText = "100%";
+        status.innerText = `Simulation complete! Processed ${tradeCount} executed trades.`;
+        status.style.color = "var(--green)";
+        renderResults(resultPayload);
+        switchTab("tabAnalytics");
+      } else {
+        status.innerText = `Error: ${data.message}`;
+        status.style.color = "var(--red)";
+      }
+    } catch (err) {
+      status.innerText = `Execution failed: ${err}`;
       status.style.color = "var(--red)";
     }
-  } catch (err) {
-    status.innerText = `Execution failed: ${err}`;
-    status.style.color = "var(--red)";
-  } finally {
-    btn.disabled = false;
-    btn.innerText = "⚡ RUN BACKTEST";
-    if (headerStatus) headerStatus.innerText = "ENGINE READY";
   }
+
+  btn.disabled = false;
+  btn.innerText = "⚡ RUN BACKTEST";
+  if (headerStatus) headerStatus.innerText = "ENGINE READY";
 }
+
 
 // ── Load Latest Results on Initial Launch ────────────────────────────────────
 async function loadLatestResults() {
@@ -588,6 +668,169 @@ async function loadLatestResults() {
     // Fresh session, no latest run yet
   }
 }
+
+// ── Multi-Strategy Comparison Mode ───────────────────────────────────────────
+let compareChart = null;
+
+async function runComparison() {
+  const btn = document.getElementById("btnCompare");
+  const status = document.getElementById("runStatus");
+  const dirInput = document.getElementById("dirInput");
+
+  const selectedDates = [];
+  document.querySelectorAll('input[name="archiveDate"]:checked').forEach(cb => {
+    selectedDates.push(cb.value);
+  });
+
+  if (selectedDates.length === 0) {
+    status.innerText = "Error: Please select at least one session date for comparison!";
+    status.style.color = "var(--red)";
+    return;
+  }
+
+  const tf = document.getElementById("timeframeSelect").value;
+  const capital = parseFloat(document.getElementById("capitalInput").value) || 500000.0;
+  const maxLoss = (parseFloat(document.getElementById("maxLossInput").value) || 1.5) / 100.0;
+  const archiveDir = dirInput ? dirInput.value.trim() : "";
+  const symRaw = document.getElementById("symbolsInput") ? document.getElementById("symbolsInput").value.trim().toLowerCase() : "";
+  const symbols = symRaw === "auto" ? ["auto"] : symRaw.toUpperCase().split(",").map(s => s.trim()).filter(Boolean);
+
+  const payload = {
+    directory: archiveDir,
+    dates: selectedDates,
+    strategies: ["equity", "orb", "supertrend", "camarilla", "ema-ribbon", "bollinger-b"],
+    timeframe: tf,
+    capital: capital,
+    risk_pct: maxLoss,
+    symbols: symbols
+  };
+
+  btn.disabled = true;
+  btn.innerText = "⚖️ COMPARING...";
+  status.innerText = `Benchmarking 6 strategies across [${selectedDates.join(", ")}]...`;
+  status.style.color = "var(--accent-cyan)";
+
+  try {
+    const res = await fetch("/api/compare", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (data.status === "success" && data.comparison) {
+      status.innerText = `Strategy benchmark complete for ${data.comparison.length} models!`;
+      status.style.color = "var(--green)";
+      renderComparisonResults(data.comparison);
+      switchTab("tabAnalytics");
+      const sec = document.getElementById("compareSection");
+      if (sec) sec.scrollIntoView({ behavior: "smooth" });
+    } else {
+      status.innerText = `Comparison failed: ${data.message || "Unknown error"}`;
+      status.style.color = "var(--red)";
+    }
+  } catch (err) {
+    status.innerText = `Comparison failed: ${err}`;
+    status.style.color = "var(--red)";
+  } finally {
+    btn.disabled = false;
+    btn.innerText = "⚖️ COMPARE";
+  }
+}
+
+function renderComparisonResults(comparisonList) {
+  const section = document.getElementById("compareSection");
+  const tbody = document.getElementById("compareBody");
+  if (!section || !tbody) return;
+
+  section.style.display = "block";
+  tbody.innerHTML = "";
+
+  const chartDatasets = [];
+  const palette = [
+    "#00f2fe", "#4facfe", "#43e97b", "#fa709a",
+    "#fee140", "#f38181", "#a18cd1", "#fbc2eb"
+  ];
+
+  comparisonList.forEach((item, idx) => {
+    if (item.error) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td style="font-weight: 600;">${item.strategy_key}</td><td colspan="9" style="color: var(--red);">${item.error}</td>`;
+      tbody.appendChild(tr);
+      return;
+    }
+
+    const m = item.metrics || {};
+    const netPnl = m.net_pnl || 0;
+    const isPos = netPnl >= 0;
+    const color = palette[idx % palette.length];
+
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td style="font-weight: 700; color: ${color};">${item.strategy_name || item.strategy_key}</td>
+      <td>${m.total_trades || 0}</td>
+      <td>${(m.win_rate || 0).toFixed(1)}%</td>
+      <td>${(m.profit_factor || 0).toFixed(2)}</td>
+      <td>${(m.sharpe_ratio || 0).toFixed(2)}</td>
+      <td>${(m.sortino_ratio || 0).toFixed(2)}</td>
+      <td style="font-weight: 600; color: ${(m.calmar_ratio || 0) >= 1 ? "var(--green)" : ""};">${(m.calmar_ratio || 0).toFixed(2)}</td>
+      <td style="color: var(--red);">${(m.max_drawdown_pct || 0).toFixed(2)}%</td>
+      <td style="font-weight: 700; color: ${isPos ? "var(--green)" : "var(--red)"};">${isPos ? "+" : ""}₹${netPnl.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+      <td style="font-weight: 600; color: ${isPos ? "var(--green)" : "var(--red)"};">${(m.return_pct || 0).toFixed(2)}%</td>
+    `;
+    tbody.appendChild(tr);
+
+    if (item.equity_curve && item.equity_curve.length > 0) {
+      chartDatasets.push({
+        label: item.strategy_name || item.strategy_key,
+        data: item.equity_curve.map(pt => ({ x: pt.timestamp, y: pt.equity })),
+        borderColor: color,
+        backgroundColor: "transparent",
+        borderWidth: 2,
+        tension: 0.1,
+        pointRadius: 0
+      });
+    }
+  });
+
+  const canvas = document.getElementById("compareChart");
+  if (canvas && chartDatasets.length > 0) {
+    if (compareChart) compareChart.destroy();
+    compareChart = new Chart(canvas, {
+      type: "line",
+      data: { datasets: chartDatasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          legend: {
+            position: "top",
+            labels: { color: "#e2e8f0", font: { size: 11, weight: 600 } }
+          },
+          tooltip: {
+            callbacks: {
+              label: ctx => `${ctx.dataset.label}: ₹${Number(ctx.parsed.y).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`
+            }
+          }
+        },
+        scales: {
+          x: {
+            ticks: { color: "#64748b", maxTicksLimit: 8 },
+            grid: { color: "rgba(255,255,255,0.04)" }
+          },
+          y: {
+            ticks: {
+              color: "#64748b",
+              callback: val => "₹" + Number(val).toLocaleString("en-IN")
+            },
+            grid: { color: "rgba(255,255,255,0.06)" }
+          }
+        }
+      }
+    });
+  }
+}
+
 
 // ── Render Results: Institutional KPIs, Charts, and Trades Table ─────────────
 function renderResults(raw) {
@@ -667,6 +910,8 @@ function renderResults(raw) {
   renderPnlDistChart(allTrades);
 
   // 3. Trades Table & Trade Inspector
+  updateSymbolFilterOptions();
+  updateSortHeaderUI();
   filterAndRenderTrades();
 
   // If trades exist, auto-select first trade in Inspector
@@ -1090,6 +1335,7 @@ function renderPnlDistChart(trades) {
 function initTableSort() {
   const headers = document.querySelectorAll("th[data-sort]");
   headers.forEach(th => {
+    th.style.cursor = "pointer";
     th.addEventListener("click", () => {
       const col = th.getAttribute("data-sort");
       if (currentSortColumn === col) {
@@ -1098,8 +1344,28 @@ function initTableSort() {
         currentSortColumn = col;
         sortAscending = false; // default descending for most recent/highest
       }
+      updateSortHeaderUI();
       filterAndRenderTrades();
     });
+  });
+}
+
+function updateSortHeaderUI() {
+  const headers = document.querySelectorAll("th[data-sort]");
+  headers.forEach(th => {
+    const col = th.getAttribute("data-sort");
+    let baseLabel = th.getAttribute("data-label");
+    if (!baseLabel) {
+      baseLabel = th.innerText.replace(/[⬍▲▼]/g, "").trim();
+      th.setAttribute("data-label", baseLabel);
+    }
+    if (col === currentSortColumn) {
+      th.innerHTML = `${baseLabel} <span style="color: var(--accent-cyan); font-weight: bold;">${sortAscending ? "▲" : "▼"}</span>`;
+      th.style.color = "var(--accent-cyan)";
+    } else {
+      th.innerHTML = `${baseLabel} <span style="opacity: 0.35;">⬍</span>`;
+      th.style.color = "";
+    }
   });
 }
 
@@ -1113,13 +1379,42 @@ function initTradeFilters() {
       filterAndRenderTrades();
     });
   });
+
+  const symFilter = document.getElementById("tradeSymbolFilter");
+  if (symFilter) {
+    symFilter.addEventListener("change", () => {
+      filterAndRenderTrades();
+    });
+  }
+}
+
+function updateSymbolFilterOptions() {
+  const symFilter = document.getElementById("tradeSymbolFilter");
+  if (!symFilter) return;
+  const currentVal = symFilter.value;
+  const uniqueSyms = Array.from(new Set(allTrades.map(t => t.symbol).filter(Boolean))).sort();
+  symFilter.innerHTML = '<option value="">All Symbols</option>';
+  uniqueSyms.forEach(sym => {
+    const opt = document.createElement("option");
+    opt.value = sym;
+    opt.innerText = sym;
+    if (sym === currentVal) opt.selected = true;
+    symFilter.appendChild(opt);
+  });
 }
 
 function filterAndRenderTrades() {
   const searchInput = document.getElementById("tradeSearchInput");
   const query = searchInput ? searchInput.value.trim().toLowerCase() : "";
+  const symFilter = document.getElementById("tradeSymbolFilter");
+  const selectedSym = symFilter ? symFilter.value : "";
 
   filteredTrades = allTrades.filter(t => {
+    // 0. Dedicated Symbol Filter
+    if (selectedSym && (t.symbol || "") !== selectedSym) {
+      return false;
+    }
+
     // 1. Text Search Filter
     if (query) {
       const sym = (t.symbol || "").toLowerCase();
@@ -1134,7 +1429,9 @@ function filterAndRenderTrades() {
     if (currentTradeFilter === "win") {
       return (t.net_pnl || 0) > 0;
     } else if (currentTradeFilter === "loss") {
-      return (t.net_pnl || 0) <= 0;
+      return (t.net_pnl || 0) < 0;
+    } else if (currentTradeFilter === "breakeven") {
+      return (t.net_pnl || 0) === 0;
     } else if (currentTradeFilter === "buy") {
       return (t.side || "").toUpperCase() === "BUY";
     } else if (currentTradeFilter === "sell") {
@@ -1143,6 +1440,7 @@ function filterAndRenderTrades() {
 
     return true;
   });
+
 
   // Sort
   filteredTrades.sort((a, b) => {
