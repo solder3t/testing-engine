@@ -2,7 +2,7 @@
 engine/param_grids.py — Central Strategy Parameter Grid Registry.
 
 Provides default parameter grids and presets for grid search optimization
-and Walk-Forward Optimization across all 11 trading strategies.
+and Walk-Forward Optimization across all 16 trading strategies.
 """
 
 from typing import Dict, List, Any, Type
@@ -18,8 +18,13 @@ from strategies.vwap_reversion import VwapReversionStrategy
 from strategies.rsi_momentum import RsiMomentumStrategy
 from strategies.nifty_options import NiftyOptionsStrategy
 from strategies.ai_evaluator import AiSnapshotStrategy
+from strategies.short_straddle import ShortStraddleStrategy
+from strategies.pcr_reversion import PcrReversionStrategy
+from strategies.banknifty_options import BankNiftyOptionsStrategy
+from strategies.futures_trend import FuturesTrendStrategy
+from strategies.max_pain import MaxPainConvergenceStrategy
 
-# Strategy class mapping
+# Strategy class mapping (16 strategies)
 STRATEGY_REGISTRY: Dict[str, Type[BaseStrategy]] = {
     "equity": EquityMomentumStrategy,
     "orb": OrbBreakoutStrategy,
@@ -32,6 +37,11 @@ STRATEGY_REGISTRY: Dict[str, Type[BaseStrategy]] = {
     "rsi-momentum": RsiMomentumStrategy,
     "options": NiftyOptionsStrategy,
     "ai-replay": AiSnapshotStrategy,
+    "short-straddle": ShortStraddleStrategy,
+    "pcr-reversion": PcrReversionStrategy,
+    "banknifty-options": BankNiftyOptionsStrategy,
+    "futures-trend": FuturesTrendStrategy,
+    "max-pain": MaxPainConvergenceStrategy,
 }
 
 # Sensible default parameter grids for grid search & walk-forward analysis
@@ -91,6 +101,30 @@ DEFAULT_PARAM_GRIDS: Dict[str, Dict[str, List[Any]]] = {
     },
     "ai-replay": {
         "min_confidence": [0.60, 0.70, 0.80],
+    },
+    "short-straddle": {
+        "sl_pct": [0.20, 0.25, 0.30],
+        "target_pct": [0.50, 0.60, 0.70],
+    },
+    "pcr-reversion": {
+        "pcr_oversold": [0.65, 0.70, 0.75],
+        "pcr_overbought": [1.30, 1.35, 1.40],
+        "sl_pct": [0.20, 0.25, 0.30],
+    },
+    "banknifty-options": {
+        "sl_points": [25.0, 30.0, 35.0],
+        "target_multiplier": [1.8, 2.0, 2.5],
+    },
+    "futures-trend": {
+        "fast_ema": [7, 9],
+        "mid_ema": [15, 21],
+        "atr_multiplier": [1.2, 1.5, 2.0],
+        "risk_reward": [1.5, 2.0],
+    },
+    "max-pain": {
+        "min_displacement": [30.0, 40.0, 50.0],
+        "sl_pct": [0.25, 0.30],
+        "target_pct": [0.40, 0.50],
     },
 }
 

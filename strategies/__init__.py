@@ -14,6 +14,11 @@ from strategies.camarilla_breakout import CamarillaBreakoutStrategy
 from strategies.ema_ribbon import EmaRibbonStrategy
 from strategies.bollinger_percent_b import BollingerPercentBStrategy
 from strategies.macd_acceleration import MacdAccelerationStrategy
+from strategies.short_straddle import ShortStraddleStrategy
+from strategies.pcr_reversion import PcrReversionStrategy
+from strategies.banknifty_options import BankNiftyOptionsStrategy
+from strategies.futures_trend import FuturesTrendStrategy
+from strategies.max_pain import MaxPainConvergenceStrategy
 
 __all__ = [
     "BaseStrategy",
@@ -28,4 +33,9 @@ __all__ = [
     "EmaRibbonStrategy",
     "BollingerPercentBStrategy",
     "MacdAccelerationStrategy",
+    "ShortStraddleStrategy",
+    "PcrReversionStrategy",
+    "BankNiftyOptionsStrategy",
+    "FuturesTrendStrategy",
+    "MaxPainConvergenceStrategy",
 ]

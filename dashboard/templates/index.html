@@ -123,6 +123,11 @@
                 <option value="rsi-momentum">Dual EMA + RSI Momentum Filter</option>
                 <option value="options">NIFTY Index Options Breakout</option>
                 <option value="ai-replay">AI Decision Replay (Gemini Snapshots)</option>
+                <option value="short-straddle">09:20 Short Straddle / Strangle (F&O Theta)</option>
+                <option value="pcr-reversion">PCR Sentiment Reversion (F&O Contrarian)</option>
+                <option value="banknifty-options">BankNifty High-Beta Breakout (F&O 100-pt)</option>
+                <option value="futures-trend">Nifty Index Futures Trend (VWAP+ATR)</option>
+                <option value="max-pain">Expiry Max Pain Convergence (F&O Pinning)</option>
               </select>
             </div>
 
@@ -403,6 +408,147 @@
             </div>
           </div>
 
+          <!-- Short Straddle / Strangle Params -->
+          <div id="shortStraddleParams" class="strat-params-block" style="display: none;">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="straddleEntryTime">Entry Time:</label>
+                <input type="text" id="straddleEntryTime" value="09:20">
+              </div>
+              <div class="form-group">
+                <label for="straddleOtmStrikes">OTM Strikes Offset:</label>
+                <input type="number" id="straddleOtmStrikes" value="0" min="0" max="5" step="1">
+                <small style="color: var(--text-muted); font-size: 0.7rem;">0 = ATM Straddle, 1+ = Strangle</small>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="straddleSlPct">Stop-Loss (%):</label>
+                <input type="number" id="straddleSlPct" value="25" min="5" max="100" step="5">
+              </div>
+              <div class="form-group">
+                <label for="straddleTgtPct">Decay Target (%):</label>
+                <input type="number" id="straddleTgtPct" value="60" min="10" max="95" step="5">
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="straddleLotSize">NIFTY Lot Size:</label>
+              <input type="number" id="straddleLotSize" value="25" min="25" step="25">
+            </div>
+          </div>
+
+          <!-- PCR Reversion Params -->
+          <div id="pcrReversionParams" class="strat-params-block" style="display: none;">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="pcrOversoldInput">Oversold PCR (Bullish):</label>
+                <input type="number" id="pcrOversoldInput" value="0.70" step="0.05" min="0.4" max="0.9">
+              </div>
+              <div class="form-group">
+                <label for="pcrOverboughtInput">Overbought PCR (Bearish):</label>
+                <input type="number" id="pcrOverboughtInput" value="1.35" step="0.05" min="1.1" max="2.0">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="pcrSlPctInput">Option SL (%):</label>
+                <input type="number" id="pcrSlPctInput" value="25" min="10" max="50" step="5">
+              </div>
+              <div class="form-group">
+                <label for="pcrTgtPctInput">Option Target (%):</label>
+                <input type="number" id="pcrTgtPctInput" value="50" min="20" max="100" step="5">
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="pcrLotSizeInput">NIFTY Lot Size:</label>
+              <input type="number" id="pcrLotSizeInput" value="25" min="25" step="25">
+            </div>
+          </div>
+
+          <!-- BankNifty Options Params -->
+          <div id="bankniftyOptionsParams" class="strat-params-block" style="display: none;">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="bnOptionSlInput">SL Premium Points:</label>
+                <input type="number" id="bnOptionSlInput" value="30.0" step="5.0">
+              </div>
+              <div class="form-group">
+                <label for="bnOptionTgtInput">Target Multiplier:</label>
+                <input type="number" id="bnOptionTgtInput" value="2.0" step="0.1">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="bnOrbMinutesInput">ORB Window (Mins):</label>
+                <input type="number" id="bnOrbMinutesInput" value="15" min="5" max="30" step="5">
+              </div>
+              <div class="form-group">
+                <label for="bnLotSizeInput">BANKNIFTY Lot Size:</label>
+                <input type="number" id="bnLotSizeInput" value="15" min="15" step="15">
+              </div>
+            </div>
+          </div>
+
+          <!-- Futures Trend Params -->
+          <div id="futuresTrendParams" class="strat-params-block" style="display: none;">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="futFastEma">Fast EMA:</label>
+                <input type="number" id="futFastEma" value="9" min="3" max="20">
+              </div>
+              <div class="form-group">
+                <label for="futMidEma">Mid EMA:</label>
+                <input type="number" id="futMidEma" value="21" min="10" max="50">
+              </div>
+              <div class="form-group">
+                <label for="futSlowEma">Slow EMA:</label>
+                <input type="number" id="futSlowEma" value="50" min="30" max="200">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="futAtrMult">ATR Stop Multiplier:</label>
+                <input type="number" id="futAtrMult" value="1.5" step="0.1" min="0.5">
+              </div>
+              <div class="form-group">
+                <label for="futRiskReward">Risk:Reward Ratio:</label>
+                <input type="number" id="futRiskReward" value="2.0" step="0.1" min="1.0">
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="futLotSize">NIFTY Futures Lot Size:</label>
+              <input type="number" id="futLotSize" value="25" min="25" step="25">
+            </div>
+          </div>
+
+          <!-- Max Pain Params -->
+          <div id="maxPainParams" class="strat-params-block" style="display: none;">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="mpStartTime">Entry Start Time:</label>
+                <input type="text" id="mpStartTime" value="11:30">
+              </div>
+              <div class="form-group">
+                <label for="mpMinDisp">Min Spot Displacement (Pts):</label>
+                <input type="number" id="mpMinDisp" value="40" min="20" max="150" step="10">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="mpSlPct">Option SL (%):</label>
+                <input type="number" id="mpSlPct" value="30" min="10" max="50" step="5">
+              </div>
+              <div class="form-group">
+                <label for="mpTgtPct">Option Target (%):</label>
+                <input type="number" id="mpTgtPct" value="50" min="20" max="100" step="5">
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="mpLotSize">NIFTY Lot Size:</label>
+              <input type="number" id="mpLotSize" value="25" min="25" step="25">
+            </div>
+          </div>
+
           <div class="card-header" style="margin-top: 14px; border-top: 1px solid var(--panel-border); padding-top: 10px;">
             <h3>3. Capital & Risk Management</h3>
             <span class="card-badge">Accounting</span>
@@ -428,7 +574,7 @@
           <div style="margin-top: 16px;">
             <div style="display: flex; gap: 8px; align-items: stretch;">
               <button id="btnRun" class="btn-run" style="flex: 2; height: 44px; font-size: 0.95rem;">⚡ RUN BACKTEST</button>
-              <button id="btnCompare" class="btn-secondary" style="flex: 1; height: 44px; font-size: 0.85rem;" title="Compare selected strategies on chosen dates">⚖️ COMPARE (11)</button>
+              <button id="btnCompare" class="btn-secondary" style="flex: 1; height: 44px; font-size: 0.85rem;" title="Compare selected strategies on chosen dates">⚖️ COMPARE (16)</button>
               <button id="btnToggleCompareModels" class="btn-secondary" style="width: 44px; height: 44px; padding: 0; font-size: 1.05rem;" title="Select strategy models to compare">⚙️</button>
             </div>
 
@@ -437,9 +583,11 @@
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
                 <span style="font-size: 0.78rem; font-weight: 700; color: #fff;">Compare Strategy Models:</span>
                 <div style="display: flex; gap: 6px; font-size: 0.72rem;">
-                  <button id="btnSelectAllCompare" type="button" class="link-btn" style="background:none; border:none; color:var(--accent-cyan); cursor:pointer;">All (11)</button>
+                  <button id="btnSelectAllCompare" type="button" class="link-btn" style="background:none; border:none; color:var(--accent-cyan); cursor:pointer;">All (16)</button>
                   <span style="color:var(--text-muted);">|</span>
                   <button id="btnSelectEquityCompare" type="button" class="link-btn" style="background:none; border:none; color:var(--accent-cyan); cursor:pointer;">Equity (9)</button>
+                  <span style="color:var(--text-muted);">|</span>
+                  <button id="btnSelectFnoCompare" type="button" class="link-btn" style="background:none; border:none; color:var(--accent-cyan); cursor:pointer;">F&O (6)</button>
                   <span style="color:var(--text-muted);">|</span>
                   <button id="btnSelectDefaultCompare" type="button" class="link-btn" style="background:none; border:none; color:var(--accent-cyan); cursor:pointer;">Default (6)</button>
                 </div>
@@ -477,6 +625,21 @@
                 </label>
                 <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
                   <input type="checkbox" name="compareStrategy" value="ai-replay" checked> AI Decision Replay
+                </label>
+                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                  <input type="checkbox" name="compareStrategy" value="short-straddle" checked> Short Straddle
+                </label>
+                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                  <input type="checkbox" name="compareStrategy" value="pcr-reversion" checked> PCR Reversion
+                </label>
+                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                  <input type="checkbox" name="compareStrategy" value="banknifty-options" checked> BankNifty Options
+                </label>
+                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                  <input type="checkbox" name="compareStrategy" value="futures-trend" checked> Futures Trend
+                </label>
+                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                  <input type="checkbox" name="compareStrategy" value="max-pain" checked> Max Pain Convergence
                 </label>
               </div>
             </div>
@@ -824,6 +987,11 @@
               <option value="rsi-momentum">Dual EMA + RSI Momentum</option>
               <option value="options">NIFTY Options Breakout</option>
               <option value="ai-replay">AI Decision Replay</option>
+              <option value="short-straddle">09:20 Short Straddle / Strangle</option>
+              <option value="pcr-reversion">PCR Sentiment Reversion</option>
+              <option value="banknifty-options">BankNifty High-Beta Breakout</option>
+              <option value="futures-trend">Nifty Futures Trend Follower</option>
+              <option value="max-pain">Expiry Max Pain Convergence</option>
             </select>
           </div>
 
@@ -954,6 +1122,11 @@
               <option value="rsi-momentum">Dual EMA + RSI Momentum</option>
               <option value="options">NIFTY Options Breakout</option>
               <option value="ai-replay">AI Decision Replay</option>
+              <option value="short-straddle">09:20 Short Straddle / Strangle</option>
+              <option value="pcr-reversion">PCR Sentiment Reversion</option>
+              <option value="banknifty-options">BankNifty High-Beta Breakout</option>
+              <option value="futures-trend">Nifty Futures Trend Follower</option>
+              <option value="max-pain">Expiry Max Pain Convergence</option>
             </select>
           </div>
 
@@ -1117,6 +1290,6 @@
     </div>
   </div>
 
-  <script src="/static/js/dashboard.js?v=3.7"></script>
+  <script src="/static/js/dashboard.js?v=4.0"></script>
 </body>
 </html>

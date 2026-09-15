@@ -60,7 +60,9 @@ class OptionChainLoader:
         Fetch the nearest option chain snapshot at or before the given timestamp.
         """
         tables = self.list_chain_tables(date_str)
-        matching = [t for t in tables if underlying.upper() in t.upper()]
+        matching = [t for t in tables if t.upper().startswith(f"CHAIN_{underlying.upper()}_")]
+        if not matching:
+            matching = [t for t in tables if underlying.upper() in t.upper()]
         if not matching:
             return None
 

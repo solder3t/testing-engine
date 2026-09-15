@@ -118,6 +118,11 @@ function initStrategySelector() {
   const rsiGroup = document.getElementById("rsiParams");
   const optGroup = document.getElementById("optionsParams");
   const aiGroup = document.getElementById("aiParams");
+  const straddleGroup = document.getElementById("shortStraddleParams");
+  const pcrGroup = document.getElementById("pcrReversionParams");
+  const bnGroup = document.getElementById("bankniftyOptionsParams");
+  const futGroup = document.getElementById("futuresTrendParams");
+  const mpGroup = document.getElementById("maxPainParams");
 
   const hideAll = () => {
     if (eqGroup) eqGroup.style.display = "none";
@@ -131,6 +136,11 @@ function initStrategySelector() {
     if (rsiGroup) rsiGroup.style.display = "none";
     if (optGroup) optGroup.style.display = "none";
     if (aiGroup) aiGroup.style.display = "none";
+    if (straddleGroup) straddleGroup.style.display = "none";
+    if (pcrGroup) pcrGroup.style.display = "none";
+    if (bnGroup) bnGroup.style.display = "none";
+    if (futGroup) futGroup.style.display = "none";
+    if (mpGroup) mpGroup.style.display = "none";
   };
 
   select.addEventListener("change", () => {
@@ -158,6 +168,16 @@ function initStrategySelector() {
       optGroup.style.display = "block";
     } else if (val === "ai-replay" && aiGroup) {
       aiGroup.style.display = "block";
+    } else if (val === "short-straddle" && straddleGroup) {
+      straddleGroup.style.display = "block";
+    } else if (val === "pcr-reversion" && pcrGroup) {
+      pcrGroup.style.display = "block";
+    } else if (val === "banknifty-options" && bnGroup) {
+      bnGroup.style.display = "block";
+    } else if (val === "futures-trend" && futGroup) {
+      futGroup.style.display = "block";
+    } else if (val === "max-pain" && mpGroup) {
+      mpGroup.style.display = "block";
     }
   });
 }
@@ -549,6 +569,36 @@ async function runBacktest() {
     payload.lot_size = parseInt(document.getElementById("optionLotSizeInput").value) || 25;
   } else if (strat === "ai-replay") {
     payload.confidence = parseFloat(document.getElementById("aiConfidenceInput").value) || 0.70;
+  } else if (strat === "short-straddle") {
+    payload.entry_time = document.getElementById("straddleEntryTime") ? document.getElementById("straddleEntryTime").value.trim() : "09:20";
+    payload.otm_strikes = parseInt(document.getElementById("straddleOtmStrikes").value) || 0;
+    payload.sl_pct = (parseFloat(document.getElementById("straddleSlPct").value) || 25.0) / 100.0;
+    payload.target_pct = (parseFloat(document.getElementById("straddleTgtPct").value) || 60.0) / 100.0;
+    payload.lot_size = parseInt(document.getElementById("straddleLotSize").value) || 25;
+  } else if (strat === "pcr-reversion") {
+    payload.pcr_oversold = parseFloat(document.getElementById("pcrOversoldInput").value) || 0.70;
+    payload.pcr_overbought = parseFloat(document.getElementById("pcrOverboughtInput").value) || 1.35;
+    payload.sl_pct = (parseFloat(document.getElementById("pcrSlPctInput").value) || 25.0) / 100.0;
+    payload.target_pct = (parseFloat(document.getElementById("pcrTgtPctInput").value) || 50.0) / 100.0;
+    payload.lot_size = parseInt(document.getElementById("pcrLotSizeInput").value) || 25;
+  } else if (strat === "banknifty-options") {
+    payload.sl_points = parseFloat(document.getElementById("bnOptionSlInput").value) || 30.0;
+    payload.target_multiplier = parseFloat(document.getElementById("bnOptionTgtInput").value) || 2.0;
+    payload.orb_window_minutes = parseInt(document.getElementById("bnOrbMinutesInput").value) || 15;
+    payload.lot_size = parseInt(document.getElementById("bnLotSizeInput").value) || 15;
+  } else if (strat === "futures-trend") {
+    payload.fast_ema = parseInt(document.getElementById("futFastEma").value) || 9;
+    payload.mid_ema = parseInt(document.getElementById("futMidEma").value) || 21;
+    payload.slow_ema = parseInt(document.getElementById("futSlowEma").value) || 50;
+    payload.atr_multiplier = parseFloat(document.getElementById("futAtrMult").value) || 1.5;
+    payload.risk_reward = parseFloat(document.getElementById("futRiskReward").value) || 2.0;
+    payload.lot_size = parseInt(document.getElementById("futLotSize").value) || 25;
+  } else if (strat === "max-pain") {
+    payload.entry_start_time = document.getElementById("mpStartTime") ? document.getElementById("mpStartTime").value.trim() : "11:30";
+    payload.min_displacement = parseFloat(document.getElementById("mpMinDisp").value) || 40.0;
+    payload.sl_pct = (parseFloat(document.getElementById("mpSlPct").value) || 30.0) / 100.0;
+    payload.target_pct = (parseFloat(document.getElementById("mpTgtPct").value) || 50.0) / 100.0;
+    payload.lot_size = parseInt(document.getElementById("mpLotSize").value) || 25;
   }
 
   btn.disabled = true;
@@ -685,6 +735,7 @@ function initCompareModelPicker() {
   const btnAll = document.getElementById("btnSelectAllCompare");
   const btnEquity = document.getElementById("btnSelectEquityCompare");
   const btnDefault = document.getElementById("btnSelectDefaultCompare");
+  const btnFno = document.getElementById("btnSelectFnoCompare");
   const btnCompare = document.getElementById("btnCompare");
 
   const updateCompareButtonLabel = () => {
@@ -712,6 +763,16 @@ function initCompareModelPicker() {
       const equityStrats = ["equity", "orb", "supertrend", "camarilla", "ema-ribbon", "bollinger-b", "macd-accel", "vwap-reversion", "rsi-momentum"];
       document.querySelectorAll('input[name="compareStrategy"]').forEach(cb => {
         cb.checked = equityStrats.includes(cb.value);
+      });
+      updateCompareButtonLabel();
+    });
+  }
+
+  if (btnFno) {
+    btnFno.addEventListener("click", () => {
+      const fnoStrats = ["options", "short-straddle", "pcr-reversion", "banknifty-options", "futures-trend", "max-pain"];
+      document.querySelectorAll('input[name="compareStrategy"]').forEach(cb => {
+        cb.checked = fnoStrats.includes(cb.value);
       });
       updateCompareButtonLabel();
     });
@@ -822,7 +883,8 @@ function renderComparisonResults(comparisonList) {
   const palette = [
     "#00f2fe", "#4facfe", "#43e97b", "#fa709a",
     "#fee140", "#f38181", "#a18cd1", "#fbc2eb",
-    "#20bf6b", "#fd9644", "#a55eea", "#2bcbba"
+    "#20bf6b", "#fd9644", "#a55eea", "#2bcbba",
+    "#ff6b6b", "#48dbfb", "#1dd1a1", "#feca57"
   ];
 
   comparisonList.forEach((item, idx) => {
@@ -1871,6 +1933,30 @@ const STRATEGY_DEFAULT_GRIDS = {
   },
   "ai-replay": {
     "min_confidence": [0.60, 0.70, 0.80]
+  },
+  "short-straddle": {
+    "sl_pct": [0.20, 0.25, 0.30],
+    "target_pct": [0.50, 0.60, 0.70]
+  },
+  "pcr-reversion": {
+    "pcr_oversold": [0.65, 0.70, 0.75],
+    "pcr_overbought": [1.30, 1.35, 1.40],
+    "sl_pct": [0.20, 0.25, 0.30]
+  },
+  "banknifty-options": {
+    "sl_points": [25.0, 30.0, 35.0],
+    "target_multiplier": [1.8, 2.0, 2.5]
+  },
+  "futures-trend": {
+    "fast_ema": [7, 9],
+    "mid_ema": [15, 21],
+    "atr_multiplier": [1.2, 1.5, 2.0],
+    "risk_reward": [1.5, 2.0]
+  },
+  "max-pain": {
+    "min_displacement": [30.0, 40.0, 50.0],
+    "sl_pct": [0.25, 0.30],
+    "target_pct": [0.40, 0.50]
   }
 };
 

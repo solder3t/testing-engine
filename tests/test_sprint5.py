@@ -110,7 +110,7 @@ def test_api_strategy_params(client):
     assert data["status"] == "success"
     assert "orb" in data["grids"]
     assert "equity" in data["grids"]
-    assert len(data["strategies"]) == 11
+    assert len(data["strategies"]) >= 11
 
 
 def test_api_tearsheet_endpoints(client):

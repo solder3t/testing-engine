@@ -41,6 +41,11 @@ from strategies.camarilla_breakout import CamarillaBreakoutStrategy
 from strategies.ema_ribbon import EmaRibbonStrategy
 from strategies.bollinger_percent_b import BollingerPercentBStrategy
 from strategies.macd_acceleration import MacdAccelerationStrategy
+from strategies.short_straddle import ShortStraddleStrategy
+from strategies.pcr_reversion import PcrReversionStrategy
+from strategies.banknifty_options import BankNiftyOptionsStrategy
+from strategies.futures_trend import FuturesTrendStrategy
+from strategies.max_pain import MaxPainConvergenceStrategy
 from engine.multi_day_runner import MultiDayRunner
 from engine.optimizer import StrategyOptimizer
 from engine.walk_forward import WalkForwardOptimizer
@@ -157,6 +162,61 @@ def create_strategy_instance(strategy_name: str, data: dict, symbols: list):
             "min_confidence": float(data.get("confidence", 0.70))
         }
         return AiSnapshotStrategy(params=strat_params), ["NIFTY"]
+
+    elif strategy_name == "short-straddle":
+        strat_params = {
+            "entry_time": str(data.get("entry_time", "09:20")),
+            "sl_pct": float(data.get("sl_pct", 0.25)),
+            "target_pct": float(data.get("target_pct", 0.60)),
+            "lot_size": int(data.get("lot_size", 25)),
+            "strike_step": float(data.get("strike_step", 50.0)),
+            "otm_strikes": int(data.get("otm_strikes", 0)),
+        }
+        return ShortStraddleStrategy(params=strat_params), ["NIFTY"]
+
+    elif strategy_name == "pcr-reversion":
+        strat_params = {
+            "pcr_oversold": float(data.get("pcr_oversold", 0.70)),
+            "pcr_overbought": float(data.get("pcr_overbought", 1.35)),
+            "sl_pct": float(data.get("sl_pct", 0.25)),
+            "target_pct": float(data.get("target_pct", 0.50)),
+            "lot_size": int(data.get("lot_size", 25)),
+            "strike_step": float(data.get("strike_step", 50.0)),
+        }
+        return PcrReversionStrategy(params=strat_params), ["NIFTY"]
+
+    elif strategy_name == "banknifty-options":
+        strat_params = {
+            "orb_window_minutes": int(data.get("orb_window_minutes", 15)),
+            "sl_points": float(data.get("sl_points", 30.0)),
+            "target_multiplier": float(data.get("target_multiplier", 2.0)),
+            "lot_size": int(data.get("lot_size", 15)),
+            "strike_step": float(data.get("strike_step", 100.0)),
+        }
+        return BankNiftyOptionsStrategy(params=strat_params), ["BANKNIFTY"]
+
+    elif strategy_name == "futures-trend":
+        strat_params = {
+            "fast_ema": int(data.get("fast_ema", 9)),
+            "mid_ema": int(data.get("mid_ema", 21)),
+            "slow_ema": int(data.get("slow_ema", 50)),
+            "atr_multiplier": float(data.get("atr_multiplier", 1.5)),
+            "risk_reward": float(data.get("risk_reward", 2.0)),
+            "lot_size": int(data.get("lot_size", 25)),
+        }
+        return FuturesTrendStrategy(params=strat_params), ["NIFTY"]
+
+    elif strategy_name == "max-pain":
+        strat_params = {
+            "entry_start_time": str(data.get("entry_start_time", "11:30")),
+            "entry_end_time": str(data.get("entry_end_time", "14:15")),
+            "min_displacement": float(data.get("min_displacement", 40.0)),
+            "sl_pct": float(data.get("sl_pct", 0.30)),
+            "target_pct": float(data.get("target_pct", 0.50)),
+            "lot_size": int(data.get("lot_size", 25)),
+            "strike_step": float(data.get("strike_step", 50.0)),
+        }
+        return MaxPainConvergenceStrategy(params=strat_params), ["NIFTY"]
 
     else:
         raise ValueError(f"Unknown strategy: {strategy_name}")
@@ -444,7 +504,8 @@ def compare_strategies():
 
     strat_list = data.get("strategies", [
         "equity", "orb", "supertrend", "camarilla", "ema-ribbon", "bollinger-b",
-        "macd-accel", "vwap-reversion", "rsi-momentum", "options", "ai-replay"
+        "macd-accel", "vwap-reversion", "rsi-momentum", "options", "ai-replay",
+        "short-straddle", "pcr-reversion", "banknifty-options", "futures-trend", "max-pain"
     ])
     capital = float(data.get("capital", DEFAULT_CAPITAL))
     risk_pct = float(data.get("risk_pct", DEFAULT_RISK_PCT_PER_TRADE))

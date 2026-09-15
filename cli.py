@@ -42,6 +42,11 @@ from strategies.camarilla_breakout import CamarillaBreakoutStrategy
 from strategies.ema_ribbon import EmaRibbonStrategy
 from strategies.bollinger_percent_b import BollingerPercentBStrategy
 from strategies.macd_acceleration import MacdAccelerationStrategy
+from strategies.short_straddle import ShortStraddleStrategy
+from strategies.pcr_reversion import PcrReversionStrategy
+from strategies.banknifty_options import BankNiftyOptionsStrategy
+from strategies.futures_trend import FuturesTrendStrategy
+from strategies.max_pain import MaxPainConvergenceStrategy
 from engine.multi_day_runner import MultiDayRunner
 from engine.walk_forward import WalkForwardOptimizer
 from analytics.trade_exporter import TradeExporter
@@ -51,7 +56,8 @@ console = Console()
 ALL_STRATEGIES = [
     "equity", "orb", "supertrend", "camarilla", "ema-ribbon",
     "bollinger-b", "macd-accel", "vwap-reversion", "rsi-momentum",
-    "options", "ai-replay"
+    "options", "ai-replay", "short-straddle", "pcr-reversion",
+    "banknifty-options", "futures-trend", "max-pain"
 ]
 
 
@@ -107,6 +113,16 @@ def _build_strategy(strategy_name: str, args):
     elif strategy_name == "ai-replay":
         conf = getattr(args, "confidence", 0.70)
         return AiSnapshotStrategy(params={"min_confidence": conf}), ["NIFTY"]
+    elif strategy_name == "short-straddle":
+        return ShortStraddleStrategy(), ["NIFTY"]
+    elif strategy_name == "pcr-reversion":
+        return PcrReversionStrategy(), ["NIFTY"]
+    elif strategy_name == "banknifty-options":
+        return BankNiftyOptionsStrategy(), ["BANKNIFTY"]
+    elif strategy_name == "futures-trend":
+        return FuturesTrendStrategy(), ["NIFTY"]
+    elif strategy_name == "max-pain":
+        return MaxPainConvergenceStrategy(), ["NIFTY"]
     else:
         raise ValueError(f"Unknown strategy: {strategy_name}")
 
@@ -419,7 +435,7 @@ def main():
     # compare command
     p_cmp = subparsers.add_parser("compare", help="Compare multiple strategies on identical data")
     p_cmp.add_argument("--dates", type=str, default="all", help="Target dates or 'all'")
-    p_cmp.add_argument("--strategies", type=str, default="equity,orb,supertrend,camarilla,ema-ribbon,bollinger-b,macd-accel,vwap-reversion,rsi-momentum,options,ai-replay", help="Comma-separated strategy keys")
+    p_cmp.add_argument("--strategies", type=str, default="equity,orb,supertrend,camarilla,ema-ribbon,bollinger-b,macd-accel,vwap-reversion,rsi-momentum,options,ai-replay,short-straddle,pcr-reversion,banknifty-options,futures-trend,max-pain", help="Comma-separated strategy keys")
     p_cmp.add_argument("--data-dir", type=str, default=DOWNLOADS_DIR, help="Path to archive/data directory")
     p_cmp.add_argument("--timeframe", type=str, default="1min", help="Bar timeframe")
     p_cmp.add_argument("--symbols", type=str, default="auto", help="Symbols or 'auto'")
@@ -429,7 +445,7 @@ def main():
 
     # walk-forward command
     p_wf = subparsers.add_parser("walk-forward", help="Run rolling walk-forward optimization")
-    p_wf.add_argument("--strategy", choices=["orb", "supertrend", "camarilla", "ema-ribbon", "options", "equity"], default="orb", help="Strategy to optimize")
+    p_wf.add_argument("--strategy", choices=ALL_STRATEGIES, default="orb", help="Strategy to optimize")
     p_wf.add_argument("--dates", type=str, default="all", help="Target dates or 'all'")
     p_wf.add_argument("--in-sample", type=int, default=3, help="Number of in-sample training sessions")
     p_wf.add_argument("--out-of-sample", type=int, default=1, help="Number of out-of-sample forward testing sessions")

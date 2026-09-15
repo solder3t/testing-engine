@@ -63,11 +63,16 @@ class BacktestEngine:
         ohlc_map: Dict[str, pd.DataFrame] = {}
         symbol_meta: Dict[str, Dict] = {}
 
-        # If testing options, include NIFTY index
+        # If testing options / indices, include NIFTY and BANKNIFTY indices
         df_nifty = self.data_loader.get_index_ohlc(date_str, "NIFTY", timeframe=timeframe)
         if not df_nifty.empty:
             ohlc_map["NIFTY"] = df_nifty
             symbol_meta["NIFTY"] = {"security_id": 13, "sector": "Index"}
+
+        df_banknifty = self.data_loader.get_index_ohlc(date_str, "BANKNIFTY", timeframe=timeframe)
+        if not df_banknifty.empty:
+            ohlc_map["BANKNIFTY"] = df_banknifty
+            symbol_meta["BANKNIFTY"] = {"security_id": 25, "sector": "Index"}
 
         # Load VIX for volatility filter
         df_vix = self.data_loader.get_index_ohlc(date_str, "INDIA_VIX", timeframe=timeframe)
@@ -169,7 +174,8 @@ class BacktestEngine:
                 if trade.instrument_type in (InstrumentType.OPTION_CE, InstrumentType.OPTION_PE):
                     strike = trade.metadata.get("strike")
                     opt_type = "ce" if trade.instrument_type == InstrumentType.OPTION_CE else "pe"
-                    chain_df = self.option_loader.get_nearest_chain(date_str, ts, underlying="NIFTY")
+                    underlying = trade.metadata.get("underlying", "NIFTY")
+                    chain_df = self.option_loader.get_nearest_chain(date_str, ts, underlying=underlying)
                     if chain_df is not None and not chain_df.empty and strike:
                         stk_row = chain_df[chain_df["strike_price"] == strike]
                         if not stk_row.empty:
@@ -182,6 +188,11 @@ class BacktestEngine:
                                     "open": opt_ltp, "high": opt_ltp, "low": opt_ltp, "close": opt_ltp,
                                     "ltp": opt_ltp, "bid_ask_spread": max(0.0, opt_ask - opt_bid)
                                 }
+                elif trade.instrument_type == InstrumentType.FUTURES:
+                    underlying = trade.metadata.get("underlying", "NIFTY")
+                    uq = quotes.get(underlying) or quotes.get(f"{underlying} 50")
+                    if uq and trade.symbol not in quotes:
+                        quotes[trade.symbol] = dict(uq)
 
             # A. Update existing open positions against current bar (SL, Target, Trailing SL, EOD)
             port.update_open_trades(ts, quotes)
@@ -202,11 +213,15 @@ class BacktestEngine:
                 meta = sig.get("metadata", {})
                 spread = quotes.get(sym, {}).get("bid_ask_spread", 0.0)
 
+                lot_size = sig.get("lot_size")
+                if not lot_size:
+                    lot_size = 25 if "OPTION" in str(inst_type) else 1
+
                 qty = port.calculate_position_size(
                     entry_price=price,
                     stop_loss=sl,
                     score=score,
-                    lot_size=25 if "OPTION" in str(inst_type) else 1
+                    lot_size=lot_size
                 )
 
                 port.open_trade(
