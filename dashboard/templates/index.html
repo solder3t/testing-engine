@@ -45,6 +45,14 @@
       <span class="tab-icon">🔍</span>
       <span>Trade Inspector & Log</span>
     </button>
+    <button class="nav-tab" data-tab="tabWalkForward" id="btnTabWalkForward">
+      <span class="tab-icon">🧪</span>
+      <span>Walk-Forward</span>
+    </button>
+    <button class="nav-tab" data-tab="tabOptimizer" id="btnTabOptimizer">
+      <span class="tab-icon">🎛️</span>
+      <span>Parameter Optimizer</span>
+    </button>
     <button class="nav-tab" data-tab="tabExplorer" id="btnTabExplorer">
       <span class="tab-icon">🗄️</span>
       <span>Data Explorer</span>
@@ -442,6 +450,24 @@
 
     <!-- ── TAB 2: RESULTS & ANALYTICS ──────────────────────────────────────── -->
     <div class="tab-pane" id="tabAnalytics">
+      <!-- Analytics Control / Actions Header Bar -->
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 10px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <h3 style="font-size: 1.05rem; font-weight: 700; color: #fff; margin: 0;">Performance Analytics & Risk Profile</h3>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button id="btnAnalyticsTearsheet" class="btn-secondary" style="height: 34px; font-size: 0.8rem; font-weight: 600; color: var(--accent-cyan); border-color: rgba(0,242,254,0.4);" onclick="openTearsheet()">
+            📄 Institutional Tearsheet
+          </button>
+          <button class="btn-secondary" style="height: 34px; font-size: 0.8rem;" onclick="window.location.href='/api/export_tearsheet'">
+            📥 Download Tearsheet
+          </button>
+          <button class="btn-secondary" style="height: 34px; font-size: 0.8rem;" onclick="window.location.href='/api/export_csv'">
+            📥 Export CSV
+          </button>
+        </div>
+      </div>
+
       <!-- Performance KPI Header Bar -->
       <section class="kpi-grid">
         <div class="kpi-card">
@@ -645,6 +671,7 @@
           </select>
           <span id="tradesCountBadge" class="trades-count-badge">0 trades</span>
           <input type="text" id="tradeSearchInput" placeholder="Filter by symbol, reason, side, date..." class="search-input" style="width: 240px;">
+          <button id="btnInspectorTearsheet" class="btn-secondary" style="height: 34px; font-size: 0.8rem; font-weight: 600; color: var(--accent-cyan); border-color: rgba(0,242,254,0.4);" onclick="openTearsheet()">📄 Tearsheet</button>
           <button id="btnExportCsv" class="btn-export">📥 Export CSV</button>
         </div>
       </div>
@@ -723,6 +750,255 @@
       </div>
     </div>
 
+    <!-- ── TAB 5: WALK-FORWARD OPTIMIZATION & ROBUSTNESS ─────────────────────── -->
+    <div class="tab-pane" id="tabWalkForward">
+      <div class="console-grid">
+        <!-- Controls Column -->
+        <div class="card console-card">
+          <div class="card-header">
+            <h3>1. Walk-Forward Setup</h3>
+            <span class="card-badge">Institutional WFO</span>
+          </div>
+
+          <div class="form-group">
+            <label for="wfoStrategySelect">Strategy Model:</label>
+            <select id="wfoStrategySelect">
+              <option value="orb">Opening Range Breakout (ORB)</option>
+              <option value="equity">Equity Momentum (v4/v5)</option>
+              <option value="supertrend">Supertrend Trend Follower</option>
+              <option value="camarilla">Camarilla Floor Pivot Breakout</option>
+              <option value="ema-ribbon">Triple EMA Ribbon Alignment</option>
+              <option value="bollinger-b">Bollinger %B Mean Reversion</option>
+              <option value="macd-accel">MACD Momentum Acceleration</option>
+              <option value="vwap-reversion">VWAP Mean Reversion</option>
+              <option value="rsi-momentum">Dual EMA + RSI Momentum</option>
+              <option value="options">NIFTY Options Breakout</option>
+              <option value="ai-replay">AI Decision Replay</option>
+            </select>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="wfoInSampleInput">In-Sample Window (Days):</label>
+              <input type="number" id="wfoInSampleInput" value="3" min="2" max="20">
+              <small style="color: var(--text-muted); font-size: 0.7rem;">Training / Optimization history</small>
+            </div>
+            <div class="form-group">
+              <label for="wfoOutSampleInput">Out-of-Sample Window (Days):</label>
+              <input type="number" id="wfoOutSampleInput" value="1" min="1" max="10">
+              <small style="color: var(--text-muted); font-size: 0.7rem;">Forward-test evaluation period</small>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="wfoRankBySelect">Optimization Target Metric:</label>
+            <select id="wfoRankBySelect">
+              <option value="sharpe_ratio">Sharpe Ratio (Recommended)</option>
+              <option value="net_pnl">Net Realized P&L (₹)</option>
+              <option value="profit_factor">Profit Factor</option>
+              <option value="win_rate">Win Rate (%)</option>
+            </select>
+          </div>
+
+          <div style="margin-top: 16px;">
+            <button id="btnRunWfo" class="btn-run" style="width: 100%; height: 44px; font-size: 0.95rem;">🧪 RUN WALK-FORWARD ANALYSIS</button>
+            <div id="wfoStatus" class="run-status" style="margin-top: 8px;"></div>
+          </div>
+        </div>
+
+        <!-- Walk-Forward Verdict & Executive Summary -->
+        <div class="card console-card">
+          <div class="card-header">
+            <h3>2. Robustness Verdict & Efficiency</h3>
+            <span class="card-badge" id="wfoVerdictBadge">Awaiting Run</span>
+          </div>
+
+          <div id="wfoVerdictCard" style="background: rgba(255,255,255,0.03); border: 1px solid var(--panel-border); border-radius: 8px; padding: 16px; margin-bottom: 14px; text-align: center;">
+            <span style="font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Walk-Forward Efficiency (WFE)</span>
+            <div id="wfoWfeVal" style="font-size: 2.2rem; font-weight: 800; font-family: 'JetBrains Mono', monospace; color: var(--accent-cyan); margin: 6px 0;">--</div>
+            <div id="wfoVerdictText" style="font-size: 0.88rem; color: var(--text-muted);">
+              Run Walk-Forward analysis across selected market dates to evaluate out-of-sample persistence.
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+            <div class="kpi-card" style="padding: 10px 14px;">
+              <span class="kpi-label">Total Windows</span>
+              <span class="kpi-value" id="wfoTotalWindows" style="font-size: 1.2rem;">0</span>
+            </div>
+            <div class="kpi-card" style="padding: 10px 14px;">
+              <span class="kpi-label">OOS Net Realized P&L</span>
+              <span class="kpi-value" id="wfoOosNetPnl" style="font-size: 1.2rem;">₹0.00</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Chart: IS vs OOS Performance per Window -->
+      <div class="chart-card" style="margin-top: 20px;">
+        <div class="chart-header-row">
+          <h3>Rolling Window In-Sample vs. Out-of-Sample Sharpe Comparison</h3>
+          <span class="chart-badge">WFO Stability</span>
+        </div>
+        <div class="chart-container" style="height: 280px;">
+          <canvas id="wfoChartCanvas"></canvas>
+          <div class="chart-placeholder" id="wfoPlaceholder">
+            <span>🧪</span>
+            <p>Execute Walk-Forward Analysis to compare In-Sample vs Out-of-Sample metrics</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Windows Breakdown Table -->
+      <div class="card table-card" style="margin-top: 20px;">
+        <div class="card-header">
+          <h3>Rolling Window Breakdown</h3>
+          <span class="card-badge">Window Logs</span>
+        </div>
+        <div class="table-wrap">
+          <table id="wfoWindowsTable">
+            <thead>
+              <tr>
+                <th>Window</th>
+                <th>In-Sample (Train)</th>
+                <th>Best Selected Params</th>
+                <th>IS Sharpe</th>
+                <th>Out-of-Sample (Test)</th>
+                <th>OOS Sharpe</th>
+                <th>OOS Net P&L (₹)</th>
+                <th>OOS Win Rate</th>
+                <th>OOS Trades</th>
+              </tr>
+            </thead>
+            <tbody id="wfoWindowsBody">
+              <tr>
+                <td colspan="9" class="empty-state">No walk-forward analysis executed yet.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── TAB 6: STRATEGY PARAMETER OPTIMIZER ────────────────────────────────── -->
+    <div class="tab-pane" id="tabOptimizer">
+      <div class="console-grid">
+        <!-- Controls Column -->
+        <div class="card console-card">
+          <div class="card-header">
+            <h3>1. Grid Search Optimizer</h3>
+            <span class="card-badge">Hyper-Tuner</span>
+          </div>
+
+          <div class="form-group">
+            <label for="optStrategySelect">Strategy Model:</label>
+            <select id="optStrategySelect">
+              <option value="orb">Opening Range Breakout (ORB)</option>
+              <option value="equity">Equity Momentum (v4/v5)</option>
+              <option value="supertrend">Supertrend Trend Follower</option>
+              <option value="camarilla">Camarilla Floor Pivot Breakout</option>
+              <option value="ema-ribbon">Triple EMA Ribbon Alignment</option>
+              <option value="bollinger-b">Bollinger %B Mean Reversion</option>
+              <option value="macd-accel">MACD Momentum Acceleration</option>
+              <option value="vwap-reversion">VWAP Mean Reversion</option>
+              <option value="rsi-momentum">Dual EMA + RSI Momentum</option>
+              <option value="options">NIFTY Options Breakout</option>
+              <option value="ai-replay">AI Decision Replay</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="optRankBySelect">Rank Combinations By:</label>
+            <select id="optRankBySelect">
+              <option value="sharpe_ratio">Sharpe Ratio</option>
+              <option value="net_pnl">Net Realized P&L (₹)</option>
+              <option value="profit_factor">Profit Factor</option>
+              <option value="win_rate">Win Rate (%)</option>
+              <option value="return_pct">Return Percentage (%)</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+              <label for="optGridJson" style="margin-bottom: 0;">Parameter Grid (JSON):</label>
+              <button id="btnOptResetGrid" class="link-btn" style="background: none; border: none; font-size: 0.75rem; color: var(--accent-cyan); cursor: pointer;">Reset to Default</button>
+            </div>
+            <textarea id="optGridJson" rows="6" style="width: 100%; font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; background: rgba(0,0,0,0.3); border: 1px solid var(--panel-border); border-radius: 6px; color: #fff; padding: 10px; resize: vertical;"></textarea>
+            <small style="color: var(--text-muted); font-size: 0.7rem;">Define array of candidate values for each strategy parameter.</small>
+          </div>
+
+          <div style="margin-top: 16px;">
+            <button id="btnRunOptimizer" class="btn-run" style="width: 100%; height: 44px; font-size: 0.95rem;">🚀 RUN GRID OPTIMIZATION</button>
+            <div id="optStatus" class="run-status" style="margin-top: 8px;"></div>
+          </div>
+        </div>
+
+        <!-- Right Column: Top Discovered Parameter Set -->
+        <div class="card console-card">
+          <div class="card-header">
+            <h3>2. Top Optimal Parameter Set</h3>
+            <span class="card-badge" id="optBestBadge">No Run Yet</span>
+          </div>
+
+          <div id="optBestContainer" style="background: rgba(255,255,255,0.03); border: 1px solid var(--panel-border); border-radius: 8px; padding: 16px; margin-bottom: 14px;">
+            <div class="empty-state" id="optBestPlaceholder">Run parameter optimization to discover optimal parameter weights.</div>
+            <div id="optBestContent" style="display: none;">
+              <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 6px;">Optimal Discovered Parameters:</div>
+              <pre id="optBestParamsJson" style="background: rgba(0,0,0,0.4); padding: 10px; border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; color: var(--accent-cyan); margin-bottom: 12px;"></pre>
+              <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px;">
+                <div class="kpi-card" style="padding: 8px 10px;">
+                  <span class="kpi-label">Net P&L</span>
+                  <span class="kpi-value" id="optBestNetPnl" style="font-size: 1.05rem;">₹0.00</span>
+                </div>
+                <div class="kpi-card" style="padding: 8px 10px;">
+                  <span class="kpi-label">Sharpe</span>
+                  <span class="kpi-value" id="optBestSharpe" style="font-size: 1.05rem;">0.00</span>
+                </div>
+                <div class="kpi-card" style="padding: 8px 10px;">
+                  <span class="kpi-label">Win Rate</span>
+                  <span class="kpi-value" id="optBestWinRate" style="font-size: 1.05rem;">0.0%</span>
+                </div>
+              </div>
+              <button id="btnApplyBestParams" class="btn-secondary" style="width: 100%; height: 38px; color: var(--green); border-color: rgba(46,160,67,0.5); font-weight: 700;">
+                ⚡ Apply to Backtest Console
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Ranked Parameter Sets Table -->
+      <div class="card table-card" style="margin-top: 20px;">
+        <div class="card-header">
+          <h3>Ranked Parameter Combinations</h3>
+          <span class="card-badge" id="optRankedCountBadge">0 combinations</span>
+        </div>
+        <div class="table-wrap">
+          <table id="optRankedTable">
+            <thead>
+              <tr>
+                <th>Rank</th>
+                <th>Parameters</th>
+                <th>Net Realized P&L (₹)</th>
+                <th>Return %</th>
+                <th>Sharpe Ratio</th>
+                <th>Profit Factor</th>
+                <th>Win Rate %</th>
+                <th>Max DD %</th>
+                <th>Trades</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="optRankedBody">
+              <tr>
+                <td colspan="10" class="empty-state">No grid optimization executed yet.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
   </div>
 
   <!-- Trade Detail Modal (Preserved as fallback) -->
@@ -791,6 +1067,6 @@
     </div>
   </div>
 
-  <script src="/static/js/dashboard.js?v=3.0"></script>
+  <script src="/static/js/dashboard.js?v=3.5"></script>
 </body>
 </html>

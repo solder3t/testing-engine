@@ -23,6 +23,8 @@ document.addEventListener("DOMContentLoaded", () => {
   initTableSort();
   initTradeFilters();
   initModal();
+  initWalkForward();
+  initParameterOptimizer();
 
   // Load default directory
   loadArchives();
@@ -90,6 +92,10 @@ function switchTab(tabId) {
       if (equityChart) equityChart.resize();
       if (dailyChart) dailyChart.resize();
       if (drawdownChart) drawdownChart.resize();
+    }, 50);
+  } else if (tabId === "tabWalkForward") {
+    setTimeout(() => {
+      if (wfoChart) wfoChart.resize();
     }, 50);
   } else if (tabId === "tabExplorer") {
     renderDataExplorer(lastRawArchives);
@@ -1731,3 +1737,517 @@ function closeTradeModal() {
   if (modal) modal.style.display = "none";
 }
 window.closeTradeModal = closeTradeModal;
+
+
+// ── Institutional Performance Tearsheet ───────────────────────────────────────
+function openTearsheet() {
+  window.open("/api/tearsheet", "_blank");
+}
+window.openTearsheet = openTearsheet;
+
+
+// ── Default Parameter Grids Registry ──────────────────────────────────────────
+const STRATEGY_DEFAULT_GRIDS = {
+  "orb": {
+    "opening_minutes": [10, 15, 20],
+    "risk_reward": [1.5, 2.0, 2.5],
+    "breakout_atr_mult": [0.5, 1.0]
+  },
+  "equity": {
+    "min_score": [50, 55, 60],
+    "atr_sl_mult": [1.2, 1.5, 1.8],
+    "atr_tgt_mult": [2.5, 3.0]
+  },
+  "supertrend": {
+    "atr_period": [7, 10, 14],
+    "multiplier": [2.5, 3.0, 3.5],
+    "risk_reward": [1.5, 2.0]
+  },
+  "camarilla": {
+    "risk_reward": [1.5, 2.0, 2.5],
+    "sl_buffer_pts": [3.0, 5.0, 7.0]
+  },
+  "ema-ribbon": {
+    "fast_ema": [7, 9],
+    "med_ema": [15, 21],
+    "sl_pts": [10.0, 15.0],
+    "target_pts": [25.0, 35.0]
+  },
+  "bollinger-b": {
+    "period": [15, 20],
+    "std_dev": [1.8, 2.0, 2.2],
+    "oversold_b": [0.05, 0.10],
+    "overbought_b": [0.90, 0.95]
+  },
+  "macd-accel": {
+    "fast_period": [8, 12],
+    "slow_period": [21, 26],
+    "sl_pts": [10.0, 15.0],
+    "target_pts": [25.0, 35.0]
+  },
+  "vwap-reversion": {
+    "bb_period": [15, 20],
+    "bb_std": [1.8, 2.0, 2.5],
+    "sl_pts": [10.0, 15.0],
+    "target_pts": [20.0, 30.0]
+  },
+  "rsi-momentum": {
+    "rsi_period": [10, 14],
+    "rsi_long_cutoff": [55.0, 60.0, 65.0],
+    "fast_ema": [9, 13],
+    "slow_ema": [21, 34]
+  },
+  "options": {
+    "sl_points": [10.0, 12.0, 15.0],
+    "target_multiplier": [1.5, 1.8, 2.0]
+  },
+  "ai-replay": {
+    "min_confidence": [0.60, 0.70, 0.80]
+  }
+};
+
+
+// ── Walk-Forward Optimization (WFO) Engine ────────────────────────────────────
+let wfoChart = null;
+
+function initWalkForward() {
+  const btnRunWfo = document.getElementById("btnRunWfo");
+  if (btnRunWfo) {
+    btnRunWfo.addEventListener("click", runWalkForward);
+  }
+}
+
+async function runWalkForward() {
+  const btn = document.getElementById("btnRunWfo");
+  const status = document.getElementById("wfoStatus");
+  const dirInput = document.getElementById("dirInput");
+  const archiveDir = dirInput ? dirInput.value.trim() : "";
+
+  const selectedDates = [];
+  document.querySelectorAll('input[name="archiveDate"]:checked').forEach(cb => {
+    selectedDates.push(cb.value);
+  });
+
+  const inSample = parseInt(document.getElementById("wfoInSampleInput").value) || 3;
+  const outSample = parseInt(document.getElementById("wfoOutSampleInput").value) || 1;
+  const totalNeeded = inSample + outSample;
+
+  if (selectedDates.length < totalNeeded) {
+    status.innerText = `Walk-Forward requires at least ${totalNeeded} sessions selected (IS: ${inSample}, OOS: ${outSample}). Selected: ${selectedDates.length}.`;
+    status.style.color = "var(--red)";
+    return;
+  }
+
+  const strat = document.getElementById("wfoStrategySelect").value;
+  const rankBy = document.getElementById("wfoRankBySelect").value;
+  const symRaw = document.getElementById("symbolsInput") ? document.getElementById("symbolsInput").value.trim().toLowerCase() : "";
+  const symbols = symRaw === "auto" ? ["auto"] : symRaw.toUpperCase().split(",").map(s => s.trim()).filter(Boolean);
+
+  btn.disabled = true;
+  btn.innerText = "🧪 RUNNING WFO...";
+  status.innerText = `Optimizing ${strat.toUpperCase()} over rolling windows across [${selectedDates.join(", ")}]...`;
+  status.style.color = "var(--accent-cyan)";
+
+  try {
+    const res = await fetch("/api/walk_forward", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        directory: archiveDir,
+        dates: selectedDates,
+        strategy: strat,
+        in_sample: inSample,
+        out_of_sample: outSample,
+        rank_by: rankBy,
+        symbols: symbols
+      })
+    });
+    const data = await res.json();
+    if (data.status === "success") {
+      status.innerText = `Walk-Forward analysis completed for ${data.total_windows} rolling windows!`;
+      status.style.color = "var(--green)";
+      renderWalkForwardResults(data);
+    } else {
+      status.innerText = `WFO failed: ${data.message || "Unknown error"}`;
+      status.style.color = "var(--red)";
+    }
+  } catch (err) {
+    status.innerText = `WFO failed: ${err}`;
+    status.style.color = "var(--red)";
+  } finally {
+    btn.disabled = false;
+    btn.innerText = "🧪 RUN WALK-FORWARD ANALYSIS";
+  }
+}
+
+function renderWalkForwardResults(data) {
+  const badge = document.getElementById("wfoVerdictBadge");
+  const wfeVal = document.getElementById("wfoWfeVal");
+  const verdictText = document.getElementById("wfoVerdictText");
+  const totalWin = document.getElementById("wfoTotalWindows");
+  const oosNetPnl = document.getElementById("wfoOosNetPnl");
+
+  const wfe = data.walk_forward_efficiency;
+  const isRobust = data.is_robust;
+
+  if (badge) {
+    badge.innerText = isRobust ? "ROBUST (WFE >= 0.50)" : "OVERFIT (WFE < 0.50)";
+    badge.style.color = isRobust ? "var(--green)" : "var(--red)";
+    badge.style.borderColor = isRobust ? "rgba(46,160,67,0.5)" : "rgba(248,81,73,0.5)";
+  }
+  if (wfeVal) {
+    wfeVal.innerText = wfe.toFixed(2);
+    wfeVal.style.color = isRobust ? "var(--green)" : "var(--red)";
+  }
+  if (verdictText) {
+    verdictText.innerHTML = isRobust
+      ? `<span style="color: var(--green); font-weight: 600;">PASS:</span> Strategy parameters transferred positive edge to unseen out-of-sample forward sessions (Efficiency: ${(wfe * 100).toFixed(0)}%).`
+      : `<span style="color: var(--red); font-weight: 600;">CAUTION:</span> Strategy shows curve-fitting. Performance degraded on unseen forward data (Efficiency: ${(wfe * 100).toFixed(0)}%).`;
+  }
+  if (totalWin) totalWin.innerText = data.total_windows;
+  if (oosNetPnl) {
+    const oosPnl = data.overall_oos_metrics ? data.overall_oos_metrics.net_pnl : 0.0;
+    oosNetPnl.innerText = `${oosPnl >= 0 ? "+" : ""}₹${oosPnl.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+    oosNetPnl.style.color = oosPnl >= 0 ? "var(--green)" : "var(--red)";
+  }
+
+  // Render Table
+  const tbody = document.getElementById("wfoWindowsBody");
+  if (tbody) {
+    tbody.innerHTML = "";
+    (data.windows || []).forEach(w => {
+      const isM = w.in_sample_metrics || {};
+      const oosM = w.out_of_sample_metrics || {};
+      const oosPnl = oosM.net_pnl || 0.0;
+      const isPnlCls = oosPnl >= 0 ? "pos" : "neg";
+      const paramsStr = Object.entries(w.best_params || {}).map(([k, v]) => `${k}=${v}`).join(", ");
+
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td style="font-weight: 700;">Window #${w.window}</td>
+        <td style="font-size: 0.78rem; color: var(--yellow);">${(w.in_sample_dates || []).join(", ")}</td>
+        <td style="font-size: 0.75rem; color: var(--accent-cyan);">${paramsStr || "default"}</td>
+        <td style="text-align: right;">${(isM.sharpe_ratio || 0).toFixed(2)}</td>
+        <td style="font-size: 0.78rem; color: #fff;">${(w.out_of_sample_dates || []).join(", ")}</td>
+        <td style="text-align: right; font-weight: 600;">${(oosM.sharpe_ratio || 0).toFixed(2)}</td>
+        <td style="text-align: right;" class="${isPnlCls}">${oosPnl >= 0 ? "+" : ""}₹${oosPnl.toFixed(2)}</td>
+        <td style="text-align: right;">${(oosM.win_rate || 0).toFixed(1)}%</td>
+        <td style="text-align: right;">${oosM.total_trades || 0}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  // Render Chart
+  renderWfoChart(data.windows || []);
+}
+
+function renderWfoChart(windows) {
+  const canvas = document.getElementById("wfoChartCanvas");
+  const placeholder = document.getElementById("wfoPlaceholder");
+  if (!canvas) return;
+
+  if (placeholder) placeholder.style.display = "none";
+  canvas.style.display = "block";
+
+  const labels = windows.map(w => `Window #${w.window}`);
+  const isSharpes = windows.map(w => (w.in_sample_metrics || {}).sharpe_ratio || 0);
+  const oosSharpes = windows.map(w => (w.out_of_sample_metrics || {}).sharpe_ratio || 0);
+
+  if (wfoChart) {
+    wfoChart.destroy();
+  }
+
+  const ctx = canvas.getContext("2d");
+  wfoChart = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: "In-Sample Sharpe (Training)",
+          data: isSharpes,
+          backgroundColor: "rgba(0, 242, 254, 0.6)",
+          borderColor: "#00f2fe",
+          borderWidth: 1
+        },
+        {
+          label: "Out-of-Sample Sharpe (Forward Test)",
+          data: oosSharpes,
+          backgroundColor: "rgba(46, 160, 67, 0.7)",
+          borderColor: "#2ea043",
+          borderWidth: 1
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: {
+          grid: { color: "rgba(255,255,255,0.06)" },
+          ticks: { color: "#8b949e" }
+        },
+        y: {
+          grid: { color: "rgba(255,255,255,0.06)" },
+          ticks: { color: "#8b949e" }
+        }
+      },
+      plugins: {
+        legend: {
+          labels: { color: "#f0f6fc", font: { family: "Outfit" } }
+        }
+      }
+    }
+  });
+}
+
+
+// ── Strategy Parameter Optimizer Engine ───────────────────────────────────────
+let latestOptimizationResults = [];
+
+function initParameterOptimizer() {
+  const select = document.getElementById("optStrategySelect");
+  const gridText = document.getElementById("optGridJson");
+  const btnReset = document.getElementById("btnOptResetGrid");
+  const btnRun = document.getElementById("btnRunOptimizer");
+  const btnApplyBest = document.getElementById("btnApplyBestParams");
+
+  const updateGridForStrategy = () => {
+    const strat = select ? select.value : "orb";
+    const defaultGrid = STRATEGY_DEFAULT_GRIDS[strat] || {};
+    if (gridText) {
+      gridText.value = JSON.stringify(defaultGrid, null, 2);
+    }
+  };
+
+  if (select) {
+    select.addEventListener("change", updateGridForStrategy);
+    updateGridForStrategy();
+  }
+  if (btnReset) {
+    btnReset.addEventListener("click", updateGridForStrategy);
+  }
+  if (btnRun) {
+    btnRun.addEventListener("click", runParameterOptimization);
+  }
+  if (btnApplyBest) {
+    btnApplyBest.addEventListener("click", () => {
+      if (latestOptimizationResults.length > 0 && select) {
+        applyParametersToConsole(select.value, latestOptimizationResults[0].params);
+      }
+    });
+  }
+}
+
+async function runParameterOptimization() {
+  const btn = document.getElementById("btnRunOptimizer");
+  const status = document.getElementById("optStatus");
+  const select = document.getElementById("optStrategySelect");
+  const rankBySelect = document.getElementById("optRankBySelect");
+  const gridText = document.getElementById("optGridJson");
+  const dirInput = document.getElementById("dirInput");
+  const archiveDir = dirInput ? dirInput.value.trim() : "";
+
+  const selectedDates = [];
+  document.querySelectorAll('input[name="archiveDate"]:checked').forEach(cb => {
+    selectedDates.push(cb.value);
+  });
+
+  if (selectedDates.length === 0) {
+    status.innerText = "Error: Please select at least one session date in Console tab.";
+    status.style.color = "var(--red)";
+    return;
+  }
+
+  let paramGrid;
+  try {
+    paramGrid = JSON.parse(gridText.value);
+  } catch (err) {
+    status.innerText = `Invalid JSON in Parameter Grid: ${err.message}`;
+    status.style.color = "var(--red)";
+    return;
+  }
+
+  const strat = select.value;
+  const rankBy = rankBySelect.value;
+  const symRaw = document.getElementById("symbolsInput") ? document.getElementById("symbolsInput").value.trim().toLowerCase() : "";
+  const symbols = symRaw === "auto" ? ["auto"] : symRaw.toUpperCase().split(",").map(s => s.trim()).filter(Boolean);
+
+  btn.disabled = true;
+  btn.innerText = "🚀 OPTIMIZING...";
+  status.innerText = `Evaluating parameter grid for ${strat.toUpperCase()} across [${selectedDates.join(", ")}]...`;
+  status.style.color = "var(--accent-cyan)";
+
+  try {
+    const res = await fetch("/api/optimize", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        directory: archiveDir,
+        dates: selectedDates,
+        strategy: strat,
+        param_grid: paramGrid,
+        rank_by: rankBy,
+        symbols: symbols
+      })
+    });
+    const data = await res.json();
+    if (data.status === "success") {
+      status.innerText = `Optimization finished! Evaluated ${data.total_combinations} combinations.`;
+      status.style.color = "var(--green)";
+      latestOptimizationResults = data.ranked_results || [];
+      renderOptimizationResults(strat, data);
+    } else {
+      status.innerText = `Optimization failed: ${data.message || "Unknown error"}`;
+      status.style.color = "var(--red)";
+    }
+  } catch (err) {
+    status.innerText = `Optimization failed: ${err}`;
+    status.style.color = "var(--red)";
+  } finally {
+    btn.disabled = false;
+    btn.innerText = "🚀 RUN GRID OPTIMIZATION";
+  }
+}
+
+function renderOptimizationResults(strat, data) {
+  const ranked = data.ranked_results || [];
+  const best = ranked[0];
+
+  const placeholder = document.getElementById("optBestPlaceholder");
+  const content = document.getElementById("optBestContent");
+  const badge = document.getElementById("optBestBadge");
+  const paramsJson = document.getElementById("optBestParamsJson");
+  const netPnl = document.getElementById("optBestNetPnl");
+  const sharpe = document.getElementById("optBestSharpe");
+  const winRate = document.getElementById("optBestWinRate");
+  const countBadge = document.getElementById("optRankedCountBadge");
+
+  if (placeholder) placeholder.style.display = best ? "none" : "block";
+  if (content) content.style.display = best ? "block" : "none";
+  if (badge) {
+    badge.innerText = best ? "Rank #1 Discovered" : "No Results";
+    badge.style.color = "var(--green)";
+  }
+  if (countBadge) countBadge.innerText = `${ranked.length} combinations ranked`;
+
+  if (best) {
+    if (paramsJson) paramsJson.innerText = JSON.stringify(best.params, null, 2);
+    if (netPnl) {
+      netPnl.innerText = `${best.net_pnl >= 0 ? "+" : ""}₹${best.net_pnl.toFixed(2)}`;
+      netPnl.style.color = best.net_pnl >= 0 ? "var(--green)" : "var(--red)";
+    }
+    if (sharpe) sharpe.innerText = (best.sharpe_ratio || 0).toFixed(2);
+    if (winRate) winRate.innerText = `${(best.win_rate || 0).toFixed(1)}%`;
+  }
+
+  // Table
+  const tbody = document.getElementById("optRankedBody");
+  if (!tbody) return;
+  tbody.innerHTML = "";
+
+  ranked.forEach((item, idx) => {
+    const isWin = (item.net_pnl || 0) >= 0;
+    const pnlCls = isWin ? "pos" : "neg";
+    const paramsStr = Object.entries(item.params || {}).map(([k, v]) => `${k}=${v}`).join(", ");
+    const serializedParams = JSON.stringify(item.params).replace(/"/g, '&quot;');
+
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td style="font-weight: 700;">#${idx + 1}</td>
+      <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.76rem; color: var(--accent-cyan);">${paramsStr}</td>
+      <td style="text-align: right;" class="${pnlCls}">${isWin ? "+" : ""}₹${item.net_pnl.toFixed(2)}</td>
+      <td style="text-align: right;" class="${pnlCls}">${isWin ? "+" : ""}${(item.return_pct || 0).toFixed(2)}%</td>
+      <td style="text-align: right;">${(item.sharpe_ratio || 0).toFixed(2)}</td>
+      <td style="text-align: right;">${(item.profit_factor || 0).toFixed(2)}</td>
+      <td style="text-align: right;">${(item.win_rate || 0).toFixed(1)}%</td>
+      <td style="text-align: right; color: var(--red);">${(item.max_drawdown_pct || 0).toFixed(2)}%</td>
+      <td style="text-align: right;">${item.total_trades || 0}</td>
+      <td>
+        <button class="btn-secondary btn-sm" style="font-size: 0.72rem; padding: 3px 8px;" onclick="applyParametersToConsole('${strat}', JSON.parse('${serializedParams}'))">
+          Apply ⚡
+        </button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function applyParametersToConsole(strat, params) {
+  const stratSelect = document.getElementById("strategySelect");
+  if (stratSelect) {
+    stratSelect.value = strat;
+    stratSelect.dispatchEvent(new Event("change"));
+  }
+
+  if (strat === "orb") {
+    if (params.opening_minutes !== undefined && document.getElementById("orbMinutesInput"))
+      document.getElementById("orbMinutesInput").value = params.opening_minutes;
+    if (params.risk_reward !== undefined && document.getElementById("orbRrInput"))
+      document.getElementById("orbRrInput").value = params.risk_reward;
+    if (params.breakout_atr_mult !== undefined && document.getElementById("orbAtrMultInput"))
+      document.getElementById("orbAtrMultInput").value = params.breakout_atr_mult;
+  } else if (strat === "equity") {
+    if (params.min_score !== undefined && document.getElementById("minScoreInput"))
+      document.getElementById("minScoreInput").value = params.min_score;
+    if (params.atr_sl_mult !== undefined && document.getElementById("atrSlInput"))
+      document.getElementById("atrSlInput").value = params.atr_sl_mult;
+    if (params.atr_tgt_mult !== undefined && document.getElementById("atrTgtInput"))
+      document.getElementById("atrTgtInput").value = params.atr_tgt_mult;
+  } else if (strat === "supertrend") {
+    if (params.atr_period !== undefined && document.getElementById("stAtrPeriodInput"))
+      document.getElementById("stAtrPeriodInput").value = params.atr_period;
+    if (params.multiplier !== undefined && document.getElementById("stMultiplierInput"))
+      document.getElementById("stMultiplierInput").value = params.multiplier;
+    if (params.risk_reward !== undefined && document.getElementById("stRrInput"))
+      document.getElementById("stRrInput").value = params.risk_reward;
+  } else if (strat === "camarilla") {
+    if (params.risk_reward !== undefined && document.getElementById("camRrInput"))
+      document.getElementById("camRrInput").value = params.risk_reward;
+    if (params.sl_buffer_pts !== undefined && document.getElementById("camBufferPtsInput"))
+      document.getElementById("camBufferPtsInput").value = params.sl_buffer_pts;
+  } else if (strat === "ema-ribbon") {
+    if (params.fast_ema !== undefined && document.getElementById("ribbonFastInput"))
+      document.getElementById("ribbonFastInput").value = params.fast_ema;
+    if (params.med_ema !== undefined && document.getElementById("ribbonMedInput"))
+      document.getElementById("ribbonMedInput").value = params.med_ema;
+    if (params.sl_pts !== undefined && document.getElementById("ribbonSlPtsInput"))
+      document.getElementById("ribbonSlPtsInput").value = params.sl_pts;
+    if (params.target_pts !== undefined && document.getElementById("ribbonTgtPtsInput"))
+      document.getElementById("ribbonTgtPtsInput").value = params.target_pts;
+  } else if (strat === "bollinger-b") {
+    if (params.period !== undefined && document.getElementById("bbPeriodInput"))
+      document.getElementById("bbPeriodInput").value = params.period;
+    if (params.std_dev !== undefined && document.getElementById("bbStdDevInput"))
+      document.getElementById("bbStdDevInput").value = params.std_dev;
+    if (params.oversold_b !== undefined && document.getElementById("bbOversoldInput"))
+      document.getElementById("bbOversoldInput").value = params.oversold_b;
+    if (params.overbought_b !== undefined && document.getElementById("bbOverboughtInput"))
+      document.getElementById("bbOverboughtInput").value = params.overbought_b;
+  } else if (strat === "macd-accel") {
+    if (params.fast_period !== undefined && document.getElementById("macdFastInput"))
+      document.getElementById("macdFastInput").value = params.fast_period;
+    if (params.slow_period !== undefined && document.getElementById("macdSlowInput"))
+      document.getElementById("macdSlowInput").value = params.slow_period;
+    if (params.sl_pts !== undefined && document.getElementById("macdSlPtsInput"))
+      document.getElementById("macdSlPtsInput").value = params.sl_pts;
+    if (params.target_pts !== undefined && document.getElementById("macdTgtPtsInput"))
+      document.getElementById("macdTgtPtsInput").value = params.target_pts;
+  } else if (strat === "options") {
+    if (params.sl_points !== undefined && document.getElementById("optionSlInput"))
+      document.getElementById("optionSlInput").value = params.sl_points;
+    if (params.target_multiplier !== undefined && document.getElementById("optionTgtInput"))
+      document.getElementById("optionTgtInput").value = params.target_multiplier;
+  }
+
+  // Switch to console tab
+  switchTab("tabConsole");
+  const runStatus = document.getElementById("runStatus");
+  if (runStatus) {
+    runStatus.innerText = `Applied optimal ${strat.toUpperCase()} parameters!`;
+    runStatus.style.color = "var(--green)";
+  }
+}
+window.applyParametersToConsole = applyParametersToConsole;
+

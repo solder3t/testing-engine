@@ -42,7 +42,11 @@ from strategies.ema_ribbon import EmaRibbonStrategy
 from strategies.bollinger_percent_b import BollingerPercentBStrategy
 from strategies.macd_acceleration import MacdAccelerationStrategy
 from engine.multi_day_runner import MultiDayRunner
+from engine.optimizer import StrategyOptimizer
+from engine.walk_forward import WalkForwardOptimizer
+from engine.param_grids import STRATEGY_REGISTRY, DEFAULT_PARAM_GRIDS, get_strategy_class, get_default_param_grid
 from analytics.trade_exporter import TradeExporter
+from analytics.tearsheet import generate_html_tearsheet
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("dashboard_server")
@@ -512,6 +516,184 @@ def export_csv():
     if os.path.exists(csv_path):
         return send_file(csv_path, as_attachment=True, download_name="backtest_trades.csv")
     return jsonify({"status": "error", "message": "No trades to export"}), 404
+
+
+@app.route("/api/strategy_params", methods=["GET"])
+def get_strategy_params():
+    """Returns default parameter grids and registered strategy keys."""
+    return jsonify({
+        "status": "success",
+        "strategies": list(STRATEGY_REGISTRY.keys()),
+        "grids": DEFAULT_PARAM_GRIDS
+    })
+
+
+@app.route("/api/walk_forward", methods=["POST"])
+def run_walk_forward_api():
+    """
+    Executes rolling Walk-Forward Optimization across market sessions.
+    Evaluates In-Sample parameter tuning and Out-Of-Sample forward testing efficiency.
+    """
+    data = request.json or {}
+    strategy_name = data.get("strategy", "orb")
+    source_dir = data.get("directory") or DOWNLOADS_DIR
+    mgr = ArchiveManager(downloads_dir=source_dir)
+
+    selected_dates = data.get("dates", [])
+    if not selected_dates:
+        all_sources = mgr.list_archives(target_dir=source_dir)
+        selected_dates = [a["date"] for a in all_sources]
+
+    in_sample = int(data.get("in_sample", 3))
+    out_of_sample = int(data.get("out_of_sample", 1))
+    total_needed = in_sample + out_of_sample
+
+    if len(selected_dates) < total_needed:
+        return jsonify({
+            "status": "error",
+            "message": f"Walk-Forward requires at least {total_needed} dates (in_sample={in_sample}, out_of_sample={out_of_sample}), got {len(selected_dates)}"
+        }), 400
+
+    rank_by = data.get("rank_by", "sharpe_ratio")
+    capital = float(data.get("capital", DEFAULT_CAPITAL))
+    risk_pct = float(data.get("risk_pct", DEFAULT_RISK_PCT_PER_TRADE))
+    sym_in = data.get("symbols", ["RELIANCE", "HDFCBANK", "INFY"])
+    symbols = ["auto"] if (isinstance(sym_in, str) and sym_in.lower() == "auto") else (sym_in if isinstance(sym_in, list) else None)
+
+    try:
+        strat_cls = get_strategy_class(strategy_name)
+        param_grid = data.get("param_grid") or get_default_param_grid(strategy_name)
+
+        for d in selected_dates:
+            mgr.extract_archive(d, target_dir=source_dir)
+
+        runner = MultiDayRunner(capital=capital, risk_pct=risk_pct, source_dir=source_dir, compound_capital=False)
+        wfo = WalkForwardOptimizer(runner=runner, in_sample_len=in_sample, out_of_sample_len=out_of_sample)
+        res = wfo.run_walk_forward(
+            strategy_class=strat_cls,
+            param_grid=param_grid,
+            dates=selected_dates,
+            symbols=symbols,
+            rank_by=rank_by
+        )
+
+        return jsonify({
+            "status": "success",
+            "strategy": strategy_name,
+            "walk_forward_efficiency": res["walk_forward_efficiency"],
+            "is_robust": res["is_robust"],
+            "total_windows": res["total_windows"],
+            "windows": res["windows"],
+            "overall_oos_metrics": res["overall_oos_metrics"]
+        })
+    except Exception as e:
+        logger.error(f"Walk-forward optimization failure: {e}\n{traceback.format_exc()}")
+        return jsonify({
+            "status": "error",
+            "message": f"{type(e).__name__}: {str(e)}",
+            "details": traceback.format_exc()
+        }), 500
+
+
+@app.route("/api/optimize", methods=["POST"])
+def run_optimize_api():
+    """
+    Performs grid-search parameter optimization across historical market recordings.
+    Ranks parameter combinations by chosen metric (Sharpe, P&L, Profit Factor, Win Rate).
+    """
+    data = request.json or {}
+    strategy_name = data.get("strategy", "orb")
+    source_dir = data.get("directory") or DOWNLOADS_DIR
+    mgr = ArchiveManager(downloads_dir=source_dir)
+
+    selected_dates = data.get("dates", [])
+    if not selected_dates:
+        all_sources = mgr.list_archives(target_dir=source_dir)
+        selected_dates = [a["date"] for a in all_sources]
+
+    if not selected_dates:
+        return jsonify({"status": "error", "message": "No dates available for optimization"}), 400
+
+    rank_by = data.get("rank_by", "sharpe_ratio")
+    capital = float(data.get("capital", DEFAULT_CAPITAL))
+    risk_pct = float(data.get("risk_pct", DEFAULT_RISK_PCT_PER_TRADE))
+    sym_in = data.get("symbols", ["RELIANCE", "HDFCBANK", "INFY"])
+    symbols = ["auto"] if (isinstance(sym_in, str) and sym_in.lower() == "auto") else (sym_in if isinstance(sym_in, list) else None)
+
+    try:
+        strat_cls = get_strategy_class(strategy_name)
+        param_grid = data.get("param_grid") or get_default_param_grid(strategy_name)
+
+        for d in selected_dates:
+            mgr.extract_archive(d, target_dir=source_dir)
+
+        runner = MultiDayRunner(capital=capital, risk_pct=risk_pct, source_dir=source_dir, compound_capital=False, parallel=True)
+        optimizer = StrategyOptimizer(runner=runner)
+        ranked = optimizer.optimize(
+            strategy_class=strat_cls,
+            param_grid=param_grid,
+            dates=selected_dates,
+            symbols=symbols,
+            rank_by=rank_by
+        )
+
+        return jsonify({
+            "status": "success",
+            "strategy": strategy_name,
+            "rank_by": rank_by,
+            "total_combinations": len(ranked),
+            "best_params": ranked[0]["params"] if ranked else {},
+            "ranked_results": ranked[:50]
+        })
+    except Exception as e:
+        logger.error(f"Parameter optimization failure: {e}\n{traceback.format_exc()}")
+        return jsonify({
+            "status": "error",
+            "message": f"{type(e).__name__}: {str(e)}",
+            "details": traceback.format_exc()
+        }), 500
+
+
+@app.route("/api/tearsheet", methods=["GET"])
+def view_tearsheet():
+    """Renders the standalone institutional HTML tearsheet for the latest run."""
+    run_data = latest_run_result
+    if not run_data:
+        latest_file = os.path.join(RESULTS_DIR, "latest_backtest.json")
+        if os.path.exists(latest_file):
+            with open(latest_file) as f:
+                run_data = json.load(f)
+
+    if not run_data:
+        return """<!DOCTYPE html><html><body style="background:#0d1117;color:#fff;font-family:sans-serif;padding:40px;text-align:center;">
+        <h2>No backtest results found</h2>
+        <p style="color:#8b949e;">Please run a backtest first from the Testing Engine Console.</p>
+        </body></html>""", 404
+
+    html = generate_html_tearsheet(run_data)
+    return Response(html, mimetype="text/html")
+
+
+@app.route("/api/export_tearsheet", methods=["GET"])
+def export_tearsheet():
+    """Downloads the standalone institutional HTML tearsheet."""
+    run_data = latest_run_result
+    if not run_data:
+        latest_file = os.path.join(RESULTS_DIR, "latest_backtest.json")
+        if os.path.exists(latest_file):
+            with open(latest_file) as f:
+                run_data = json.load(f)
+
+    if not run_data:
+        return jsonify({"status": "error", "message": "No backtest results to export"}), 404
+
+    html = generate_html_tearsheet(run_data)
+    strat = run_data.get("strategy", "strategy").lower().replace(" ", "_")
+    return Response(
+        html,
+        mimetype="text/html",
+        headers={"Content-Disposition": f"attachment; filename=tearsheet_{strat}.html"}
+    )
 
 
 def run_server(port: int = DASHBOARD_PORT, host: str = DASHBOARD_HOST):
