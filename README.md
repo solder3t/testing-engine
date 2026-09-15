@@ -121,3 +121,10 @@ python3 cli.py dashboard --port 5690
 
 ### Dashboard
 Open `http://localhost:5690` in any web browser.
+
+---
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
