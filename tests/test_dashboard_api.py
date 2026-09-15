@@ -80,3 +80,33 @@ def test_api_results_and_run(client):
     res_csv = client.get("/api/export_csv")
     assert res_csv.status_code == 200
     assert "text/csv" in res_csv.content_type
+
+
+def test_api_browse_filesystem(client, tmp_path):
+    sub = tmp_path / "market_session_2026_09_02"
+    sub.mkdir()
+    (sub / "equities.db").touch()
+    rar_file = tmp_path / "2026_09_02.rar"
+    rar_file.touch()
+
+    res = client.get(f"/api/browse?path={tmp_path}")
+    assert res.status_code == 200
+    data = res.get_json()
+    assert data["status"] == "success"
+    assert "items" in data
+    names = [it["name"] for it in data["items"]]
+    assert "market_session_2026_09_02" in names
+    assert "2026_09_02.rar" in names
+
+
+def test_api_archives_single_file(client, tmp_path):
+    rar_file = tmp_path / "2026_09_12.rar"
+    rar_file.touch()
+
+    res = client.get(f"/api/archives?dir={rar_file}")
+    assert res.status_code == 200
+    data = res.get_json()
+    assert data["status"] == "success"
+    assert len(data["archives"]) == 1
+    assert data["archives"][0]["date"] == "2026_09_12"
+    assert data["archives"][0]["name"] == "2026_09_12.rar"

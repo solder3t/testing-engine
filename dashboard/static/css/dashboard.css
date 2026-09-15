@@ -623,3 +623,159 @@ tr:hover {
   font-size: 0.75rem;
   color: var(--text-muted);
 }
+
+/* File/Folder Explorer Modal */
+.modal-explorer {
+  width: 760px;
+  max-width: 95vw;
+}
+
+.explorer-body {
+  padding: 16px 20px;
+  gap: 12px;
+}
+
+.explorer-places {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.place-chip {
+  font-size: 0.72rem;
+  padding: 4px 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  color: var(--text-main);
+  cursor: pointer;
+  transition: all 0.2s;
+  user-select: none;
+}
+
+.place-chip:hover {
+  background: rgba(0, 242, 254, 0.15);
+  color: var(--accent-cyan);
+  border-color: rgba(0, 242, 254, 0.4);
+}
+
+.explorer-nav-bar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.btn-sm {
+  padding: 6px 12px;
+  font-size: 0.75rem;
+  height: 32px;
+}
+
+.explorer-path-input {
+  flex: 1;
+  background: rgba(13, 21, 39, 0.9);
+  border: 1px solid var(--panel-border);
+  color: #fff;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  height: 32px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.explorer-list-container {
+  max-height: 280px;
+  min-height: 200px;
+  overflow-y: auto;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.explorer-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.78rem;
+  transition: background 0.15s;
+  border: 1px solid transparent;
+}
+
+.explorer-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.explorer-item.selected {
+  background: rgba(0, 242, 254, 0.12);
+  border-color: rgba(0, 242, 254, 0.4);
+  color: #fff;
+}
+
+.explorer-item-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.explorer-item-icon {
+  font-size: 1rem;
+  width: 20px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.explorer-item-name {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.explorer-item-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.explorer-item-size {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.explorer-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 10px;
+  border-top: 1px solid var(--panel-border);
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.explorer-selected-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 420px;
+}
+
+.explorer-selected-text {
+  font-size: 0.76rem;
+  color: var(--accent-cyan);
+  font-family: 'JetBrains Mono', monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

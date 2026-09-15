@@ -12,6 +12,7 @@ let sortAscending = false;
 document.addEventListener("DOMContentLoaded", () => {
   initStrategySelector();
   initDirectoryScanner();
+  initFileBrowser();
   initTableSort();
   initModal();
 
@@ -100,6 +101,192 @@ function initDirectoryScanner() {
       loadArchives(dir);
     });
   });
+}
+
+// ── Interactive File / Folder Browser ─────────────────────────────────────────
+let currentExplorerPath = "~/Downloads";
+let currentSelectedPath = "";
+let explorerRawItems = [];
+
+function initFileBrowser() {
+  const modal = document.getElementById("fileBrowserModal");
+  const btnOpen = document.getElementById("btnBrowseDir");
+  const btnClose = document.getElementById("closeBrowserModal");
+  const btnUp = document.getElementById("btnNavUp");
+  const btnGo = document.getElementById("btnNavGo");
+  const pathInput = document.getElementById("explorerPathInput");
+  const searchInput = document.getElementById("explorerSearchFilter");
+  const btnSelectCurrent = document.getElementById("btnSelectCurrentDir");
+  const btnConfirm = document.getElementById("btnConfirmSelection");
+  const dirInput = document.getElementById("dirInput");
+
+  if (!modal || !btnOpen) return;
+
+  btnOpen.addEventListener("click", () => {
+    modal.style.display = "flex";
+    const startPath = dirInput.value.trim() || "~/Downloads";
+    browsePath(startPath);
+  });
+
+  btnClose.addEventListener("click", () => {
+    modal.style.display = "none";
+  });
+
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) modal.style.display = "none";
+  });
+
+  document.querySelectorAll(".explorer-places .place-chip").forEach(chip => {
+    chip.addEventListener("click", () => {
+      const p = chip.getAttribute("data-path");
+      browsePath(p);
+    });
+  });
+
+  btnUp.addEventListener("click", () => {
+    if (pathInput.dataset.parent) {
+      browsePath(pathInput.dataset.parent);
+    }
+  });
+
+  btnGo.addEventListener("click", () => {
+    browsePath(pathInput.value.trim());
+  });
+
+  pathInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      browsePath(pathInput.value.trim());
+    }
+  });
+
+  if (searchInput) {
+    searchInput.addEventListener("input", () => {
+      filterExplorerList(searchInput.value.trim());
+    });
+  }
+
+  btnSelectCurrent.addEventListener("click", () => {
+    dirInput.value = currentExplorerPath;
+    modal.style.display = "none";
+    loadArchives(currentExplorerPath);
+  });
+
+  btnConfirm.addEventListener("click", () => {
+    if (currentSelectedPath) {
+      dirInput.value = currentSelectedPath;
+      modal.style.display = "none";
+      loadArchives(currentSelectedPath);
+    }
+  });
+}
+
+async function browsePath(path) {
+  const listEl = document.getElementById("explorerItemsList");
+  const pathInput = document.getElementById("explorerPathInput");
+  const btnUp = document.getElementById("btnNavUp");
+  const selectedDisplay = document.getElementById("selectedItemDisplay");
+  const btnConfirm = document.getElementById("btnConfirmSelection");
+  const searchInput = document.getElementById("explorerSearchFilter");
+
+  if (searchInput) searchInput.value = "";
+  listEl.innerHTML = '<div class="empty-state">Loading folder contents...</div>';
+
+  try {
+    const res = await fetch(`/api/browse?path=${encodeURIComponent(path)}`);
+    const data = await res.json();
+    if (data.status !== "success") {
+      listEl.innerHTML = `<div class="empty-state" style="color: var(--red);">Error: ${data.message || "Failed to load directory"}</div>`;
+      return;
+    }
+
+    currentExplorerPath = data.current_path;
+    pathInput.value = data.current_path;
+    pathInput.dataset.parent = data.parent_path || "";
+    btnUp.disabled = !data.parent_path;
+
+    currentSelectedPath = data.selected_target || data.current_path;
+    selectedDisplay.innerText = currentSelectedPath;
+    btnConfirm.disabled = false;
+
+    explorerRawItems = data.items || [];
+    renderExplorerList(explorerRawItems);
+  } catch (err) {
+    listEl.innerHTML = `<div class="empty-state" style="color: var(--red);">Failed to load directory: ${err}</div>`;
+  }
+}
+
+function renderExplorerList(items) {
+  const listEl = document.getElementById("explorerItemsList");
+  const selectedDisplay = document.getElementById("selectedItemDisplay");
+  const btnConfirm = document.getElementById("btnConfirmSelection");
+
+  listEl.innerHTML = "";
+  if (!items || items.length === 0) {
+    listEl.innerHTML = '<div class="empty-state">This directory has no subdirectories or archives.</div>';
+    return;
+  }
+
+  items.forEach(item => {
+    const el = document.createElement("div");
+    el.className = `explorer-item ${item.path === currentSelectedPath ? "selected" : ""}`;
+
+    let icon = "📁";
+    let badgeHtml = "";
+    if (item.type === "archive") {
+      icon = item.is_market_archive ? "📦" : "🗜️";
+      if (item.is_market_archive) {
+        badgeHtml = `<span class="archive-badge badge-archive">Session RAR</span>`;
+      }
+    } else if (item.type === "database") {
+      icon = "🗄️";
+      badgeHtml = `<span class="archive-badge badge-folder">Market DB</span>`;
+    } else if (item.is_session) {
+      icon = "🗂️";
+      badgeHtml = `<span class="archive-badge badge-extracted">Market Session</span>`;
+    }
+
+    const sizeStr = item.size_mb ? `${item.size_mb.toFixed(1)} MB` : "";
+
+    el.innerHTML = `
+      <div class="explorer-item-left">
+        <span class="explorer-item-icon">${icon}</span>
+        <span class="explorer-item-name" title="${item.path}">${item.name}</span>
+      </div>
+      <div class="explorer-item-right">
+        ${badgeHtml}
+        <span class="explorer-item-size">${sizeStr}</span>
+      </div>
+    `;
+
+    // Click to select
+    el.addEventListener("click", () => {
+      document.querySelectorAll(".explorer-item").forEach(i => i.classList.remove("selected"));
+      el.classList.add("selected");
+      currentSelectedPath = item.path;
+      selectedDisplay.innerText = item.path;
+      btnConfirm.disabled = false;
+    });
+
+    // Double click to enter directory
+    if (item.type === "folder") {
+      el.addEventListener("dblclick", () => {
+        browsePath(item.path);
+      });
+    }
+
+    listEl.appendChild(el);
+  });
+}
+
+function filterExplorerList(query) {
+  if (!query) {
+    renderExplorerList(explorerRawItems);
+    return;
+  }
+  const q = query.toLowerCase();
+  const filtered = explorerRawItems.filter(item => item.name.toLowerCase().includes(q));
+  renderExplorerList(filtered);
 }
 
 async function loadArchives(customDir = null) {

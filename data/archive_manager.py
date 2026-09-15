@@ -76,7 +76,39 @@ class ArchiveManager:
         if not os.path.exists(scan_path):
             return []
 
-        # Check if scan_path itself is a market session directory
+        # 0. Check if scan_path is a single file (e.g. 2026_09_02.rar or equities.db)
+        if os.path.isfile(scan_path):
+            basename = os.path.basename(scan_path)
+            if scan_path.lower().endswith((".rar", ".zip")):
+                date_match = re.search(r"(\d{4}[-_]\d{2}[-_]\d{2})", basename)
+                date_str = date_match.group(1).replace("-", "_") if date_match else os.path.splitext(basename)[0].replace("-", "_")
+                size_mb = os.path.getsize(scan_path) / (1024 * 1024)
+                cache_path = os.path.join(self.cache_dir, date_str)
+                is_extracted = os.path.isdir(cache_path) and any(
+                    os.path.exists(os.path.join(cache_path, db)) for db in ["equities.db", "trade.db", "indicators.db"]
+                )
+                extracted_dbs = []
+                if os.path.isdir(cache_path):
+                    extracted_dbs = [os.path.basename(p) for p in glob.glob(os.path.join(cache_path, "*"))]
+                return [{
+                    "date": date_str,
+                    "name": basename,
+                    "filename": basename,
+                    "path": scan_path,
+                    "type": "rar" if basename.lower().endswith(".rar") else "archive",
+                    "source_type": "archive",
+                    "format": os.path.splitext(basename)[1].lstrip("."),
+                    "size_mb": round(size_mb, 1),
+                    "is_extracted": is_extracted,
+                    "cache_path": cache_path,
+                    "extracted_files": extracted_dbs,
+                    "parent_dir": os.path.dirname(scan_path)
+                }]
+            elif scan_path.lower().endswith(".db"):
+                parent_dir = os.path.dirname(scan_path)
+                return self.list_archives(target_dir=parent_dir)
+
+        # 1. Check if scan_path itself is a market session directory
         if os.path.isdir(scan_path):
             self_dbs = [f for f in STANDARD_DBS if os.path.exists(os.path.join(scan_path, f))]
             if self_dbs:

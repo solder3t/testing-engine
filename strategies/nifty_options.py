@@ -20,7 +20,18 @@ from config import TRADING_START, TRADING_END
 class NiftyOptionsStrategy(BaseStrategy):
     """NIFTY Index Options Strategy with dynamic ATM option chain execution."""
 
-    def __init__(self, option_loader: Optional[OptionChainLoader] = None, params: Optional[Dict[str, Any]] = None):
+    def __init__(self, params: Optional[Dict[str, Any]] = None, option_loader: Optional[Any] = None):
+        # Support either order of parameters or dictionary as first argument
+        if isinstance(params, OptionChainLoader):
+            actual_loader = params
+            actual_params = option_loader
+        elif isinstance(option_loader, dict) and params is None:
+            actual_params = option_loader
+            actual_loader = None
+        else:
+            actual_params = params
+            actual_loader = option_loader
+
         default_params = {
             "orb_window_minutes": 15,    # 09:15 to 09:30 define ORB range
             "min_rr": 1.5,
@@ -29,11 +40,11 @@ class NiftyOptionsStrategy(BaseStrategy):
             "lot_size": 25,              # Standard NIFTY lot size
             "max_lots": 4
         }
-        if params:
-            default_params.update(params)
+        if actual_params and isinstance(actual_params, dict):
+            default_params.update(actual_params)
         super().__init__(name="NiftyOptionsBreakout", params=default_params)
 
-        self.option_loader = option_loader or OptionChainLoader()
+        self.option_loader = actual_loader if isinstance(actual_loader, OptionChainLoader) else OptionChainLoader()
         self.orb_high = None
         self.orb_low = None
         self.orb_established = False
@@ -41,6 +52,8 @@ class NiftyOptionsStrategy(BaseStrategy):
         self.last_trade_time = ""
 
     def on_session_start(self, date_str: str, portfolio: Portfolio, context: Dict[str, Any]):
+        if context and "option_loader" in context and isinstance(context["option_loader"], OptionChainLoader):
+            self.option_loader = context["option_loader"]
         self.orb_high = None
         self.orb_low = None
         self.orb_established = False

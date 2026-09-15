@@ -133,7 +133,10 @@ class BacktestEngine:
             "date": date_str,
             "ohlc_data": ohlc_map,
             "metadata": symbol_meta,
-            "current_vix": 15.0
+            "current_vix": 15.0,
+            "data_loader": self.data_loader,
+            "option_loader": self.option_loader,
+            "source_dir": self.source_dir
         }
         strategy.on_session_start(date_str, port, context)
 

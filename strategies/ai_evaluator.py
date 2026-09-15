@@ -20,19 +20,32 @@ logger = logging.getLogger("ai_evaluator")
 class AiSnapshotStrategy(BaseStrategy):
     """Replays and evaluates the 2,800+ recorded Gemini AI decisions."""
 
-    def __init__(self, data_loader: Optional[DataLoader] = None, params: Optional[Dict[str, Any]] = None):
+    def __init__(self, params: Optional[Dict[str, Any]] = None, data_loader: Optional[Any] = None):
+        # Support either order of parameters or dictionary as first argument
+        if isinstance(params, DataLoader):
+            actual_loader = params
+            actual_params = data_loader
+        elif isinstance(data_loader, dict) and params is None:
+            actual_params = data_loader
+            actual_loader = None
+        else:
+            actual_params = params
+            actual_loader = data_loader
+
         default_params = {
             "min_confidence": 0.70,
             "allow_breakout_mode": True
         }
-        if params:
-            default_params.update(params)
+        if actual_params and isinstance(actual_params, dict):
+            default_params.update(actual_params)
         super().__init__(name="AiSnapshotEvaluator", params=default_params)
 
-        self.data_loader = data_loader or DataLoader()
+        self.data_loader = actual_loader if isinstance(actual_loader, DataLoader) else DataLoader()
         self.snapshots_by_time: Dict[str, Dict] = {}
 
     def on_session_start(self, date_str: str, portfolio: Portfolio, context: Dict[str, Any]):
+        if context and "data_loader" in context and isinstance(context["data_loader"], DataLoader):
+            self.data_loader = context["data_loader"]
         self.snapshots_by_time.clear()
         df_ai = self.data_loader.get_ai_snapshots(date_str)
         if df_ai.empty:
