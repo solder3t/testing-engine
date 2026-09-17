@@ -13,6 +13,19 @@ Usage:
 
 import sys
 import os
+
+# Auto re-exec under local venv or Python 3.14 if current interpreter lacks dependencies
+try:
+    import pandas
+except ModuleNotFoundError:
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    venv_py = os.path.join(base_dir, "venv", "bin", "python")
+    py314 = "/usr/bin/python3.14"
+    if os.path.exists(venv_py) and sys.executable != venv_py:
+        os.execv(venv_py, [venv_py] + sys.argv)
+    elif os.path.exists(py314) and sys.executable != py314:
+        os.execv(py314, [py314] + sys.argv)
+
 import argparse
 import json
 from rich.console import Console

@@ -140,6 +140,17 @@ class ArchiveManager:
         for pat in [os.path.join(scan_path, "*.rar"), os.path.join(scan_path, "*.zip")]:
             archive_files.extend(glob.glob(pat))
 
+        # Also search 1 level down in subdirectories (e.g. ~/Downloads/trading-data/*.rar)
+        if os.path.isdir(scan_path):
+            try:
+                for sub in os.listdir(scan_path):
+                    sub_path = os.path.join(scan_path, sub)
+                    if os.path.isdir(sub_path) and not sub.startswith("."):
+                        for pat in [os.path.join(sub_path, "*.rar"), os.path.join(sub_path, "*.zip")]:
+                            archive_files.extend(glob.glob(pat))
+            except Exception:
+                pass
+
         for f in sorted(archive_files):
             basename = os.path.basename(f)
             date_match = re.search(r"(\d{4}[-_]\d{2}[-_]\d{2})", basename)
@@ -148,6 +159,9 @@ class ArchiveManager:
                 continue
 
             date_str = date_match.group(1).replace("-", "_")
+            if date_str in seen_dates:
+                continue
+
             size_mb = os.path.getsize(f) / (1024 * 1024)
             cache_path = os.path.join(self.cache_dir, date_str)
 
@@ -170,7 +184,7 @@ class ArchiveManager:
                 "is_extracted": is_extracted,
                 "cache_path": cache_path,
                 "extracted_files": extracted_dbs,
-                "parent_dir": scan_path
+                "parent_dir": os.path.dirname(f)
             })
             seen_dates.add(date_str)
 
