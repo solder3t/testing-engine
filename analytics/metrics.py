@@ -144,12 +144,12 @@ def calculate_performance_metrics(
             std_r = float(daily_returns.std())
 
             if std_r > 0:
-                sharpe = round((mean_r / std_r) * np.sqrt(252), 2)
+                sharpe = round(float((mean_r / std_r) * np.sqrt(252)), 2)
 
             downside = daily_returns[daily_returns < 0]
             downside_std = float(downside.std()) if len(downside) > 1 else 0.0
             if downside_std > 0:
-                sortino = round((mean_r / downside_std) * np.sqrt(252), 2)
+                sortino = round(float((mean_r / downside_std) * np.sqrt(252)), 2)
         else:
             # Single day: fall back to per-trade returns (no annualization applied)
             if len(pnls) > 1:
@@ -157,11 +157,11 @@ def calculate_performance_metrics(
                 mean_r = float(np.mean(returns))
                 std_r = float(np.std(returns))
                 if std_r > 0:
-                    sharpe = round(mean_r / std_r, 2)  # No √252 for intraday
+                    sharpe = round(float(mean_r / std_r), 2)  # No √252 for intraday
                 downside = returns[returns < 0]
                 ds = float(np.std(downside)) if len(downside) > 0 else 0.0
                 if ds > 0:
-                    sortino = round(mean_r / ds, 2)
+                    sortino = round(float(mean_r / ds), 2)
 
     avg_bars = round(sum(t.holding_bars for t in trades) / total_trades, 1)
 
@@ -182,9 +182,9 @@ def calculate_performance_metrics(
         "calmar_ratio": calmar,
         "max_drawdown_pct": max_dd_pct,
         "max_drawdown_rs": max_dd_rs,
-        "avg_trade_pnl": round(total_net / total_trades, 2),
-        "best_trade": round(max(pnls), 2) if pnls else 0.0,
-        "worst_trade": round(min(pnls), 2) if pnls else 0.0,
+        "avg_trade_pnl": round(float(total_net / total_trades), 2),
+        "best_trade": round(float(max(pnls)), 2) if pnls else 0.0,
+        "worst_trade": round(float(min(pnls)), 2) if pnls else 0.0,
         "avg_holding_bars": avg_bars,
         "max_consecutive_wins": max_cons_wins,
         "max_consecutive_losses": max_cons_losses,

@@ -27,7 +27,9 @@ import re
 import logging
 import traceback
 from typing import Dict, Any, Optional
+import numpy as np
 from flask import Flask, render_template, request, jsonify, send_file, Response
+from flask.json.provider import DefaultJSONProvider
 from flask_cors import CORS
 
 # Ensure testing-engine is on sys.path
@@ -70,11 +72,36 @@ from analytics.tearsheet import generate_html_tearsheet
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("dashboard_server")
 
+
+class NumpyJSONProvider(DefaultJSONProvider):
+    """
+    JSON Provider ensuring all NumPy and Pandas data types (np.bool_, np.integer,
+    np.floating, np.ndarray, etc.) are converted to native Python types
+    for JSON serialization across all API responses.
+    """
+    def default(self, obj):
+        if isinstance(obj, (np.bool_, bool)):
+            return bool(obj)
+        if isinstance(obj, (np.integer, int)):
+            return int(obj)
+        if isinstance(obj, (np.floating, float)):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        if hasattr(obj, "to_dict"):
+            return obj.to_dict()
+        if hasattr(obj, "isoformat"):
+            return obj.isoformat()
+        return super().default(obj)
+
+
 app = Flask(
     __name__,
     template_folder=os.path.join(os.path.dirname(__file__), "templates"),
     static_folder=os.path.join(os.path.dirname(__file__), "static")
 )
+app.json_provider_class = NumpyJSONProvider
+app.json = NumpyJSONProvider(app)
 CORS(app)
 
 latest_run_result: Dict[str, Any] = {}
@@ -668,9 +695,9 @@ def run_walk_forward_api():
         return jsonify({
             "status": "success",
             "strategy": strategy_name,
-            "walk_forward_efficiency": res["walk_forward_efficiency"],
-            "is_robust": res["is_robust"],
-            "total_windows": res["total_windows"],
+            "walk_forward_efficiency": float(res["walk_forward_efficiency"]),
+            "is_robust": bool(res["is_robust"]),
+            "total_windows": int(res["total_windows"]),
             "windows": res["windows"],
             "overall_oos_metrics": res["overall_oos_metrics"]
         })
@@ -728,7 +755,7 @@ def run_optimize_api():
             "status": "success",
             "strategy": strategy_name,
             "rank_by": rank_by,
-            "total_combinations": len(ranked),
+            "total_combinations": int(len(ranked)),
             "best_params": ranked[0]["params"] if ranked else {},
             "ranked_results": ranked[:50]
         })

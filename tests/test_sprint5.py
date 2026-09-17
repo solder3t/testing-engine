@@ -225,3 +225,48 @@ def test_api_optimize_execution(client):
             assert data["total_combinations"] == 2
             assert data["best_params"]["opening_minutes"] == 15
             assert len(data["ranked_results"]) == 2
+
+
+def test_api_walk_forward_numpy_types_serialization(client):
+    """Verify /api/walk_forward cleanly serializes numpy data types (np.bool_, np.float64, np.int64)."""
+    import numpy as np
+    mock_wfo_res = {
+        "strategy": "OrbBreakoutStrategy",
+        "total_windows": np.int64(2),
+        "walk_forward_efficiency": np.float64(0.85),
+        "is_robust": np.bool_(True),
+        "windows": [
+            {
+                "window": np.int64(1),
+                "in_sample_dates": ["2026_02_02", "2026_02_03"],
+                "out_of_sample_dates": ["2026_02_04"],
+                "best_params": {"opening_minutes": np.int64(15)},
+                "in_sample_metrics": {"sharpe_ratio": np.float64(2.1), "net_pnl": np.float64(15000.0)},
+                "out_of_sample_metrics": {
+                    "sharpe_ratio": np.float64(1.8),
+                    "net_pnl": np.float64(8000.0),
+                    "win_rate": np.float64(60.0),
+                    "total_trades": np.int64(5)
+                }
+            }
+        ],
+        "overall_oos_metrics": {"net_pnl": np.float64(8000.0), "sharpe_ratio": np.float64(1.8)}
+    }
+
+    with patch("dashboard.server.WalkForwardOptimizer.run_walk_forward", return_value=mock_wfo_res):
+        with patch("dashboard.server.ArchiveManager.extract_archive"):
+            res = client.post("/api/walk_forward", json={
+                "strategy": "orb",
+                "dates": ["2026_02_02", "2026_02_03", "2026_02_04"],
+                "in_sample": 2,
+                "out_of_sample": 1
+            })
+            assert res.status_code == 200
+            data = res.get_json()
+            assert data["status"] == "success"
+            assert data["walk_forward_efficiency"] == 0.85
+            assert data["is_robust"] is True
+            assert isinstance(data["is_robust"], bool)
+            assert isinstance(data["total_windows"], int)
+            assert isinstance(data["walk_forward_efficiency"], float)
+

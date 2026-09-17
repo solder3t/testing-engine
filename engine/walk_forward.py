@@ -139,15 +139,15 @@ class WalkForwardOptimizer:
             equity_curve=all_oos_equity_curves
         )
 
-        avg_is_sharpe = sum(is_sharpes) / len(is_sharpes) if is_sharpes else 0.0
-        avg_oos_sharpe = sum(oos_sharpes) / len(oos_sharpes) if oos_sharpes else 0.0
-        wfe_ratio = round(avg_oos_sharpe / avg_is_sharpe, 2) if avg_is_sharpe > 0 else 0.0
+        avg_is_sharpe = float(sum(is_sharpes) / len(is_sharpes)) if is_sharpes else 0.0
+        avg_oos_sharpe = float(sum(oos_sharpes) / len(oos_sharpes)) if oos_sharpes else 0.0
+        wfe_ratio = round(float(avg_oos_sharpe / avg_is_sharpe), 2) if avg_is_sharpe > 0 else 0.0
 
         return {
             "strategy": strategy_class.__name__,
-            "total_windows": len(windows),
-            "walk_forward_efficiency": wfe_ratio,
-            "is_robust": wfe_ratio >= 0.5,
+            "total_windows": int(len(windows)),
+            "walk_forward_efficiency": float(wfe_ratio),
+            "is_robust": bool(wfe_ratio >= 0.5),
             "overall_oos_metrics": overall_oos_metrics,
             "windows": window_results,
             "out_of_sample_trades": all_oos_trades,
