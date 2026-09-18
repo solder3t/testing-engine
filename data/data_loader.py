@@ -6,6 +6,7 @@ and master metadata from the extracted SQLite databases.
 """
 
 import os
+import json
 import sqlite3
 import logging
 from typing import Optional, List, Dict
@@ -31,6 +32,8 @@ class DataLoader:
         self.source_dir = os.path.expanduser(source_dir) if source_dir else None
         self.archive_manager = archive_manager or ArchiveManager(downloads_dir=self.source_dir or DOWNLOADS_DIR, cache_dir=self.cache_dir)
         self._connections: Dict[str, sqlite3.Connection] = {}
+        self._ohlc_cache: Dict[tuple, pd.DataFrame] = {}
+        self._circuit_limits_cache: Dict[str, Dict] = {}
 
     def _get_connection(self, db_path: str) -> sqlite3.Connection:
         """Returns a cached read-only connection to the SQLite database."""
@@ -43,13 +46,15 @@ class DataLoader:
         return self._connections[db_path]
 
     def close(self):
-        """Closes all open cached SQLite connections."""
+        """Closes all open cached SQLite connections and clears caches."""
         for conn in self._connections.values():
             try:
                 conn.close()
             except Exception:
                 pass
         self._connections.clear()
+        self._ohlc_cache.clear()
+        self._circuit_limits_cache.clear()
 
     def _get_db_path(self, date_str: str, db_name: str) -> Optional[str]:
         return self.archive_manager.get_database_path(date_str, db_name, target_dir=self.source_dir)
@@ -97,11 +102,17 @@ class DataLoader:
         symbol: str = "",
         timeframe: str = "1min"
     ) -> pd.DataFrame:
-        """Fetch resampled OHLC candles for an equity instrument."""
+        """Fetch resampled OHLC candles for an equity instrument (cached in-memory)."""
+        cache_key = ("equity", date_str, security_id, symbol, timeframe)
+        if cache_key in self._ohlc_cache:
+            return self._ohlc_cache[cache_key].copy()
+
         df_ticks = self.get_equity_ticks(date_str, security_id, symbol)
         if df_ticks.empty:
             return pd.DataFrame()
-        return resample_ticks_to_ohlc(df_ticks, timeframe=timeframe)
+        ohlc = resample_ticks_to_ohlc(df_ticks, timeframe=timeframe)
+        self._ohlc_cache[cache_key] = ohlc
+        return ohlc.copy()
 
     # ── Index Data ────────────────────────────────────────────────────────────
 
@@ -135,11 +146,55 @@ class DataLoader:
         return df
 
     def get_index_ohlc(self, date_str: str, identifier: str = "NIFTY", timeframe: str = "1min") -> pd.DataFrame:
-        """Fetch resampled OHLC candles for an index."""
+        """Fetch resampled OHLC candles for an index (cached in-memory)."""
+        cache_key = ("index", date_str, identifier, timeframe)
+        if cache_key in self._ohlc_cache:
+            return self._ohlc_cache[cache_key].copy()
+
         df_ticks = self.get_index_ticks(date_str, identifier)
         if df_ticks.empty:
             return pd.DataFrame()
-        return resample_ticks_to_ohlc(df_ticks, timeframe=timeframe)
+        ohlc = resample_ticks_to_ohlc(df_ticks, timeframe=timeframe)
+        self._ohlc_cache[cache_key] = ohlc
+        return ohlc.copy()
+
+    # ── Circuit Limits ────────────────────────────────────────────────────────
+
+    def get_circuit_limits(self, date_str: str) -> Dict[str, Any]:
+        """
+        Fetch upper/lower circuit limits from circuit_limits.json for a session date.
+        Returns a dictionary indexed by both security_id and uppercase symbol.
+        """
+        if date_str in self._circuit_limits_cache:
+            return self._circuit_limits_cache[date_str]
+
+        json_path = self._get_db_path(date_str, "circuit_limits.json")
+        if not json_path or not os.path.exists(json_path):
+            return {}
+
+        try:
+            with open(json_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            lookup = {}
+            for k, v in data.items():
+                if k.startswith("_") or not isinstance(v, dict):
+                    continue
+                sym = str(v.get("symbol", "")).strip().upper()
+                lower = float(v.get("lower", 0.0))
+                upper = float(v.get("upper", 0.0))
+                entry = {"security_id": k, "symbol": sym, "lower": lower, "upper": upper}
+                lookup[k] = entry
+                try:
+                    lookup[int(k)] = entry
+                except ValueError:
+                    pass
+                if sym:
+                    lookup[sym] = entry
+            self._circuit_limits_cache[date_str] = lookup
+            return lookup
+        except Exception as e:
+            logger.warning(f"Error loading circuit_limits.json for {date_str}: {e}")
+            return {}
 
     # ── Precomputed Indicators ────────────────────────────────────────────────
 

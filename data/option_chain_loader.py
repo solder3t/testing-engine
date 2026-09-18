@@ -7,6 +7,7 @@ from optionchain_snapshot.db.
 
 import os
 import sqlite3
+import bisect
 import logging
 from typing import Optional, List, Dict
 import pandas as pd
@@ -19,7 +20,7 @@ logger = logging.getLogger("option_chain_loader")
 
 
 class OptionChainLoader:
-    """Historical option chain loader and analytics calculator."""
+    """Historical option chain loader and analytics calculator with connection pooling and query caching."""
 
     def __init__(
         self,
@@ -30,24 +31,51 @@ class OptionChainLoader:
         self.cache_dir = os.path.expanduser(cache_dir)
         self.source_dir = os.path.expanduser(source_dir) if source_dir else None
         self.archive_manager = archive_manager or ArchiveManager(downloads_dir=self.source_dir or DOWNLOADS_DIR, cache_dir=self.cache_dir)
+        self._connections: Dict[str, sqlite3.Connection] = {}
+        self._table_cache: Dict[str, List[str]] = {}
+        self._snapshot_times_cache: Dict[tuple, List[str]] = {}
+
+    def _get_connection(self, db_path: str) -> sqlite3.Connection:
+        """Returns a cached read-only connection to the SQLite database."""
+        if db_path not in self._connections:
+            self._connections[db_path] = sqlite3.connect(
+                f"file:{db_path}?mode=ro",
+                uri=True,
+                check_same_thread=False
+            )
+        return self._connections[db_path]
+
+    def close(self):
+        """Closes all open cached SQLite connections and clears query caches."""
+        for conn in self._connections.values():
+            try:
+                conn.close()
+            except Exception:
+                pass
+        self._connections.clear()
+        self._table_cache.clear()
+        self._snapshot_times_cache.clear()
 
     def _get_db_path(self, date_str: str) -> Optional[str]:
         return self.archive_manager.get_database_path(date_str, "optionchain_snapshot.db", target_dir=self.source_dir)
 
     def list_chain_tables(self, date_str: str) -> List[str]:
-        """List all option chain tables in the snapshot database."""
+        """List all option chain tables in the snapshot database (cached in-memory)."""
+        if date_str in self._table_cache:
+            return self._table_cache[date_str]
+
         db_path = self._get_db_path(date_str)
         if not db_path:
             return []
 
-        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        conn = self._get_connection(db_path)
         cur = conn.cursor()
         tables = [
             r[0] for r in cur.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'chain_%'"
             ).fetchall()
         ]
-        conn.close()
+        self._table_cache[date_str] = tables
         return tables
 
     def get_nearest_chain(
@@ -57,7 +85,7 @@ class OptionChainLoader:
         underlying: str = "NIFTY"
     ) -> Optional[pd.DataFrame]:
         """
-        Fetch the nearest option chain snapshot at or before the given timestamp.
+        Fetch the nearest option chain snapshot at or before the given timestamp using O(log N) bisect.
         """
         tables = self.list_chain_tables(date_str)
         matching = [t for t in tables if t.upper().startswith(f"CHAIN_{underlying.upper()}_")]
@@ -72,32 +100,33 @@ class OptionChainLoader:
         if not db_path:
             return None
 
-        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-        cur = conn.cursor()
+        conn = self._get_connection(db_path)
 
-        # Find nearest snapshot_time <= timestamp
-        nearest_time_row = cur.execute(
-            f"SELECT snapshot_time FROM \"{target_table}\" WHERE snapshot_time <= ? ORDER BY snapshot_time DESC LIMIT 1",
-            (timestamp,)
-        ).fetchone()
+        # Retrieve sorted snapshot times (cached once per table)
+        cache_key = (date_str, target_table)
+        if cache_key not in self._snapshot_times_cache:
+            cur = conn.cursor()
+            rows = cur.execute(
+                f"SELECT DISTINCT snapshot_time FROM \"{target_table}\" ORDER BY snapshot_time ASC"
+            ).fetchall()
+            self._snapshot_times_cache[cache_key] = [r[0] for r in rows]
 
-        if not nearest_time_row:
-            # Fallback to earliest snapshot
-            nearest_time_row = cur.execute(
-                f"SELECT snapshot_time FROM \"{target_table}\" ORDER BY snapshot_time ASC LIMIT 1"
-            ).fetchone()
-
-        if not nearest_time_row:
-            conn.close()
+        sorted_times = self._snapshot_times_cache[cache_key]
+        if not sorted_times:
             return None
 
-        snap_time = nearest_time_row[0]
+        # Fast O(log N) search for nearest snapshot_time <= timestamp
+        idx = bisect.bisect_right(sorted_times, timestamp)
+        if idx > 0:
+            snap_time = sorted_times[idx - 1]
+        else:
+            snap_time = sorted_times[0]  # fallback to earliest available snapshot
+
         df = pd.read_sql_query(
             f"SELECT * FROM \"{target_table}\" WHERE snapshot_time = ? ORDER BY strike_price ASC",
             conn,
             params=(snap_time,)
         )
-        conn.close()
         return df
 
     @staticmethod

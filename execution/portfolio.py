@@ -24,20 +24,28 @@ class Portfolio:
         self,
         initial_capital: float = DEFAULT_CAPITAL,
         risk_pct_per_trade: float = DEFAULT_RISK_PCT_PER_TRADE,
-        simulator: Optional[ExecutionSimulator] = None
+        simulator: Optional[ExecutionSimulator] = None,
+        circuit_limits: Optional[Dict[str, Any]] = None
     ):
         self.initial_capital = initial_capital
         self.capital = initial_capital
         self.risk_pct_per_trade = risk_pct_per_trade
         self.simulator = simulator or ExecutionSimulator()
+        self.circuit_limits = circuit_limits or {}
 
         self.open_trades: List[Trade] = []
         self.closed_trades: List[Trade] = []
         self.equity_curve: List[Dict] = []
         self.daily_pnl: float = 0.0
 
-    def can_open_trade(self, symbol: str, sector: str = "") -> tuple[bool, str]:
-        """Check portfolio capacity and sector concentration limits."""
+    def can_open_trade(
+        self,
+        symbol: str,
+        sector: str = "",
+        side: Optional[OrderSide] = None,
+        price: float = 0.0
+    ) -> tuple[bool, str]:
+        """Check portfolio capacity, sector concentration, and circuit limits."""
         if len(self.open_trades) >= MAX_POSITIONS:
             return False, f"Max positions reached ({MAX_POSITIONS})"
 
@@ -50,6 +58,17 @@ class Portfolio:
             sector_count = sum(1 for t in self.open_trades if t.metadata.get("sector") == sector)
             if sector_count >= MAX_POSITIONS_PER_SECTOR:
                 return False, f"Sector limit reached for {sector} ({MAX_POSITIONS_PER_SECTOR})"
+
+        # Circuit limit validation
+        if self.circuit_limits and price > 0 and side is not None:
+            limit = self.circuit_limits.get(symbol) or self.circuit_limits.get(str(symbol))
+            if limit:
+                upper = float(limit.get("upper", 0.0))
+                lower = float(limit.get("lower", 0.0))
+                if side == OrderSide.BUY and upper > 0 and price >= upper:
+                    return False, f"Upper circuit limit reached for {symbol} ({upper})"
+                elif side == OrderSide.SELL and lower > 0 and price <= lower:
+                    return False, f"Lower circuit limit reached for {symbol} ({lower})"
 
         return True, "OK"
 
@@ -65,10 +84,12 @@ class Portfolio:
         entry_price: float,
         stop_loss: float,
         score: int = 70,
-        lot_size: int = 1
+        lot_size: int = 1,
+        instrument_type: Optional[InstrumentType] = None,
+        underlying: str = ""
     ) -> int:
         """
-        Calculates position size strictly bounded by risk-per-trade.
+        Calculates position size strictly bounded by risk-per-trade and statutory freeze limits.
 
         Uses effective capital (realized cash + unrealized P&L from open positions)
         so that ongoing losing trades reduce the available risk budget for new entries.
@@ -96,7 +117,19 @@ class Portfolio:
         # Lot size normalization
         lots = max(1, math.floor(raw_qty / lot_size))
         qty = lots * lot_size
-        return max(lot_size, min(qty, MAX_QTY_PER_TRADE))
+
+        # Statutory freeze limit (NSE limits: 1800 for NIFTY options, 900 for BANKNIFTY)
+        max_limit = MAX_QTY_PER_TRADE
+        if instrument_type in (InstrumentType.OPTION_CE, InstrumentType.OPTION_PE, InstrumentType.FUTURES) or (
+            instrument_type and "OPTION" in str(instrument_type)
+        ):
+            u_str = str(underlying).upper()
+            if "BANKNIFTY" in u_str:
+                max_limit = 900
+            else:
+                max_limit = 1800
+
+        return max(lot_size, min(qty, max_limit))
 
     def open_trade(
         self,
@@ -110,17 +143,24 @@ class Portfolio:
         entry_time: str,
         instrument_type: InstrumentType = InstrumentType.EQUITY,
         metadata: Optional[Dict] = None,
-        bid_ask_spread: float = 0.0
+        bid_ask_spread: float = 0.0,
+        bar_range_pct: float = 0.0
     ) -> Optional[Trade]:
-        """Opens a new trade, applying slippage and entry charges."""
-        can_open, reason = self.can_open_trade(symbol, metadata.get("sector", "") if metadata else "")
+        """Opens a new trade, applying slippage, volatility adjustments, and entry charges."""
+        can_open, reason = self.can_open_trade(
+            symbol=symbol,
+            sector=metadata.get("sector", "") if metadata else "",
+            side=side,
+            price=price
+        )
         if not can_open:
             return None
 
         fill_price = self.simulator.calculate_fill_price(
             side=side,
             reference_price=price,
-            bid_ask_spread=bid_ask_spread
+            bid_ask_spread=bid_ask_spread,
+            bar_range_pct=bar_range_pct
         )
 
         entry_charges_dict = self.simulator.calculate_charges(

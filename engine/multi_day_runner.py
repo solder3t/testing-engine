@@ -121,26 +121,16 @@ class MultiDayRunner:
                 "equity_curve": full_equity_curve
             }
 
-        portfolio = Portfolio(
-            initial_capital=current_capital,
-            risk_pct_per_trade=self.risk_pct,
-            simulator=self.engine.simulator
-        )
-
         for d in sorted_dates:
             logger.info(f"Running backtest for session {d}...")
-            # Reset daily P&L counter each session so intraday risk limits work correctly
-            portfolio.daily_pnl = 0.0
-
-            if not self.compound_capital:
-                # Reset portfolio per day
-                portfolio = Portfolio(
-                    initial_capital=self.capital,
-                    risk_pct_per_trade=self.risk_pct,
-                    simulator=self.engine.simulator
-                )
-
             start_cap = current_capital if self.compound_capital else self.capital
+
+            # Instantiate fresh portfolio for each session so trades and equity curve are isolated per day
+            portfolio = Portfolio(
+                initial_capital=start_cap,
+                risk_pct_per_trade=self.risk_pct,
+                simulator=self.engine.simulator
+            )
 
             session_res = self.engine.run_session(
                 date_str=d,

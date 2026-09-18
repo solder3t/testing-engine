@@ -11,6 +11,8 @@ import glob
 import sqlite3
 import subprocess
 import logging
+import zipfile
+import shutil
 from typing import List, Dict, Optional
 
 from config import DOWNLOADS_DIR, DATA_CACHE_DIR
@@ -245,6 +247,19 @@ class ArchiveManager:
                 return arch
         return None
 
+    def verify_database_integrity(self, db_path: str) -> bool:
+        """Verifies SQLite database page integrity using PRAGMA quick_check."""
+        if not os.path.exists(db_path) or os.path.getsize(db_path) == 0:
+            return False
+        try:
+            with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+                cursor = conn.cursor()
+                res = cursor.execute("PRAGMA quick_check;").fetchone()
+                return bool(res and res[0] == "ok")
+        except Exception as e:
+            logger.warning(f"Integrity check failed for {db_path}: {e}")
+            return False
+
     def extract_archive(
         self,
         date_str: str,
@@ -253,8 +268,10 @@ class ArchiveManager:
         target_dir: Optional[str] = None
     ) -> Dict:
         """
-        Selectively extract databases from a date's RAR archive.
+        Selectively extract databases from a date's ZIP or RAR archive.
         If source is already an extracted folder, returns success immediately.
+        Supports native zipfile for .zip, and unrar -> 7z -> unar fallbacks for .rar.
+        Automatically handles nested vs flat archive folder structures.
         """
         norm_date = date_str.replace("-", "_")
         arch = self.get_archive_by_date(norm_date, target_dir=target_dir)
@@ -274,17 +291,17 @@ class ArchiveManager:
         os.makedirs(cache_target_dir, exist_ok=True)
 
         selected = files_to_extract or STANDARD_DBS
-        rar_path = arch["path"]
+        arch_path = arch["path"]
 
-        # Build list of archive internal paths
-        extract_args = []
+        # Check which files actually need extraction
+        needed = []
         for item in selected:
             dest_file = os.path.join(cache_target_dir, item)
             if not force and os.path.exists(dest_file):
                 continue
-            extract_args.append(f"{norm_date}/{item}")
+            needed.append(item)
 
-        if not extract_args:
+        if not needed:
             return {
                 "success": True,
                 "message": f"All requested files already available for {norm_date}",
@@ -292,27 +309,105 @@ class ArchiveManager:
                 "extracted_files": os.listdir(cache_target_dir)
             }
 
-        cmd = ["unrar", "e", "-o+", rar_path] + extract_args + [cache_target_dir]
-        try:
+        # 1. Native ZIP handling (zero external CLI dependencies)
+        if arch_path.lower().endswith(".zip"):
+            try:
+                extracted = []
+                with zipfile.ZipFile(arch_path, "r") as zf:
+                    namelist = zf.namelist()
+                    for item in needed:
+                        dest_file = os.path.join(cache_target_dir, item)
+                        # Match member by exact name, basename, or nested path
+                        match = next(
+                            (m for m in namelist if os.path.basename(m) == item or m.endswith(f"/{item}") or m == item),
+                            None
+                        )
+                        if match:
+                            with zf.open(match) as src, open(dest_file, "wb") as dst:
+                                shutil.copyfileobj(src, dst)
+                            extracted.append(item)
+                return {
+                    "success": True,
+                    "message": f"Extracted {len(extracted)} files from ZIP for {norm_date}",
+                    "cache_dir": cache_target_dir,
+                    "extracted_files": os.listdir(cache_target_dir)
+                }
+            except Exception as e:
+                logger.exception(f"ZIP extraction failed: {e}")
+                return {"success": False, "error": str(e)}
+
+        # 2. RAR handling with multi-backend fallbacks (unrar -> 7z -> unar)
+        unrar_bin = shutil.which("unrar")
+        p7z_bin = shutil.which("7z")
+        unar_bin = shutil.which("unar")
+
+        # Patterns matching both root and nested paths (e.g. *equities.db or 2026_09_02/equities.db)
+        extract_patterns = [f"*{item}" for item in needed]
+        last_err = ""
+
+        # A. Try unrar
+        if unrar_bin:
+            cmd = [unrar_bin, "e", "-o+", arch_path] + extract_patterns + [cache_target_dir]
             res = subprocess.run(cmd, capture_output=True, text=True, check=False)
-            if res.returncode != 0:
-                logger.error(f"Unrar error for {norm_date}: {res.stderr}")
-                return {"success": False, "error": res.stderr}
+            if res.returncode == 0:
+                return {
+                    "success": True,
+                    "message": f"Extracted {len(needed)} files for {norm_date} using unrar",
+                    "cache_dir": cache_target_dir,
+                    "extracted_files": os.listdir(cache_target_dir)
+                }
+            # Fallback to explicit nested prefix: {norm_date}/item
+            cmd_fb = [unrar_bin, "e", "-o+", arch_path] + [f"{norm_date}/{item}" for item in needed] + [cache_target_dir]
+            res_fb = subprocess.run(cmd_fb, capture_output=True, text=True, check=False)
+            if res_fb.returncode == 0:
+                return {
+                    "success": True,
+                    "message": f"Extracted {len(needed)} files for {norm_date} using unrar path fallback",
+                    "cache_dir": cache_target_dir,
+                    "extracted_files": os.listdir(cache_target_dir)
+                }
+            last_err = res.stderr or res_fb.stderr
+
+        # B. Try 7z
+        if p7z_bin:
+            cmd = [p7z_bin, "e", "-y", f"-o{cache_target_dir}", arch_path] + extract_patterns
+            res = subprocess.run(cmd, capture_output=True, text=True, check=False)
+            if res.returncode == 0:
+                return {
+                    "success": True,
+                    "message": f"Extracted {len(needed)} files for {norm_date} using 7z",
+                    "cache_dir": cache_target_dir,
+                    "extracted_files": os.listdir(cache_target_dir)
+                }
+            last_err = res.stderr or last_err
+
+        # C. Try unar
+        if unar_bin:
+            cmd = [unar_bin, "-f", "-o", cache_target_dir, arch_path]
+            res = subprocess.run(cmd, capture_output=True, text=True, check=False)
+            if res.returncode == 0:
+                return {
+                    "success": True,
+                    "message": f"Extracted files for {norm_date} using unar",
+                    "cache_dir": cache_target_dir,
+                    "extracted_files": os.listdir(cache_target_dir)
+                }
+            last_err = res.stderr or last_err
+
+        if not unrar_bin and not p7z_bin and not unar_bin:
             return {
-                "success": True,
-                "message": f"Extracted {len(extract_args)} files for {norm_date}",
-                "cache_dir": cache_target_dir,
-                "extracted_files": os.listdir(cache_target_dir)
+                "success": False,
+                "error": "No RAR extraction tool found. Please install 'unrar', 'p7zip-full' (7z), or 'unar'."
             }
-        except Exception as e:
-            logger.exception(f"Extraction failed: {e}")
-            return {"success": False, "error": str(e)}
+
+        return {"success": False, "error": last_err or "RAR extraction failed with all available tools"}
 
     def get_database_path(self, date_str: str, db_name: str, target_dir: Optional[str] = None) -> Optional[str]:
         """
         Get the absolute path to a database.
         Checks:
         1. Direct folder if user pointed to an extracted directory
+
         2. Cached directory
         3. Attempts selective extraction from RAR
         """

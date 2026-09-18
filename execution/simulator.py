@@ -30,16 +30,17 @@ class ExecutionSimulator:
         side: OrderSide,
         reference_price: float,
         bid_ask_spread: float = 0.0,
-        depth_imbalance: float = 0.0
+        depth_imbalance: float = 0.0,
+        bar_range_pct: float = 0.0
     ) -> float:
         """
-        Determines the realistic fill price taking into account bid/ask spread
-        and slippage.
+        Determines the realistic fill price taking into account bid/ask spread,
+        depth imbalance, and candle volatility.
         """
         if reference_price <= 0:
             return reference_price
 
-        # Half-spread cost if spread is recorded
+        # Half-spread cost if spread is recorded, otherwise baseline slippage
         spread_cost = (bid_ask_spread / 2.0) if bid_ask_spread > 0 else (reference_price * self.slippage_pct)
 
         # Depth imbalance penalty: if buying into heavy ask pressure
@@ -49,7 +50,13 @@ class ExecutionSimulator:
         elif side == OrderSide.SELL and depth_imbalance > 0.3:
             imbalance_adj = reference_price * 0.0002
 
-        slippage = spread_cost + imbalance_adj
+        # Volatility expansion: if candle range (high - low) / close exceeds normal 0.5% threshold
+        volatility_adj = 0.0
+        if bar_range_pct > 0.005:
+            # Scale extra slippage up to a max cap of 0.2% during severe volatility
+            volatility_adj = reference_price * min(0.002, (bar_range_pct - 0.005) * 0.2)
+
+        slippage = spread_cost + imbalance_adj + volatility_adj
 
         if side == OrderSide.BUY:
             return round(reference_price + slippage, 2)

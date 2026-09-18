@@ -49,11 +49,16 @@ class BacktestEngine:
         """
         Runs a complete backtest session for a specific trading date.
         """
+        # Load circuit limits for the session
+        circuit_limits = self.data_loader.get_circuit_limits(date_str)
         port = portfolio or Portfolio(
             initial_capital=self.capital,
             risk_pct_per_trade=self.risk_pct,
-            simulator=self.simulator
+            simulator=self.simulator,
+            circuit_limits=circuit_limits
         )
+        if not getattr(port, "circuit_limits", None) and circuit_limits:
+            port.circuit_limits = circuit_limits
 
         # 1. Resolve symbols to test
         # 'auto' mode: discover all available equities from equity_master for this date
@@ -136,10 +141,13 @@ class BacktestEngine:
             all_timestamps.update(df["timestamp"].astype(str).tolist())
         timeline = sorted(list(all_timestamps))
 
-        # Index data by timestamp for O(1) bar streaming
+        # Index data by timestamp for O(1) bar streaming (vectorized records)
         bar_stream: Dict[str, Dict[str, Dict]] = {ts: {} for ts in timeline}
         for sym, df in ohlc_map.items():
-            for _, r in df.iterrows():
+            sid = symbol_meta[sym]["security_id"]
+            sec = symbol_meta[sym]["sector"]
+            records = df.to_dict("records")
+            for r in records:
                 ts = str(r["timestamp"])
                 bar_stream[ts][sym] = {
                     "open": float(r["open"]),
@@ -148,10 +156,10 @@ class BacktestEngine:
                     "close": float(r["close"]),
                     "volume": float(r["volume"]),
                     "vwap": float(r["vwap"]),
-                    "bid_ask_spread": float(r.get("bid_ask_spread", 0.0)),
-                    "depth_imbalance": float(r.get("depth_imbalance", 0.0)),
-                    "security_id": symbol_meta[sym]["security_id"],
-                    "sector": symbol_meta[sym]["sector"]
+                    "bid_ask_spread": float(r.get("bid_ask_spread", 0.0) or 0.0),
+                    "depth_imbalance": float(r.get("depth_imbalance", 0.0) or 0.0),
+                    "security_id": sid,
+                    "sector": sec
                 }
 
         # 4. Initialize strategy session
@@ -217,7 +225,11 @@ class BacktestEngine:
                 sec_id = sig.get("security_id", 0)
                 inst_type = sig.get("instrument_type")
                 meta = sig.get("metadata", {})
-                spread = quotes.get(sym, {}).get("bid_ask_spread", 0.0)
+                q_sym = quotes.get(sym, {})
+                spread = q_sym.get("bid_ask_spread", 0.0)
+                bar_high = q_sym.get("high", price)
+                bar_low = q_sym.get("low", price)
+                bar_range_pct = ((bar_high - bar_low) / price) if price > 0 else 0.0
 
                 lot_size = sig.get("lot_size")
                 if not lot_size:
@@ -227,7 +239,9 @@ class BacktestEngine:
                     entry_price=price,
                     stop_loss=sl,
                     score=score,
-                    lot_size=lot_size
+                    lot_size=lot_size,
+                    instrument_type=inst_type,
+                    underlying=meta.get("underlying", sym)
                 )
 
                 port.open_trade(
@@ -241,7 +255,8 @@ class BacktestEngine:
                     entry_time=ts,
                     instrument_type=inst_type,
                     metadata=meta,
-                    bid_ask_spread=spread
+                    bid_ask_spread=spread,
+                    bar_range_pct=bar_range_pct
                 )
 
             # D. Record equity point
