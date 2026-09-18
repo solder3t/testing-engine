@@ -21,14 +21,18 @@ class TradeExporter:
 
         records = []
         for t in trades:
+            meta = getattr(t, "metadata", {}) or {}
+            entry_t = str(getattr(t, "entry_time", ""))
+            date_val = meta.get("date") or (entry_t.split(" ")[0] if " " in entry_t else "")
             records.append({
-                "trade_id": t.trade_id,
-                "symbol": t.symbol,
-                "security_id": t.security_id,
-                "instrument_type": getattr(t.instrument_type, "value", str(t.instrument_type)),
-                "side": getattr(t.side, "value", str(t.side)),
-                "qty": t.qty,
-                "entry_time": t.entry_time,
+                "trade_id": getattr(t, "trade_id", ""),
+                "date": date_val,
+                "symbol": getattr(t, "symbol", ""),
+                "security_id": getattr(t, "security_id", 0),
+                "instrument_type": getattr(t.instrument_type, "value", str(getattr(t, "instrument_type", ""))),
+                "side": getattr(t.side, "value", str(getattr(t, "side", ""))),
+                "qty": getattr(t, "qty", 0),
+                "entry_time": getattr(t, "entry_time", ""),
                 "entry_price": t.entry_price,
                 "exit_time": t.exit_time,
                 "exit_price": t.exit_price,

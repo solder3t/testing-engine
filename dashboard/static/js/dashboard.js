@@ -47,6 +47,13 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  const dateFilter = document.getElementById("tradeDateFilter");
+  if (dateFilter) {
+    dateFilter.addEventListener("change", () => {
+      filterAndRenderTrades();
+    });
+  }
+
   const explorerRefresh = document.getElementById("btnExplorerRefresh");
   if (explorerRefresh) {
     explorerRefresh.addEventListener("click", () => {
@@ -480,6 +487,34 @@ function getSymbolsFromInput(elemId) {
   return symRaw.toUpperCase().split(",").map(s => s.trim()).filter(Boolean);
 }
 
+// ── Global Live Progress Indicator ──────────────────────────────────────────
+function setGlobalProgress(pct, label, active = true) {
+  const container = document.getElementById("globalProgressContainer");
+  const fill = document.getElementById("globalProgressBarFill");
+  const pctEl = document.getElementById("globalProgressPct");
+  const labelEl = document.getElementById("globalProgressLabel");
+  const headerStatus = document.getElementById("headerStatusText");
+
+  if (!container) return;
+
+  if (!active) {
+    if (fill) fill.style.width = "100%";
+    if (pctEl) pctEl.innerText = "100%";
+    setTimeout(() => {
+      container.style.display = "none";
+      if (headerStatus) headerStatus.innerText = "ENGINE READY";
+    }, 450);
+    return;
+  }
+
+  container.style.display = "block";
+  const clamped = Math.max(0, Math.min(100, Math.round(pct)));
+  if (fill) fill.style.width = `${clamped}%`;
+  if (pctEl) pctEl.innerText = `${clamped}%`;
+  if (labelEl && label) labelEl.innerText = label;
+  if (headerStatus && label) headerStatus.innerText = label.toUpperCase().slice(0, 32);
+}
+
 // ── Run Real Backtest Simulation ─────────────────────────────────────────────
 async function runBacktest() {
   const btn = document.getElementById("btnRun");
@@ -615,6 +650,8 @@ async function runBacktest() {
   status.style.color = "var(--accent-cyan)";
   if (headerStatus) headerStatus.innerText = "BACKTEST RUNNING";
 
+  setGlobalProgress(0, `Connecting simulation stream for ${selectedDates.length} session(s)...`, true);
+
   const progressBox = document.getElementById("runProgressContainer");
   const progressBar = document.getElementById("runProgressBar");
   const progressLabel = document.getElementById("runProgressLabel");
@@ -658,9 +695,11 @@ async function runBacktest() {
               const pct = Math.round((event.day / event.total) * 100);
               if (progressBar) progressBar.style.width = `${pct}%`;
               if (progressPct) progressPct.innerText = `${pct}%`;
+              const progressMsg = `Session ${event.day}/${event.total} (${event.date}) · Trades: ${event.trades} · Day P&L: ₹${event.net_pnl}`;
               if (progressLabel) {
-                progressLabel.innerText = `Session ${event.day}/${event.total} (${event.date}) · Trades: ${event.trades} · Day P&L: ₹${event.net_pnl}`;
+                progressLabel.innerText = progressMsg;
               }
+              setGlobalProgress(pct, progressMsg, true);
               status.innerText = `Replaying session ${event.day}/${event.total} [${event.date}] · Trades: ${event.trades} · Day P&L: ₹${event.net_pnl}`;
             } else if (event.type === "complete") {
               streamSucceeded = true;
@@ -668,6 +707,7 @@ async function runBacktest() {
               const tradeCount = resultPayload.trades ? resultPayload.trades.length : 0;
               if (progressBar) progressBar.style.width = "100%";
               if (progressPct) progressPct.innerText = "100%";
+              setGlobalProgress(100, `Simulation complete! Processed ${tradeCount} trades.`, false);
               status.innerText = `Simulation complete! Processed ${tradeCount} executed trades.`;
               status.style.color = "var(--green)";
               renderResults(resultPayload);
@@ -675,6 +715,7 @@ async function runBacktest() {
             } else if (event.type === "error") {
               status.innerText = `Error: ${event.message}`;
               status.style.color = "var(--red)";
+              setGlobalProgress(0, "", false);
             }
           } catch (pe) {
             // chunk parse error, wait for next chunk
@@ -690,6 +731,7 @@ async function runBacktest() {
   if (!streamSucceeded) {
     try {
       status.innerText = `Processing simulation across selected dates...`;
+      setGlobalProgress(50, `Processing simulation across ${selectedDates.length} session(s)...`, true);
       const fallbackRes = await fetch("/api/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -701,6 +743,7 @@ async function runBacktest() {
         const tradeCount = resultPayload.trades ? resultPayload.trades.length : 0;
         if (progressBar) progressBar.style.width = "100%";
         if (progressPct) progressPct.innerText = "100%";
+        setGlobalProgress(100, `Simulation complete! Processed ${tradeCount} trades.`, false);
         status.innerText = `Simulation complete! Processed ${tradeCount} executed trades.`;
         status.style.color = "var(--green)";
         renderResults(resultPayload);
@@ -708,10 +751,12 @@ async function runBacktest() {
       } else {
         status.innerText = `Error: ${data.message}`;
         status.style.color = "var(--red)";
+        setGlobalProgress(0, "", false);
       }
     } catch (err) {
       status.innerText = `Execution failed: ${err}`;
       status.style.color = "var(--red)";
+      setGlobalProgress(0, "", false);
     }
   }
 
@@ -719,6 +764,7 @@ async function runBacktest() {
   btn.innerText = "⚡ RUN BACKTEST";
   if (headerStatus) headerStatus.innerText = "ENGINE READY";
 }
+
 
 
 // ── Load Latest Results on Initial Launch ────────────────────────────────────
@@ -850,33 +896,97 @@ async function runComparison() {
   btn.innerHTML = `<span class="btn-icon">⚖️</span><span class="btn-text">COMPARING (${selectedStrats.length})...</span>`;
   status.innerText = `Benchmarking ${selectedStrats.length} strategies across [${selectedDates.join(", ")}]...`;
   status.style.color = "var(--accent-cyan)";
+  setGlobalProgress(0, `Benchmarking ${selectedStrats.length} strategies across ${selectedDates.length} session(s)...`, true);
+
+  let streamSucceeded = false;
 
   try {
-    const res = await fetch("/api/compare", {
+    const res = await fetch("/api/compare/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
     });
-    const data = await res.json();
-    if (data.status === "success" && data.comparison) {
-      status.innerText = `Strategy benchmark complete for ${data.comparison.length} models!`;
-      status.style.color = "var(--green)";
-      renderComparisonResults(data.comparison);
-      switchTab("tabAnalytics");
-      const sec = document.getElementById("compareSection");
-      if (sec) sec.scrollIntoView({ behavior: "smooth" });
-    } else {
-      status.innerText = `Comparison failed: ${data.message || "Unknown error"}`;
-      status.style.color = "var(--red)";
+
+    if (res.ok && res.body && window.ReadableStream) {
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let buffer = "";
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith("data:")) continue;
+          const jsonStr = trimmed.slice(5).trim();
+          try {
+            const event = JSON.parse(jsonStr);
+            if (event.type === "progress") {
+              const pct = Math.round((event.current / event.total) * 100);
+              const sName = event.strategy_name || event.strategy;
+              const pnlTxt = event.net_pnl !== undefined ? ` · Net P&L: ₹${event.net_pnl}` : "";
+              setGlobalProgress(pct, `Strategy ${event.current}/${event.total}: ${sName}${pnlTxt}`, true);
+              status.innerText = `Benchmarking ${event.current}/${event.total} [${sName}]${pnlTxt}...`;
+            } else if (event.type === "complete") {
+              streamSucceeded = true;
+              setGlobalProgress(100, `Benchmark complete for ${event.comparison.length} models!`, false);
+              status.innerText = `Strategy benchmark complete for ${event.comparison.length} models!`;
+              status.style.color = "var(--green)";
+              renderComparisonResults(event.comparison);
+              switchTab("tabAnalytics");
+              const sec = document.getElementById("compareSection");
+              if (sec) sec.scrollIntoView({ behavior: "smooth" });
+            } else if (event.type === "error") {
+              status.innerText = `Comparison stream error: ${event.message}`;
+              status.style.color = "var(--red)";
+              setGlobalProgress(0, "", false);
+            }
+          } catch (pe) {}
+        }
+      }
     }
-  } catch (err) {
-    status.innerText = `Comparison failed: ${err}`;
-    status.style.color = "var(--red)";
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = `<span class="btn-icon">⚖️</span><span class="btn-text">COMPARE (${selectedStrats.length})</span>`;
+  } catch (streamErr) {
+    console.warn("Compare stream fetch interrupted, falling back to /api/compare:", streamErr);
   }
+
+  // Fallback to non-streaming /api/compare if stream failed
+  if (!streamSucceeded) {
+    try {
+      setGlobalProgress(50, `Benchmarking ${selectedStrats.length} strategies...`, true);
+      const fallbackRes = await fetch("/api/compare", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await fallbackRes.json();
+      if (data.status === "success" && data.comparison) {
+        setGlobalProgress(100, `Benchmark complete for ${data.comparison.length} models!`, false);
+        status.innerText = `Strategy benchmark complete for ${data.comparison.length} models!`;
+        status.style.color = "var(--green)";
+        renderComparisonResults(data.comparison);
+        switchTab("tabAnalytics");
+        const sec = document.getElementById("compareSection");
+        if (sec) sec.scrollIntoView({ behavior: "smooth" });
+      } else {
+        status.innerText = `Comparison failed: ${data.message || "Unknown error"}`;
+        status.style.color = "var(--red)";
+        setGlobalProgress(0, "", false);
+      }
+    } catch (err) {
+      status.innerText = `Comparison failed: ${err}`;
+      status.style.color = "var(--red)";
+      setGlobalProgress(0, "", false);
+    }
+  }
+
+  btn.disabled = false;
+  btn.innerHTML = `<span class="btn-icon">⚖️</span><span class="btn-text">COMPARE (${selectedStrats.length})</span>`;
 }
+
 
 function renderComparisonResults(comparisonList) {
   const section = document.getElementById("compareSection");
@@ -1039,20 +1149,32 @@ function renderResults(raw) {
   // 2. Charts (6-Chart Quantitative Suite)
   const equityCurve = data.equity_curve || m.equity_curve || [];
   let dailyPnls = data.daily_breakdown || data.daily_pnls || m.daily_pnls || [];
-  if ((!dailyPnls || dailyPnls.length === 0) && (data.date || (allTrades.length > 0 && allTrades[0].exit_time))) {
-    const sessionDate = data.date || (allTrades[0].exit_time ? allTrades[0].exit_time.split(" ")[0] : "Session");
-    dailyPnls = [{ date: sessionDate, net_pnl: m.net_pnl || 0 }];
+  if ((!dailyPnls || dailyPnls.length === 0) && (data.date || (allTrades.length > 0 && (allTrades[0].date || allTrades[0].exit_time)))) {
+    const sessionDate = data.date || allTrades[0].date || (allTrades[0].exit_time ? allTrades[0].exit_time.split(" ")[0] : "Session");
+    dailyPnls = [{
+      date: sessionDate,
+      starting_equity: data.initial_capital || 500000,
+      ending_equity: data.final_equity || ((data.initial_capital || 500000) + (m.net_pnl || 0)),
+      gross_pnl: m.gross_pnl || 0,
+      charges: m.total_charges || 0,
+      net_pnl: m.net_pnl || 0,
+      pnl: m.net_pnl || 0,
+      return_pct: m.return_pct || 0,
+      trades: m.total_trades || allTrades.length,
+      win_rate: m.win_rate || 0
+    }];
   }
-  const drawdownCurve = m.drawdown_curve || data.drawdown_curve || [];
 
   renderEquityChart(equityCurve);
   renderDailyChart(dailyPnls);
+  renderSessionBreakdownTable(dailyPnls);
   renderDrawdownChart(drawdownCurve);
   renderHourlyChart(allTrades);
   renderOutcomeChart(m, allTrades);
   renderPnlDistChart(allTrades);
 
   // 3. Trades Table & Trade Inspector
+  updateDateFilterOptions();
   updateSymbolFilterOptions();
   updateSortHeaderUI();
   filterAndRenderTrades();
@@ -1062,6 +1184,151 @@ function renderResults(raw) {
     inspectTrade(allTrades[0].trade_id);
   }
 }
+
+// ── Session-by-Session Breakdown Data Table ─────────────────────────────────
+function renderSessionBreakdownTable(dailyPnls) {
+  const card = document.getElementById("sessionBreakdownCard");
+  const badge = document.getElementById("sessionCountBadge");
+  const tbody = document.getElementById("sessionBreakdownBody");
+  const tfoot = document.getElementById("sessionBreakdownFoot");
+  if (!card || !tbody) return;
+
+  if (!dailyPnls || dailyPnls.length === 0) {
+    card.style.display = "none";
+    tbody.innerHTML = "";
+    if (tfoot) tfoot.innerHTML = "";
+    return;
+  }
+
+  card.style.display = "block";
+  if (badge) {
+    badge.innerText = `${dailyPnls.length} Session${dailyPnls.length !== 1 ? "s" : ""}`;
+  }
+
+  tbody.innerHTML = "";
+  let totGross = 0.0;
+  let totCharges = 0.0;
+  let totNet = 0.0;
+  let totTrades = 0;
+  let totWins = 0;
+  let startEq = dailyPnls[0].starting_equity || 0.0;
+  let endEq = dailyPnls[dailyPnls.length - 1].ending_equity || 0.0;
+
+  dailyPnls.forEach(d => {
+    const gross = d.gross_pnl !== undefined ? d.gross_pnl : (d.pnl || 0);
+    const charges = d.charges !== undefined ? d.charges : 0;
+    const net = d.net_pnl !== undefined ? d.net_pnl : (d.pnl || 0);
+    const trCount = d.trades !== undefined ? d.trades : (d.trades_count || 0);
+    const winRate = d.win_rate !== undefined ? d.win_rate : 0.0;
+    const retPct = d.return_pct !== undefined ? d.return_pct : (d.starting_equity ? ((net / d.starting_equity) * 100) : 0.0);
+
+    totGross += gross;
+    totCharges += charges;
+    totNet += net;
+    totTrades += trCount;
+    if (d.win_rate !== undefined) {
+      totWins += Math.round((winRate / 100) * trCount);
+    }
+
+    const tr = document.createElement("tr");
+    const isWin = net >= 0;
+    tr.innerHTML = `
+      <td style="font-weight: 700; color: #fff;">
+        <span style="display: inline-flex; align-items: center; gap: 6px;">
+          <span>📅</span>
+          <span>${d.date || "-"}</span>
+        </span>
+      </td>
+      <td>₹${(d.starting_equity || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+      <td>₹${(d.ending_equity || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+      <td style="color: ${gross >= 0 ? "var(--green)" : "var(--red)"};">
+        ${gross >= 0 ? "+" : ""}₹${gross.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+      </td>
+      <td style="color: var(--text-muted);">₹${charges.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+      <td style="font-weight: 700; color: ${isWin ? "var(--green)" : "var(--red)"};">
+        ${isWin ? "+" : ""}₹${net.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+      </td>
+      <td style="font-weight: 600; color: ${retPct >= 0 ? "var(--green)" : "var(--red)"};">
+        ${retPct >= 0 ? "+" : ""}${retPct.toFixed(2)}%
+      </td>
+      <td>${trCount}</td>
+      <td>${winRate.toFixed(1)}%</td>
+    `;
+
+    // Click session row to filter trade log to this session date
+    tr.addEventListener("click", () => {
+      const dateFilter = document.getElementById("tradeDateFilter");
+      if (dateFilter && d.date) {
+        dateFilter.value = d.date;
+        filterAndRenderTrades();
+        switchTab("tabInspector");
+      }
+    });
+
+    tbody.appendChild(tr);
+  });
+
+  if (tfoot) {
+    const aggRetPct = startEq > 0 ? ((totNet / startEq) * 100) : 0.0;
+    const aggWinRate = totTrades > 0 ? ((totWins / totTrades) * 100) : 0.0;
+    const isTotProfit = totNet >= 0;
+    tfoot.innerHTML = `
+      <tr>
+        <td style="color: var(--accent-cyan);">SUMMARY TOTALS</td>
+        <td>₹${startEq.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+        <td>₹${endEq.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+        <td style="color: ${totGross >= 0 ? "var(--green)" : "var(--red)"};">
+          ${totGross >= 0 ? "+" : ""}₹${totGross.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+        </td>
+        <td style="color: var(--text-muted);">₹${totCharges.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+        <td style="font-weight: 800; color: ${isTotProfit ? "var(--green)" : "var(--red)"};">
+          ${isTotProfit ? "+" : ""}₹${totNet.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+        </td>
+        <td style="font-weight: 800; color: ${aggRetPct >= 0 ? "var(--green)" : "var(--red)"};">
+          ${aggRetPct >= 0 ? "+" : ""}${aggRetPct.toFixed(2)}%
+        </td>
+        <td style="font-weight: 800;">${totTrades}</td>
+        <td style="font-weight: 800;">${aggWinRate.toFixed(1)}%</td>
+      </tr>
+    `;
+  }
+}
+
+// ── Update Trade Date Filter Options ─────────────────────────────────────────
+function updateDateFilterOptions() {
+  const dateFilter = document.getElementById("tradeDateFilter");
+  if (!dateFilter) return;
+
+  const currentVal = dateFilter.value;
+  dateFilter.innerHTML = '<option value="">All Dates</option>';
+
+  const dateCounts = {};
+  allTrades.forEach(t => {
+    const d = t.date || ((t.entry_time || "").includes(" ") ? t.entry_time.split(" ")[0] : "");
+    if (d) {
+      dateCounts[d] = (dateCounts[d] || 0) + 1;
+    }
+  });
+
+  const uniqueDates = Object.keys(dateCounts).sort();
+  if (uniqueDates.length > 1) {
+    dateFilter.style.display = "inline-block";
+  } else if (uniqueDates.length === 0) {
+    dateFilter.style.display = "none";
+    return;
+  } else {
+    dateFilter.style.display = "inline-block";
+  }
+
+  uniqueDates.forEach(d => {
+    const opt = document.createElement("option");
+    opt.value = d;
+    opt.innerText = `${d} (${dateCounts[d]} trade${dateCounts[d] > 1 ? "s" : ""})`;
+    if (d === currentVal) opt.selected = true;
+    dateFilter.appendChild(opt);
+  });
+}
+
 
 // ── Chart.js Renderers ───────────────────────────────────────────────────────
 function renderEquityChart(curve) {
@@ -1551,24 +1818,35 @@ function filterAndRenderTrades() {
   const query = searchInput ? searchInput.value.trim().toLowerCase() : "";
   const symFilter = document.getElementById("tradeSymbolFilter");
   const selectedSym = symFilter ? symFilter.value : "";
+  const dateFilter = document.getElementById("tradeDateFilter");
+  const selectedDate = dateFilter ? dateFilter.value : "";
 
   filteredTrades = allTrades.filter(t => {
-    // 0. Dedicated Symbol Filter
+    // 0. Dedicated Date Filter
+    if (selectedDate) {
+      const tradeDate = t.date || ((t.entry_time || "").includes(" ") ? t.entry_time.split(" ")[0] : "");
+      if (tradeDate && tradeDate !== selectedDate) {
+        return false;
+      }
+    }
+
+    // 1. Dedicated Symbol Filter
     if (selectedSym && (t.symbol || "") !== selectedSym) {
       return false;
     }
 
-    // 1. Text Search Filter
+    // 2. Text Search Filter
     if (query) {
       const sym = (t.symbol || "").toLowerCase();
       const side = (t.side || "").toLowerCase();
       const reason = (t.exit_reason || "").toLowerCase();
       const time = (t.entry_time || "").toLowerCase();
-      const matchesSearch = sym.includes(query) || side.includes(query) || reason.includes(query) || time.includes(query);
+      const date = (t.date || "").toLowerCase();
+      const matchesSearch = sym.includes(query) || side.includes(query) || reason.includes(query) || time.includes(query) || date.includes(query);
       if (!matchesSearch) return false;
     }
 
-    // 2. Pill Category Filter
+    // 3. Pill Category Filter
     if (currentTradeFilter === "win") {
       return (t.net_pnl || 0) > 0;
     } else if (currentTradeFilter === "loss") {
@@ -1584,11 +1862,19 @@ function filterAndRenderTrades() {
     return true;
   });
 
-
   // Sort
   filteredTrades.sort((a, b) => {
-    let valA = a[currentSortColumn];
-    let valB = b[currentSortColumn];
+    let col = currentSortColumn;
+    let valA = a[col];
+    let valB = b[col];
+
+    if (col === "entry_date") {
+      valA = a.date || ((a.entry_time || "").includes(" ") ? a.entry_time.split(" ")[0] : "");
+      valB = b.date || ((b.entry_time || "").includes(" ") ? b.entry_time.split(" ")[0] : "");
+    } else if (col === "entry_time") {
+      valA = (a.entry_time || "").includes(" ") ? a.entry_time.split(" ")[1] : (a.entry_time || "");
+      valB = (b.entry_time || "").includes(" ") ? b.entry_time.split(" ")[1] : (b.entry_time || "");
+    }
 
     if (valA === undefined || valA === null) valA = "";
     if (valB === undefined || valB === null) valB = "";
@@ -1604,14 +1890,14 @@ function filterAndRenderTrades() {
   // Update count badge
   const countBadge = document.getElementById("tradesCountBadge");
   if (countBadge) {
-    countBadge.innerText = (query || currentTradeFilter !== "all")
+    countBadge.innerText = (query || selectedDate || selectedSym || currentTradeFilter !== "all")
       ? `${filteredTrades.length} of ${allTrades.length} trades`
       : `${allTrades.length} trades`;
   }
 
   const tbody = document.getElementById("tradesBody");
   if (filteredTrades.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="11" class="empty-state">No trades match the active filter or search query.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="12" class="empty-state">No trades match the active filter or search query.</td></tr>';
     return;
   }
 
@@ -1624,15 +1910,18 @@ function filterAndRenderTrades() {
     }
 
     const isWin = (t.net_pnl || 0) >= 0;
-    const timeShort = (t.entry_time || "").split(" ").pop() || t.entry_time;
+    const entryRaw = String(t.entry_time || "");
+    const dateStr = t.date || (entryRaw.includes(" ") ? entryRaw.split(" ")[0] : "-");
+    const timeStr = entryRaw.includes(" ") ? entryRaw.split(" ")[1] : (entryRaw || "-");
 
     tr.innerHTML = `
-      <td>${timeShort}</td>
+      <td><span style="font-family:'JetBrains Mono',monospace; font-size:0.78rem; color:var(--text-muted);">${dateStr}</span></td>
+      <td><span style="font-family:'JetBrains Mono',monospace; font-size:0.78rem;">${timeStr}</span></td>
       <td style="font-weight: 600; color: #fff;">${t.symbol}</td>
       <td style="color: ${t.side === "BUY" ? "var(--green)" : "var(--red)"}; font-weight: 600;">${t.side}</td>
       <td>${t.qty}</td>
       <td>₹${(t.entry_price || 0).toFixed(2)}</td>
-      <td>${t.exit_price ? "₹" + t.exit_price.toFixed(2) : "-"}</td>
+      <td>${t.exit_price ? "₹" + Number(t.exit_price).toFixed(2) : "-"}</td>
       <td style="color: ${(t.gross_pnl || 0) >= 0 ? "var(--green)" : "var(--red)"};">₹${(t.gross_pnl || 0).toFixed(2)}</td>
       <td style="color: var(--text-muted);">₹${(t.charges || 0).toFixed(2)}</td>
       <td style="font-weight: 700; color: ${isWin ? "var(--green)" : "var(--red)"};">
@@ -2008,36 +2297,116 @@ async function runWalkForward() {
   status.innerText = `Optimizing ${strat.toUpperCase()} over rolling windows across [${selectedDates.join(", ")}]...`;
   status.style.color = "var(--accent-cyan)";
 
+  const wfoProgressBox = document.getElementById("wfoProgressContainer");
+  const wfoProgressBar = document.getElementById("wfoProgressBar");
+  const wfoProgressLabel = document.getElementById("wfoProgressLabel");
+  const wfoProgressPct = document.getElementById("wfoProgressPct");
+  if (wfoProgressBox) {
+    wfoProgressBox.style.display = "block";
+    if (wfoProgressBar) wfoProgressBar.style.width = "0%";
+    if (wfoProgressPct) wfoProgressPct.innerText = "0%";
+    if (wfoProgressLabel) wfoProgressLabel.innerText = "Initializing rolling windows...";
+  }
+  setGlobalProgress(0, `Initializing Walk-Forward analysis for ${strat.toUpperCase()}...`, true);
+
+  const payload = {
+    directory: archiveDir,
+    dates: selectedDates,
+    strategy: strat,
+    in_sample: inSample,
+    out_of_sample: outSample,
+    rank_by: rankBy,
+    symbols: symbols
+  };
+
+  let streamSucceeded = false;
+
   try {
-    const res = await fetch("/api/walk_forward", {
+    const res = await fetch("/api/walk_forward/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        directory: archiveDir,
-        dates: selectedDates,
-        strategy: strat,
-        in_sample: inSample,
-        out_of_sample: outSample,
-        rank_by: rankBy,
-        symbols: symbols
-      })
+      body: JSON.stringify(payload)
     });
-    const data = await res.json();
-    if (data.status === "success") {
-      status.innerText = `Walk-Forward analysis completed for ${data.total_windows} rolling windows!`;
-      status.style.color = "var(--green)";
-      renderWalkForwardResults(data);
-    } else {
-      status.innerText = `WFO failed: ${data.message || "Unknown error"}`;
-      status.style.color = "var(--red)";
+
+    if (res.ok && res.body && window.ReadableStream) {
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let buffer = "";
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith("data:")) continue;
+          const jsonStr = trimmed.slice(5).trim();
+          try {
+            const event = JSON.parse(jsonStr);
+            if (event.type === "progress") {
+              const pct = Math.round((event.window / event.total) * 100);
+              const msg = `Window ${event.window}/${event.total} · IS: [${event.in_sample_dates.join(",")}] · OOS: [${event.out_of_sample_dates.join(",")}] · OOS P&L: ₹${event.oos_pnl}`;
+              setGlobalProgress(pct, `Walk-Forward Window ${event.window}/${event.total} (OOS P&L: ₹${event.oos_pnl})`, true);
+              if (wfoProgressBar) wfoProgressBar.style.width = `${pct}%`;
+              if (wfoProgressPct) wfoProgressPct.innerText = `${pct}%`;
+              if (wfoProgressLabel) wfoProgressLabel.innerText = msg;
+              status.innerText = msg;
+            } else if (event.type === "complete") {
+              streamSucceeded = true;
+              const wfoRes = event.result || event;
+              if (wfoProgressBar) wfoProgressBar.style.width = "100%";
+              if (wfoProgressPct) wfoProgressPct.innerText = "100%";
+              setGlobalProgress(100, `Walk-Forward analysis complete (${wfoRes.total_windows} windows)!`, false);
+              status.innerText = `Walk-Forward analysis completed for ${wfoRes.total_windows} rolling windows!`;
+              status.style.color = "var(--green)";
+              renderWalkForwardResults(wfoRes);
+            } else if (event.type === "error") {
+              status.innerText = `WFO stream error: ${event.message}`;
+              status.style.color = "var(--red)";
+              setGlobalProgress(0, "", false);
+            }
+          } catch (pe) {}
+        }
+      }
     }
-  } catch (err) {
-    status.innerText = `WFO failed: ${err}`;
-    status.style.color = "var(--red)";
-  } finally {
-    btn.disabled = false;
-    btn.innerText = "🧪 RUN WALK-FORWARD ANALYSIS";
+  } catch (streamErr) {
+    console.warn("WFO stream fetch interrupted, falling back to /api/walk_forward:", streamErr);
   }
+
+  // Fallback to standard /api/walk_forward
+  if (!streamSucceeded) {
+    try {
+      setGlobalProgress(50, `Running Walk-Forward analysis across ${selectedDates.length} sessions...`, true);
+      const fallbackRes = await fetch("/api/walk_forward", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await fallbackRes.json();
+      if (data.status === "success") {
+        if (wfoProgressBar) wfoProgressBar.style.width = "100%";
+        if (wfoProgressPct) wfoProgressPct.innerText = "100%";
+        setGlobalProgress(100, `Walk-Forward analysis complete (${data.total_windows} windows)!`, false);
+        status.innerText = `Walk-Forward analysis completed for ${data.total_windows} rolling windows!`;
+        status.style.color = "var(--green)";
+        renderWalkForwardResults(data);
+      } else {
+        status.innerText = `WFO failed: ${data.message || "Unknown error"}`;
+        status.style.color = "var(--red)";
+        setGlobalProgress(0, "", false);
+      }
+    } catch (err) {
+      status.innerText = `WFO failed: ${err}`;
+      status.style.color = "var(--red)";
+      setGlobalProgress(0, "", false);
+    }
+  }
+
+  btn.disabled = false;
+  btn.innerText = "🧪 RUN WALK-FORWARD ANALYSIS";
 }
 
 function renderWalkForwardResults(data) {
@@ -2238,36 +2607,116 @@ async function runParameterOptimization() {
   status.innerText = `Evaluating parameter grid for ${strat.toUpperCase()} across [${selectedDates.join(", ")}]...`;
   status.style.color = "var(--accent-cyan)";
 
+  const optProgressBox = document.getElementById("optProgressContainer");
+  const optProgressBar = document.getElementById("optProgressBar");
+  const optProgressLabel = document.getElementById("optProgressLabel");
+  const optProgressPct = document.getElementById("optProgressPct");
+  if (optProgressBox) {
+    optProgressBox.style.display = "block";
+    if (optProgressBar) optProgressBar.style.width = "0%";
+    if (optProgressPct) optProgressPct.innerText = "0%";
+    if (optProgressLabel) optProgressLabel.innerText = "Testing parameter combinations...";
+  }
+  setGlobalProgress(0, `Evaluating parameter grid for ${strat.toUpperCase()} across ${selectedDates.length} session(s)...`, true);
+
+  const payload = {
+    directory: archiveDir,
+    dates: selectedDates,
+    strategy: strat,
+    param_grid: paramGrid,
+    rank_by: rankBy,
+    symbols: symbols
+  };
+
+  let streamSucceeded = false;
+
   try {
-    const res = await fetch("/api/optimize", {
+    const res = await fetch("/api/optimize/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        directory: archiveDir,
-        dates: selectedDates,
-        strategy: strat,
-        param_grid: paramGrid,
-        rank_by: rankBy,
-        symbols: symbols
-      })
+      body: JSON.stringify(payload)
     });
-    const data = await res.json();
-    if (data.status === "success") {
-      status.innerText = `Optimization finished! Evaluated ${data.total_combinations} combinations.`;
-      status.style.color = "var(--green)";
-      latestOptimizationResults = data.ranked_results || [];
-      renderOptimizationResults(strat, data);
-    } else {
-      status.innerText = `Optimization failed: ${data.message || "Unknown error"}`;
-      status.style.color = "var(--red)";
+
+    if (res.ok && res.body && window.ReadableStream) {
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let buffer = "";
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith("data:")) continue;
+          const jsonStr = trimmed.slice(5).trim();
+          try {
+            const event = JSON.parse(jsonStr);
+            if (event.type === "progress") {
+              const pct = Math.round((event.current / event.total) * 100);
+              const msg = `Combo ${event.current}/${event.total} · Sharpe: ${event.sharpe_ratio} · P&L: ₹${event.net_pnl}`;
+              setGlobalProgress(pct, `Testing Combo ${event.current}/${event.total} · Sharpe: ${event.sharpe_ratio} · P&L: ₹${event.net_pnl}`, true);
+              if (optProgressBar) optProgressBar.style.width = `${pct}%`;
+              if (optProgressPct) optProgressPct.innerText = `${pct}%`;
+              if (optProgressLabel) optProgressLabel.innerText = msg;
+              status.innerText = msg;
+            } else if (event.type === "complete") {
+              streamSucceeded = true;
+              if (optProgressBar) optProgressBar.style.width = "100%";
+              if (optProgressPct) optProgressPct.innerText = "100%";
+              setGlobalProgress(100, `Optimization complete (${event.total_combinations} combinations evaluated)!`, false);
+              status.innerText = `Optimization finished! Evaluated ${event.total_combinations} combinations.`;
+              status.style.color = "var(--green)";
+              latestOptimizationResults = event.ranked_results || [];
+              renderOptimizationResults(strat, event);
+            } else if (event.type === "error") {
+              status.innerText = `Optimizer error: ${event.message}`;
+              status.style.color = "var(--red)";
+              setGlobalProgress(0, "", false);
+            }
+          } catch (pe) {}
+        }
+      }
     }
-  } catch (err) {
-    status.innerText = `Optimization failed: ${err}`;
-    status.style.color = "var(--red)";
-  } finally {
-    btn.disabled = false;
-    btn.innerText = "🚀 RUN GRID OPTIMIZATION";
+  } catch (streamErr) {
+    console.warn("Optimizer stream fetch interrupted, falling back to /api/optimize:", streamErr);
   }
+
+  // Fallback to standard /api/optimize
+  if (!streamSucceeded) {
+    try {
+      setGlobalProgress(50, `Evaluating parameter combinations for ${strat.toUpperCase()}...`, true);
+      const fallbackRes = await fetch("/api/optimize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await fallbackRes.json();
+      if (data.status === "success") {
+        if (optProgressBar) optProgressBar.style.width = "100%";
+        if (optProgressPct) optProgressPct.innerText = "100%";
+        setGlobalProgress(100, `Optimization complete (${data.total_combinations} combinations evaluated)!`, false);
+        status.innerText = `Optimization finished! Evaluated ${data.total_combinations} combinations.`;
+        status.style.color = "var(--green)";
+        latestOptimizationResults = data.ranked_results || [];
+        renderOptimizationResults(strat, data);
+      } else {
+        status.innerText = `Optimization failed: ${data.message || "Unknown error"}`;
+        status.style.color = "var(--red)";
+        setGlobalProgress(0, "", false);
+      }
+    } catch (err) {
+      status.innerText = `Optimization failed: ${err}`;
+      status.style.color = "var(--red)";
+      setGlobalProgress(0, "", false);
+    }
+  }
+
+  btn.disabled = false;
+  btn.innerText = "🚀 RUN GRID OPTIMIZATION";
 }
 
 function renderOptimizationResults(strat, data) {

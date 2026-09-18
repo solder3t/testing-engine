@@ -59,6 +59,20 @@
     </button>
   </nav>
 
+  <!-- Global Live Progress Bar (Sticky during all running simulations) -->
+  <div id="globalProgressContainer" class="global-progress-container" style="display: none;">
+    <div class="global-progress-content">
+      <div class="global-progress-info">
+        <span class="global-pulse-dot"></span>
+        <span id="globalProgressLabel" class="global-progress-label">Executing Simulation...</span>
+        <span id="globalProgressPct" class="global-progress-pct">0%</span>
+      </div>
+      <div class="global-progress-bar-bg">
+        <div id="globalProgressBarFill" class="global-progress-bar-fill" style="width: 0%;"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- Main Container with Tab Panes -->
   <div class="container">
 
@@ -826,6 +840,42 @@
         </div>
       </section>
 
+      <!-- Section: Session-by-Session Breakdown Table (Multi-Day Runs) -->
+      <div class="card table-card" id="sessionBreakdownCard" style="display: none; margin-top: 24px;">
+        <div class="card-header-row" style="display: flex; justify-content: space-between; align-items: center; padding: 14px 18px 10px 18px;">
+          <div>
+            <h3 style="color: #fff; font-size: 1.05rem; margin: 0;">📅 Session-by-Session Performance Breakdown</h3>
+            <p style="color: var(--text-muted); font-size: 0.8rem; margin: 4px 0 0 0;">
+              Granular daily audit log across all evaluated market sessions.
+            </p>
+          </div>
+          <span class="chart-badge" id="sessionCountBadge" style="color: var(--accent-cyan); font-weight: 600;">0 Sessions</span>
+        </div>
+        <div class="table-wrap" style="overflow-x: auto;">
+          <table id="sessionBreakdownTable" style="width: 100%;">
+            <thead>
+              <tr>
+                <th style="min-width: 110px;">Date</th>
+                <th>Starting Equity (₹)</th>
+                <th>Ending Equity (₹)</th>
+                <th>Gross P&L (₹)</th>
+                <th>Charges (₹)</th>
+                <th>Net P&L (₹)</th>
+                <th>Return %</th>
+                <th>Trades</th>
+                <th>Win Rate %</th>
+              </tr>
+            </thead>
+            <tbody id="sessionBreakdownBody">
+              <!-- Dynamically populated -->
+            </tbody>
+            <tfoot id="sessionBreakdownFoot" style="font-weight: 700; border-top: 2px solid rgba(255,255,255,0.15); background: rgba(0,0,0,0.25);">
+              <!-- Summary totals -->
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
       <!-- Section: Multi-Strategy Comparison Matrix & Overlay -->
       <div id="compareSection" style="display: none; margin-top: 24px;">
         <div class="card" style="margin-bottom: 16px;">
@@ -887,6 +937,9 @@
         </div>
 
         <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+          <select id="tradeDateFilter" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; color: #fff; height: 34px; padding: 0 10px; font-size: 0.8rem;">
+            <option value="">All Dates</option>
+          </select>
           <select id="tradeSymbolFilter" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; color: #fff; height: 34px; padding: 0 10px; font-size: 0.8rem;">
             <option value="">All Symbols</option>
           </select>
@@ -906,6 +959,7 @@
             <table id="tradesTable">
               <thead>
                 <tr>
+                  <th data-sort="entry_date">Date ⬍</th>
                   <th data-sort="entry_time">Time ⬍</th>
                   <th data-sort="symbol">Symbol ⬍</th>
                   <th data-sort="side">Side ⬍</th>
@@ -921,7 +975,7 @@
               </thead>
               <tbody id="tradesBody">
                 <tr>
-                  <td colspan="11" class="empty-state">No simulated trades executed yet. Run a backtest in the Console tab to view trade logs.</td>
+                  <td colspan="12" class="empty-state">No simulated trades executed yet. Run a backtest in the Console tab to view trade logs.</td>
                 </tr>
               </tbody>
             </table>
@@ -1028,6 +1082,16 @@
 
           <div style="margin-top: 16px;">
             <button id="btnRunWfo" class="btn-run" style="width: 100%; height: 44px; font-size: 0.95rem;">🧪 RUN WALK-FORWARD ANALYSIS</button>
+            <!-- WFO Live Progress Bar -->
+            <div id="wfoProgressContainer" style="display: none; margin-top: 10px;">
+              <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px;">
+                <span id="wfoProgressLabel">Analyzing window...</span>
+                <span id="wfoProgressPct">0%</span>
+              </div>
+              <div class="progress-bar-bg" style="width: 100%; height: 6px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden;">
+                <div id="wfoProgressBar" style="width: 0%; height: 100%; background: linear-gradient(90deg, var(--accent-cyan), var(--green)); transition: width 0.2s ease;"></div>
+              </div>
+            </div>
             <div id="wfoStatus" class="run-status" style="margin-top: 8px;"></div>
           </div>
         </div>
@@ -1160,6 +1224,16 @@
 
           <div style="margin-top: 16px;">
             <button id="btnRunOptimizer" class="btn-run" style="width: 100%; height: 44px; font-size: 0.95rem;">🚀 RUN GRID OPTIMIZATION</button>
+            <!-- Optimizer Live Progress Bar -->
+            <div id="optProgressContainer" style="display: none; margin-top: 10px;">
+              <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px;">
+                <span id="optProgressLabel">Testing combo...</span>
+                <span id="optProgressPct">0%</span>
+              </div>
+              <div class="progress-bar-bg" style="width: 100%; height: 6px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden;">
+                <div id="optProgressBar" style="width: 0%; height: 100%; background: linear-gradient(90deg, var(--accent-cyan), var(--green)); transition: width 0.2s ease;"></div>
+              </div>
+            </div>
             <div id="optStatus" class="run-status" style="margin-top: 8px;"></div>
           </div>
         </div>

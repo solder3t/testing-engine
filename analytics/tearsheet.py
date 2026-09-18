@@ -59,7 +59,7 @@ def generate_html_tearsheet(result: Dict[str, Any]) -> str:
     dd_values = [-abs(pt.get("drawdown_pct", 0.0)) for pt in drawdown_curve]
 
     daily_labels = [d.get("date", "") for d in daily]
-    daily_pnls = [d.get("pnl", 0.0) for d in daily]
+    daily_pnls = [d.get("net_pnl", d.get("pnl", 0.0)) for d in daily]
 
     # Calculate Top Drawdown Periods
     dd_periods = []
@@ -82,17 +82,22 @@ def generate_html_tearsheet(result: Dict[str, Any]) -> str:
     # Build Session Rows
     session_rows_html = ""
     for d in daily:
-        d_pnl = d.get("pnl", 0.0)
+        d_pnl = d.get("net_pnl", d.get("pnl", 0.0))
         d_sign = "+" if d_pnl >= 0 else ""
         d_cls = "pos" if d_pnl >= 0 else "neg"
-        d_trades = d.get("trades", 0)
+        d_trades = d.get("trades_count", d.get("trades", 0))
+        start_eq = d.get("starting_equity", 0.0)
+        end_eq = d.get("ending_equity", 0.0)
+        ret_pct = d.get("return_pct", 0.0)
+        if ret_pct == 0.0 and start_eq > 0 and d_pnl != 0.0:
+            ret_pct = round((d_pnl / start_eq) * 100, 2)
         session_rows_html += f"""
         <tr>
             <td><strong>{d.get('date', '')}</strong></td>
-            <td>₹{d.get('starting_equity', 0.0):,.2f}</td>
-            <td>₹{d.get('ending_equity', 0.0):,.2f}</td>
+            <td>₹{start_eq:,.2f}</td>
+            <td>₹{end_eq:,.2f}</td>
             <td class="{d_cls}">{d_sign}₹{d_pnl:,.2f}</td>
-            <td class="{d_cls}">{d_sign}{d.get('return_pct', 0.0):.2f}%</td>
+            <td class="{d_cls}">{d_sign}{ret_pct:.2f}%</td>
             <td>{d_trades}</td>
         </tr>
         """

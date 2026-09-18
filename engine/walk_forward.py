@@ -153,3 +153,122 @@ class WalkForwardOptimizer:
             "out_of_sample_trades": all_oos_trades,
             "out_of_sample_equity_curve": all_oos_equity_curves
         }
+
+    def stream_walk_forward(
+        self,
+        strategy_class: Type[BaseStrategy],
+        param_grid: Dict[str, List[Any]],
+        dates: List[str],
+        symbols: Optional[List[str]] = None,
+        rank_by: str = "sharpe_ratio"
+    ):
+        """
+        Generator version of run_walk_forward(). Yields progress events as each
+        rolling window is evaluated, then yields a final 'complete' dict.
+        """
+        windows = self.generate_windows(dates)
+        if not windows:
+            yield {
+                "type": "error",
+                "message": f"Not enough dates ({len(dates)}) for in_sample={self.in_sample_len}, out_of_sample={self.out_of_sample_len}"
+            }
+            return
+
+        window_results = []
+        is_sharpes = []
+        oos_sharpes = []
+        all_oos_trades = []
+        all_oos_equity_curves = []
+        total_w = len(windows)
+
+        for win in windows:
+            w_idx = win["window_index"]
+            is_dates = win["in_sample"]
+            oos_dates = win["out_of_sample"]
+
+            logger.info(f"[stream_walk_forward] Window {w_idx}/{total_w}: IS={is_dates}, OOS={oos_dates}")
+
+            # 1. Optimize on in-sample
+            ranked_params = self.optimizer.optimize(
+                strategy_class=strategy_class,
+                param_grid=param_grid,
+                dates=is_dates,
+                symbols=symbols,
+                rank_by=rank_by
+            )
+
+            best_param_set = ranked_params[0]["params"] if ranked_params else {}
+            best_is_metric = ranked_params[0] if ranked_params else {}
+            is_sharpes.append(best_is_metric.get("sharpe_ratio", 0.0))
+
+            # 2. Forward-test on out-of-sample
+            strat_oos = strategy_class(params=best_param_set)
+            oos_run = self.runner.run(
+                dates=oos_dates,
+                strategy=strat_oos,
+                symbols=symbols
+            )
+
+            m_oos = oos_run["metrics"]
+            oos_sharpes.append(m_oos.get("sharpe_ratio", 0.0))
+            all_oos_trades.extend(oos_run["trades"])
+            all_oos_equity_curves.extend(oos_run["equity_curve"])
+
+            w_data = {
+                "window": w_idx,
+                "in_sample_dates": is_dates,
+                "out_of_sample_dates": oos_dates,
+                "best_params": best_param_set,
+                "in_sample_metrics": {
+                    "net_pnl": best_is_metric.get("net_pnl", 0.0),
+                    "return_pct": best_is_metric.get("return_pct", 0.0),
+                    "sharpe_ratio": best_is_metric.get("sharpe_ratio", 0.0),
+                    "win_rate": best_is_metric.get("win_rate", 0.0)
+                },
+                "out_of_sample_metrics": {
+                    "net_pnl": m_oos.get("net_pnl", 0.0),
+                    "return_pct": m_oos.get("return_pct", 0.0),
+                    "sharpe_ratio": m_oos.get("sharpe_ratio", 0.0),
+                    "win_rate": m_oos.get("win_rate", 0.0),
+                    "total_trades": m_oos.get("total_trades", 0)
+                }
+            }
+            window_results.append(w_data)
+
+            yield {
+                "type": "progress",
+                "window": w_idx,
+                "total": total_w,
+                "in_sample_dates": is_dates,
+                "out_of_sample_dates": oos_dates,
+                "best_params": best_param_set,
+                "oos_pnl": round(float(m_oos.get("net_pnl", 0.0)), 2),
+                "oos_sharpe": round(float(m_oos.get("sharpe_ratio", 0.0)), 2)
+            }
+
+        overall_oos_metrics = calculate_performance_metrics(
+            trades=all_oos_trades,
+            initial_capital=self.runner.capital,
+            equity_curve=all_oos_equity_curves
+        )
+
+        avg_is_sharpe = float(sum(is_sharpes) / len(is_sharpes)) if is_sharpes else 0.0
+        avg_oos_sharpe = float(sum(oos_sharpes) / len(oos_sharpes)) if oos_sharpes else 0.0
+        wfe_ratio = round(float(avg_oos_sharpe / avg_is_sharpe), 2) if avg_is_sharpe > 0 else 0.0
+
+        res_obj = {
+            "strategy": strategy_class.__name__,
+            "total_windows": int(len(windows)),
+            "walk_forward_efficiency": float(wfe_ratio),
+            "is_robust": bool(wfe_ratio >= 0.5),
+            "overall_oos_metrics": overall_oos_metrics,
+            "windows": window_results,
+            "out_of_sample_trades": all_oos_trades,
+            "out_of_sample_equity_curve": all_oos_equity_curves
+        }
+        yield {
+            "type": "complete",
+            "result": res_obj,
+            **res_obj
+        }
+

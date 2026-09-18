@@ -406,7 +406,7 @@ def extract_archives():
     """Extracts specified archive dates into data cache."""
     data = request.json or {}
     dates = data.get("dates", [])
-    target_dir = data.get("directory") or DOWNLOADS_DIR
+    target_dir = data.get("directory") or data.get("archive_dir") or DOWNLOADS_DIR
     if not dates:
         return jsonify({"status": "error", "message": "No dates specified"}), 400
 
@@ -428,7 +428,7 @@ def run_backtest():
     global latest_run_result
     data = request.json or {}
 
-    source_dir = data.get("directory") or DOWNLOADS_DIR
+    source_dir = data.get("directory") or data.get("archive_dir") or DOWNLOADS_DIR
     mgr = ArchiveManager(downloads_dir=source_dir)
 
     selected_dates = data.get("dates", [])
@@ -488,7 +488,7 @@ def run_backtest_stream():
     global latest_run_result
     data = request.json or {}
 
-    source_dir = data.get("directory") or DOWNLOADS_DIR
+    source_dir = data.get("directory") or data.get("archive_dir") or DOWNLOADS_DIR
     mgr = ArchiveManager(downloads_dir=source_dir)
 
     selected_dates = data.get("dates", [])
@@ -532,6 +532,7 @@ def run_backtest_stream():
                 yield f"data: {json.dumps(event)}\n\n"
         except Exception as e:
             logger.error(f"Stream error: {e}\n{traceback.format_exc()}")
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
     return Response(event_stream(), mimetype="text/event-stream")
 
 
@@ -543,7 +544,7 @@ def api_compare_models():
     returning a comparative summary matrix and equity curves for direct benchmarking.
     """
     data = request.json or {}
-    source_dir = data.get("directory") or DOWNLOADS_DIR
+    source_dir = data.get("directory") or data.get("archive_dir") or DOWNLOADS_DIR
     mgr = ArchiveManager(downloads_dir=source_dir)
 
     selected_dates = data.get("dates", [])
@@ -612,6 +613,88 @@ def api_compare_models():
     })
 
 
+@app.route("/api/compare/stream", methods=["POST"])
+def api_compare_models_stream():
+    """
+    Streams multi-strategy comparison progress events via SSE.
+    """
+    data = request.json or {}
+    source_dir = data.get("directory") or data.get("archive_dir") or DOWNLOADS_DIR
+    mgr = ArchiveManager(downloads_dir=source_dir)
+
+    selected_dates = data.get("dates", [])
+    if not selected_dates:
+        all_sources = mgr.list_archives(target_dir=source_dir)
+        selected_dates = [a["date"] for a in all_sources]
+
+    if not selected_dates:
+        return jsonify({"status": "error", "message": "No archive dates found to test"}), 400
+
+    strat_list = data.get("strategies", [
+        "equity", "orb", "supertrend", "camarilla", "ema-ribbon", "bollinger-b",
+        "macd-accel", "vwap-reversion", "rsi-momentum", "options", "ai-replay",
+        "short-straddle", "pcr-reversion", "banknifty-options", "futures-trend", "max-pain"
+    ])
+    capital = float(data.get("capital", DEFAULT_CAPITAL))
+    risk_pct = float(data.get("risk_pct", DEFAULT_RISK_PCT_PER_TRADE))
+    timeframe = data.get("timeframe", "1min")
+    symbols = resolve_server_symbols(data.get("symbols"))
+
+    def event_stream():
+        try:
+            for d in selected_dates:
+                mgr.extract_archive(d, target_dir=source_dir)
+
+            comparison_results = []
+            total_strats = len(strat_list)
+            for idx, s_name in enumerate(strat_list, start=1):
+                try:
+                    strat, strat_symbols = create_strategy_instance(s_name, data, symbols)
+                    runner = MultiDayRunner(capital=capital, risk_pct=risk_pct, source_dir=source_dir, compound_capital=False, parallel=True)
+                    res = runner.run(dates=selected_dates, strategy=strat, symbols=strat_symbols, timeframe=timeframe)
+                    m = res["metrics"]
+                    item = {
+                        "strategy_key": s_name,
+                        "strategy_name": strat.name,
+                        "metrics": {
+                            "total_trades": m["total_trades"],
+                            "wins": m["wins"],
+                            "losses": m["losses"],
+                            "breakeven_count": m["breakeven_count"],
+                            "win_rate": m["win_rate"],
+                            "gross_pnl": m["gross_pnl"],
+                            "total_charges": m["total_charges"],
+                            "net_pnl": m["net_pnl"],
+                            "return_pct": m["return_pct"],
+                            "profit_factor": m["profit_factor"],
+                            "expectancy": m["expectancy"],
+                            "sharpe_ratio": m["sharpe_ratio"],
+                            "sortino_ratio": m["sortino_ratio"],
+                            "calmar_ratio": m["calmar_ratio"],
+                            "max_drawdown_pct": m["max_drawdown_pct"],
+                            "max_consecutive_wins": m["max_consecutive_wins"],
+                            "max_consecutive_losses": m["max_consecutive_losses"]
+                        },
+                        "equity_curve": res["equity_curve"]
+                    }
+                    comparison_results.append(item)
+                    yield f"data: {json.dumps({'type': 'progress', 'current': idx, 'total': total_strats, 'strategy': s_name, 'strategy_name': strat.name, 'net_pnl': m['net_pnl'], 'return_pct': m['return_pct']})}\n\n"
+                except Exception as ex:
+                    comparison_results.append({
+                        "strategy_key": s_name,
+                        "strategy_name": s_name,
+                        "error": str(ex)
+                    })
+                    yield f"data: {json.dumps({'type': 'progress', 'current': idx, 'total': total_strats, 'strategy': s_name, 'error': str(ex)})}\n\n"
+
+            yield f"data: {json.dumps({'type': 'complete', 'comparison': comparison_results})}\n\n"
+        except Exception as e:
+            logger.error(f"Compare stream error: {e}\n{traceback.format_exc()}")
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+    return Response(event_stream(), mimetype="text/event-stream")
+
+
 @app.route("/api/results", methods=["GET"])
 def get_latest_results():
     """Returns the results of the latest backtest run."""
@@ -652,7 +735,7 @@ def run_walk_forward_api():
     """
     data = request.json or {}
     strategy_name = data.get("strategy", "orb")
-    source_dir = data.get("directory") or DOWNLOADS_DIR
+    source_dir = data.get("directory") or data.get("archive_dir") or DOWNLOADS_DIR
     mgr = ArchiveManager(downloads_dir=source_dir)
 
     selected_dates = data.get("dates", [])
@@ -710,6 +793,61 @@ def run_walk_forward_api():
         }), 500
 
 
+@app.route("/api/walk_forward/stream", methods=["POST"])
+def api_walk_forward_stream():
+    """
+    Streams rolling Walk-Forward Optimization progress events via SSE.
+    """
+    data = request.json or {}
+    strategy_name = data.get("strategy", "orb")
+    source_dir = data.get("directory") or data.get("archive_dir") or DOWNLOADS_DIR
+    mgr = ArchiveManager(downloads_dir=source_dir)
+
+    selected_dates = data.get("dates", [])
+    if not selected_dates:
+        all_sources = mgr.list_archives(target_dir=source_dir)
+        selected_dates = [a["date"] for a in all_sources]
+
+    in_sample = int(data.get("in_sample", 3))
+    out_of_sample = int(data.get("out_of_sample", 1))
+    total_needed = in_sample + out_of_sample
+
+    if len(selected_dates) < total_needed:
+        return jsonify({
+            "status": "error",
+            "message": f"Walk-Forward requires at least {total_needed} dates (in_sample={in_sample}, out_of_sample={out_of_sample}), got {len(selected_dates)}"
+        }), 400
+
+    rank_by = data.get("rank_by", "sharpe_ratio")
+    capital = float(data.get("capital", DEFAULT_CAPITAL))
+    risk_pct = float(data.get("risk_pct", DEFAULT_RISK_PCT_PER_TRADE))
+    symbols = resolve_server_symbols(data.get("symbols"))
+
+    def event_stream():
+        try:
+            strat_cls = get_strategy_class(strategy_name)
+            param_grid = data.get("param_grid") or get_default_param_grid(strategy_name)
+
+            for d in selected_dates:
+                mgr.extract_archive(d, target_dir=source_dir)
+
+            runner = MultiDayRunner(capital=capital, risk_pct=risk_pct, source_dir=source_dir, compound_capital=False)
+            wfo = WalkForwardOptimizer(runner=runner, in_sample_len=in_sample, out_of_sample_len=out_of_sample)
+            for event in wfo.stream_walk_forward(
+                strategy_class=strat_cls,
+                param_grid=param_grid,
+                dates=selected_dates,
+                symbols=symbols,
+                rank_by=rank_by
+            ):
+                yield f"data: {json.dumps(event)}\n\n"
+        except Exception as e:
+            logger.error(f"Walk-forward stream error: {e}\n{traceback.format_exc()}")
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+    return Response(event_stream(), mimetype="text/event-stream")
+
+
 @app.route("/api/optimize", methods=["POST"])
 def run_optimize_api():
     """
@@ -718,7 +856,7 @@ def run_optimize_api():
     """
     data = request.json or {}
     strategy_name = data.get("strategy", "orb")
-    source_dir = data.get("directory") or DOWNLOADS_DIR
+    source_dir = data.get("directory") or data.get("archive_dir") or DOWNLOADS_DIR
     mgr = ArchiveManager(downloads_dir=source_dir)
 
     selected_dates = data.get("dates", [])
@@ -766,6 +904,54 @@ def run_optimize_api():
             "message": f"{type(e).__name__}: {str(e)}",
             "details": traceback.format_exc()
         }), 500
+
+
+@app.route("/api/optimize/stream", methods=["POST"])
+def api_optimize_stream():
+    """
+    Streams parameter grid search optimization progress events via SSE.
+    """
+    data = request.json or {}
+    strategy_name = data.get("strategy", "orb")
+    source_dir = data.get("directory") or data.get("archive_dir") or DOWNLOADS_DIR
+    mgr = ArchiveManager(downloads_dir=source_dir)
+
+    selected_dates = data.get("dates", [])
+    if not selected_dates:
+        all_sources = mgr.list_archives(target_dir=source_dir)
+        selected_dates = [a["date"] for a in all_sources]
+
+    if not selected_dates:
+        return jsonify({"status": "error", "message": "No dates available for optimization"}), 400
+
+    rank_by = data.get("rank_by", "sharpe_ratio")
+    capital = float(data.get("capital", DEFAULT_CAPITAL))
+    risk_pct = float(data.get("risk_pct", DEFAULT_RISK_PCT_PER_TRADE))
+    symbols = resolve_server_symbols(data.get("symbols"))
+
+    def event_stream():
+        try:
+            strat_cls = get_strategy_class(strategy_name)
+            param_grid = data.get("param_grid") or get_default_param_grid(strategy_name)
+
+            for d in selected_dates:
+                mgr.extract_archive(d, target_dir=source_dir)
+
+            runner = MultiDayRunner(capital=capital, risk_pct=risk_pct, source_dir=source_dir, compound_capital=False, parallel=True)
+            optimizer = StrategyOptimizer(runner=runner)
+            for event in optimizer.stream_optimize(
+                strategy_class=strat_cls,
+                param_grid=param_grid,
+                dates=selected_dates,
+                symbols=symbols,
+                rank_by=rank_by
+            ):
+                yield f"data: {json.dumps(event)}\n\n"
+        except Exception as e:
+            logger.error(f"Optimize stream error: {e}\n{traceback.format_exc()}")
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+    return Response(event_stream(), mimetype="text/event-stream")
 
 
 @app.route("/api/tearsheet", methods=["GET"])

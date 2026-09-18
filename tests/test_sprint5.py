@@ -270,3 +270,123 @@ def test_api_walk_forward_numpy_types_serialization(client):
             assert isinstance(data["total_windows"], int)
             assert isinstance(data["walk_forward_efficiency"], float)
 
+
+def test_api_compare_stream(client):
+    """Verify /api/compare/stream returns SSE data stream with progress and complete events."""
+    mock_run_result = {
+        "metrics": {
+            "total_trades": 10, "wins": 6, "losses": 4, "breakeven_count": 0,
+            "win_rate": 60.0, "gross_pnl": 15000.0, "total_charges": 1200.0,
+            "net_pnl": 13800.0, "return_pct": 2.76, "profit_factor": 2.1,
+            "expectancy": 1380.0, "sharpe_ratio": 2.4, "sortino_ratio": 3.1,
+            "calmar_ratio": 1.9, "max_drawdown_pct": 1.45,
+            "max_consecutive_wins": 3, "max_consecutive_losses": 2
+        },
+        "equity_curve": [{"timestamp": "09:15", "equity": 500000.0}]
+    }
+
+    with patch("dashboard.server.MultiDayRunner.run", return_value=mock_run_result):
+        with patch("dashboard.server.ArchiveManager.extract_archive"):
+            res = client.post("/api/compare/stream", json={
+                "dates": ["2026_02_02"],
+                "strategies": ["orb", "supertrend"]
+            })
+            assert res.status_code == 200
+            assert "text/event-stream" in res.content_type
+            data = res.get_data(as_text=True)
+            assert "data:" in data
+            assert '"type": "progress"' in data
+            assert '"type": "complete"' in data
+
+
+def test_api_walk_forward_stream(client):
+    """Verify /api/walk_forward/stream yields SSE progress events."""
+    mock_events = [
+        {
+            "type": "progress", "window": 1, "total": 1,
+            "in_sample_dates": ["2026_02_02"], "out_of_sample_dates": ["2026_02_03"],
+            "best_params": {"opening_minutes": 15}, "oos_pnl": 5000.0, "oos_sharpe": 1.8
+        },
+        {
+            "type": "complete",
+            "result": {"walk_forward_efficiency": 0.85, "total_windows": 1, "is_robust": True}
+        }
+    ]
+
+    with patch("dashboard.server.WalkForwardOptimizer.stream_walk_forward", return_value=iter(mock_events)):
+        with patch("dashboard.server.ArchiveManager.extract_archive"):
+            res = client.post("/api/walk_forward/stream", json={
+                "dates": ["2026_02_02", "2026_02_03", "2026_02_04", "2026_02_05"],
+                "strategy": "orb",
+                "in_sample": 3,
+                "out_of_sample": 1
+            })
+            assert res.status_code == 200
+            assert "text/event-stream" in res.content_type
+            data = res.get_data(as_text=True)
+            assert "data:" in data
+            assert '"type": "progress"' in data
+            assert '"type": "complete"' in data
+
+
+def test_api_optimize_stream(client):
+    """Verify /api/optimize/stream yields SSE progress events."""
+    mock_events = [
+        {
+            "type": "progress", "current": 1, "total": 1,
+            "params": {"opening_minutes": 15}, "net_pnl": 12000.0, "sharpe_ratio": 2.1
+        },
+        {
+            "type": "complete",
+            "strategy": "OrbBreakoutStrategy",
+            "rank_by": "sharpe_ratio",
+            "total_combinations": 1,
+            "best_params": {"opening_minutes": 15},
+            "ranked_results": [{"params": {"opening_minutes": 15}, "net_pnl": 12000.0}]
+        }
+    ]
+
+    with patch("dashboard.server.StrategyOptimizer.stream_optimize", return_value=iter(mock_events)):
+        with patch("dashboard.server.ArchiveManager.extract_archive"):
+            res = client.post("/api/optimize/stream", json={
+                "dates": ["2026_02_02"],
+                "strategy": "orb",
+                "param_grid": {"opening_minutes": [15]}
+            })
+            assert res.status_code == 200
+            assert "text/event-stream" in res.content_type
+            data = res.get_data(as_text=True)
+            assert "data:" in data
+            assert '"type": "progress"' in data
+            assert '"type": "complete"' in data
+
+
+def test_dashboard_html_elements_session_breakdown_and_progress_bars(client):
+    """Verify HTML template contains the session breakdown table, trade date filter, and progress bars."""
+    res = client.get("/")
+    assert res.status_code == 200
+    html = res.get_data(as_text=True)
+
+    # Global live progress bar
+    assert 'id="globalProgressContainer"' in html
+    assert 'id="globalProgressBarFill"' in html
+    assert 'id="globalProgressLabel"' in html
+    assert 'id="globalProgressPct"' in html
+
+    # Session-by-Session Breakdown Data Table in Tab 2
+    assert 'id="sessionBreakdownCard"' in html
+    assert 'id="sessionBreakdownTable"' in html
+    assert 'id="sessionBreakdownBody"' in html
+    assert 'id="sessionBreakdownFoot"' in html
+    assert 'Starting Equity (₹)' in html
+    assert 'Ending Equity (₹)' in html
+
+    # Trade Date Filter and Date column header in Tab 3
+    assert 'id="tradeDateFilter"' in html
+    assert 'data-sort="entry_date">Date' in html
+
+    # Contextual progress containers in Tab 5 & 6
+    assert 'id="wfoProgressContainer"' in html
+    assert 'id="optProgressContainer"' in html
+
+

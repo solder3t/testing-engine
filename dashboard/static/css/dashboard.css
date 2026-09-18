@@ -1070,3 +1070,130 @@ tbody tr.selected-row {
   text-align: center;
   padding: 20px;
 }
+
+/* ── Global Live Progress Bar (Sticky) ─────────────────────────────────── */
+.global-progress-container {
+  position: sticky;
+  top: 54px;
+  z-index: 99;
+  background: rgba(13, 17, 23, 0.94);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(0, 242, 254, 0.25);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5), 0 0 15px rgba(0, 242, 254, 0.12);
+  padding: 10px 24px;
+  animation: slideDownProgress 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideDownProgress {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.global-progress-content {
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.global-progress-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  font-size: 0.82rem;
+}
+
+.global-pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent-cyan);
+  box-shadow: 0 0 10px var(--accent-cyan);
+  display: inline-block;
+  margin-right: 8px;
+  animation: pulseDot 1.2s infinite ease-in-out;
+}
+
+@keyframes pulseDot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.3; transform: scale(0.8); }
+}
+
+.global-progress-label {
+  font-weight: 600;
+  color: #fff;
+  flex: 1;
+  letter-spacing: 0.2px;
+}
+
+.global-progress-pct {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+  color: var(--accent-cyan);
+  font-size: 0.9rem;
+}
+
+.global-progress-bar-bg {
+  width: 100%;
+  height: 7px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+
+.global-progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #00f2fe 0%, #4facfe 50%, #2ea043 100%);
+  background-size: 200% 100%;
+  border-radius: 4px;
+  transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 0 12px rgba(0, 242, 254, 0.5);
+  animation: shimmerGradient 2s infinite linear;
+}
+
+@keyframes shimmerGradient {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+/* ── Session-by-Session Breakdown Table ────────────────────────────────── */
+#sessionBreakdownTable {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+#sessionBreakdownTable th {
+  background: rgba(255, 255, 255, 0.03);
+  padding: 10px 14px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--panel-border);
+  white-space: nowrap;
+}
+
+#sessionBreakdownTable td {
+  padding: 10px 14px;
+  font-size: 0.82rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  font-family: 'JetBrains Mono', monospace;
+  white-space: nowrap;
+}
+
+#sessionBreakdownTable tbody tr:hover {
+  background: rgba(0, 242, 254, 0.04);
+  cursor: pointer;
+}
+
+#sessionBreakdownTable tfoot td {
+  padding: 12px 14px;
+  font-size: 0.86rem;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+  color: #fff;
+  border-top: 2px solid var(--panel-border);
+}
+
