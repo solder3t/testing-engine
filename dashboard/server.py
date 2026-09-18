@@ -26,6 +26,8 @@ import json
 import re
 import logging
 import traceback
+from enum import Enum
+from dataclasses import is_dataclass, asdict
 from typing import Dict, Any, Optional
 import numpy as np
 from flask import Flask, render_template, request, jsonify, send_file, Response
@@ -73,6 +75,32 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("dashboard_server")
 
 
+def robust_json_default(obj):
+    """Encodes custom types like Trade, NumPy types, Enums, timestamps, and dataclasses into JSON."""
+    if isinstance(obj, (np.bool_, bool)):
+        return bool(obj)
+    if isinstance(obj, (np.integer, int)):
+        return int(obj)
+    if isinstance(obj, (np.floating, float)):
+        return float(obj)
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if hasattr(obj, "to_dict") and callable(obj.to_dict):
+        return obj.to_dict()
+    if isinstance(obj, Enum):
+        return obj.value
+    if is_dataclass(obj) and not isinstance(obj, type):
+        return asdict(obj)
+    if hasattr(obj, "isoformat") and callable(obj.isoformat):
+        return obj.isoformat()
+    return str(obj)
+
+
+def robust_json_dumps(obj, **kwargs) -> str:
+    """Safe JSON dumps for SSE and streaming that serializes Trades, NumPy types, Enums, and Dataclasses."""
+    return json.dumps(obj, default=robust_json_default, **kwargs)
+
+
 class NumpyJSONProvider(DefaultJSONProvider):
     """
     JSON Provider ensuring all NumPy and Pandas data types (np.bool_, np.integer,
@@ -80,19 +108,7 @@ class NumpyJSONProvider(DefaultJSONProvider):
     for JSON serialization across all API responses.
     """
     def default(self, obj):
-        if isinstance(obj, (np.bool_, bool)):
-            return bool(obj)
-        if isinstance(obj, (np.integer, int)):
-            return int(obj)
-        if isinstance(obj, (np.floating, float)):
-            return float(obj)
-        if isinstance(obj, np.ndarray):
-            return obj.tolist()
-        if hasattr(obj, "to_dict"):
-            return obj.to_dict()
-        if hasattr(obj, "isoformat"):
-            return obj.isoformat()
-        return super().default(obj)
+        return robust_json_default(obj)
 
 
 app = Flask(
@@ -529,10 +545,10 @@ def run_backtest_stream():
                     latest_run_result = serializable_res
                     event["result"] = serializable_res
 
-                yield f"data: {json.dumps(event)}\n\n"
+                yield f"data: {robust_json_dumps(event)}\n\n"
         except Exception as e:
             logger.error(f"Stream error: {e}\n{traceback.format_exc()}")
-            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+            yield f"data: {robust_json_dumps({'type': 'error', 'message': str(e)})}\n\n"
     return Response(event_stream(), mimetype="text/event-stream")
 
 
@@ -678,19 +694,19 @@ def api_compare_models_stream():
                         "equity_curve": res["equity_curve"]
                     }
                     comparison_results.append(item)
-                    yield f"data: {json.dumps({'type': 'progress', 'current': idx, 'total': total_strats, 'strategy': s_name, 'strategy_name': strat.name, 'net_pnl': m['net_pnl'], 'return_pct': m['return_pct']})}\n\n"
+                    yield f"data: {robust_json_dumps({'type': 'progress', 'current': idx, 'total': total_strats, 'strategy': s_name, 'strategy_name': strat.name, 'net_pnl': m['net_pnl'], 'return_pct': m['return_pct']})}\n\n"
                 except Exception as ex:
                     comparison_results.append({
                         "strategy_key": s_name,
                         "strategy_name": s_name,
                         "error": str(ex)
                     })
-                    yield f"data: {json.dumps({'type': 'progress', 'current': idx, 'total': total_strats, 'strategy': s_name, 'error': str(ex)})}\n\n"
+                    yield f"data: {robust_json_dumps({'type': 'progress', 'current': idx, 'total': total_strats, 'strategy': s_name, 'error': str(ex)})}\n\n"
 
-            yield f"data: {json.dumps({'type': 'complete', 'comparison': comparison_results})}\n\n"
+            yield f"data: {robust_json_dumps({'type': 'complete', 'comparison': comparison_results})}\n\n"
         except Exception as e:
             logger.error(f"Compare stream error: {e}\n{traceback.format_exc()}")
-            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+            yield f"data: {robust_json_dumps({'type': 'error', 'message': str(e)})}\n\n"
 
     return Response(event_stream(), mimetype="text/event-stream")
 
@@ -840,10 +856,10 @@ def api_walk_forward_stream():
                 symbols=symbols,
                 rank_by=rank_by
             ):
-                yield f"data: {json.dumps(event)}\n\n"
+                yield f"data: {robust_json_dumps(event)}\n\n"
         except Exception as e:
             logger.error(f"Walk-forward stream error: {e}\n{traceback.format_exc()}")
-            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+            yield f"data: {robust_json_dumps({'type': 'error', 'message': str(e)})}\n\n"
 
     return Response(event_stream(), mimetype="text/event-stream")
 
@@ -946,10 +962,10 @@ def api_optimize_stream():
                 symbols=symbols,
                 rank_by=rank_by
             ):
-                yield f"data: {json.dumps(event)}\n\n"
+                yield f"data: {robust_json_dumps(event)}\n\n"
         except Exception as e:
             logger.error(f"Optimize stream error: {e}\n{traceback.format_exc()}")
-            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+            yield f"data: {robust_json_dumps({'type': 'error', 'message': str(e)})}\n\n"
 
     return Response(event_stream(), mimetype="text/event-stream")
 

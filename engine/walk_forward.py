@@ -143,6 +143,11 @@ class WalkForwardOptimizer:
         avg_oos_sharpe = float(sum(oos_sharpes) / len(oos_sharpes)) if oos_sharpes else 0.0
         wfe_ratio = round(float(avg_oos_sharpe / avg_is_sharpe), 2) if avg_is_sharpe > 0 else 0.0
 
+        oos_trades_dicts = [
+            t.to_dict() if hasattr(t, "to_dict") else t
+            for t in all_oos_trades
+        ]
+
         return {
             "strategy": strategy_class.__name__,
             "total_windows": int(len(windows)),
@@ -150,7 +155,7 @@ class WalkForwardOptimizer:
             "is_robust": bool(wfe_ratio >= 0.5),
             "overall_oos_metrics": overall_oos_metrics,
             "windows": window_results,
-            "out_of_sample_trades": all_oos_trades,
+            "out_of_sample_trades": oos_trades_dicts,
             "out_of_sample_equity_curve": all_oos_equity_curves
         }
 
@@ -256,6 +261,11 @@ class WalkForwardOptimizer:
         avg_oos_sharpe = float(sum(oos_sharpes) / len(oos_sharpes)) if oos_sharpes else 0.0
         wfe_ratio = round(float(avg_oos_sharpe / avg_is_sharpe), 2) if avg_is_sharpe > 0 else 0.0
 
+        oos_trades_dicts = [
+            t.to_dict() if hasattr(t, "to_dict") else t
+            for t in all_oos_trades
+        ]
+
         res_obj = {
             "strategy": strategy_class.__name__,
             "total_windows": int(len(windows)),
@@ -263,7 +273,7 @@ class WalkForwardOptimizer:
             "is_robust": bool(wfe_ratio >= 0.5),
             "overall_oos_metrics": overall_oos_metrics,
             "windows": window_results,
-            "out_of_sample_trades": all_oos_trades,
+            "out_of_sample_trades": oos_trades_dicts,
             "out_of_sample_equity_curve": all_oos_equity_curves
         }
         yield {

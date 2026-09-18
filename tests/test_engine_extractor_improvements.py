@@ -317,3 +317,49 @@ def test_multi_day_runner_compounding_no_duplicates():
     d1_end = res["daily_breakdown"][0]["ending_equity"]
     d2_start = res["daily_breakdown"][1]["starting_equity"]
     assert d2_start == pytest.approx(d1_end, rel=1e-3)
+
+
+# ── Testing Engine: Trade JSON Serialization in WFO Stream ────────────────────
+
+def test_trade_json_serialization_in_wfo_stream():
+    from execution.order import Trade
+    from dashboard.server import robust_json_dumps
+
+    # Construct a real Trade instance
+    t = Trade(
+        symbol="RELIANCE",
+        security_id=2885,
+        side=OrderSide.BUY,
+        qty=10,
+        entry_time="2026-09-02 09:20:00",
+        entry_price=1300.0,
+        initial_sl=1280.0,
+        current_sl=1280.0,
+        target=1340.0,
+        instrument_type=InstrumentType.EQUITY
+    )
+    t.close("2026-09-02 15:20:00", 1320.0, "TARGET", charges=25.5)
+
+    # 1. Test Trade.to_dict()
+    d = t.to_dict()
+    assert isinstance(d, dict)
+    assert d["symbol"] == "RELIANCE"
+    assert d["gross_pnl"] == 200.0
+    assert d["net_pnl"] == 174.5
+    assert d["date"] == "2026-09-02"
+
+    # 2. Test robust_json_dumps on an event containing raw Trade instances
+    event_with_trades = {
+        "type": "complete",
+        "result": {
+            "out_of_sample_trades": [t],
+            "is_robust": True
+        },
+        "out_of_sample_trades": [t]
+    }
+
+    serialized = robust_json_dumps(event_with_trades)
+    assert "RELIANCE" in serialized
+    assert "TARGET" in serialized
+    assert "174.5" in serialized
+
