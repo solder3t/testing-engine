@@ -108,6 +108,13 @@ function switchTab(tabId) {
     }, 50);
   } else if (tabId === "tabExplorer") {
     renderDataExplorer(lastRawArchives);
+  } else if (tabId === "tabTradingEngine") {
+    if (!window._teInsightsLoaded) {
+      window._teInsightsLoaded = true;
+      fetchReconciliation();
+      fetchConfigExport();
+      fetchAiAnalytics();
+    }
   }
 }
 window.switchTab = switchTab;
@@ -2879,15 +2886,41 @@ function initTradingEngineInsights() {
       subpanels.forEach(p => {
         p.style.display = p.id === subId ? "block" : "none";
       });
+
+      if (subId === "subFactorAlpha" && !window._teFactorsLoaded) {
+        window._teFactorsLoaded = true;
+        fetchFactorAblation();
+      } else if (subId === "subConfigExport" && !window._teConfigLoaded) {
+        window._teConfigLoaded = true;
+        fetchConfigExport();
+      } else if (subId === "subAiAnalytics" && !window._latestAiAnalyticsData) {
+        fetchAiAnalytics();
+      }
     });
   });
 
-  // Slider event
+  // Slider event with real-time confusion matrix recalculation
   const slider = document.getElementById("teConfSlider");
   const sliderVal = document.getElementById("teConfSliderVal");
   if (slider && sliderVal) {
     slider.addEventListener("input", (e) => {
-      sliderVal.innerText = parseFloat(e.target.value).toFixed(2);
+      const val = parseFloat(e.target.value);
+      sliderVal.innerText = val.toFixed(2);
+      updateConfusionFromSweep(val);
+    });
+    slider.addEventListener("change", () => {
+      fetchAiAnalytics();
+    });
+  }
+
+  // Date select change listener
+  const dateSelect = document.getElementById("teDateSelect");
+  if (dateSelect) {
+    dateSelect.addEventListener("change", () => {
+      fetchReconciliation();
+      if (window._teFactorsLoaded) {
+        fetchFactorAblation();
+      }
     });
   }
 
@@ -2898,9 +2931,14 @@ function initTradingEngineInsights() {
       btnRunAll.disabled = true;
       btnRunAll.innerText = "Analyzing...";
       try {
-        await fetchReconciliation();
-        await fetchAiAnalytics();
-        await fetchConfigExport();
+        await Promise.all([
+          fetchReconciliation(),
+          fetchAiAnalytics(),
+          fetchFactorAblation(),
+          fetchConfigExport()
+        ]);
+        window._teFactorsLoaded = true;
+        window._teConfigLoaded = true;
       } finally {
         btnRunAll.disabled = false;
         btnRunAll.innerText = "⚡ Run Full Analysis";
@@ -2920,7 +2958,10 @@ function initTradingEngineInsights() {
 
   const btnRunFactors = document.getElementById("btnRunFactorAblation");
   if (btnRunFactors) {
-    btnRunFactors.addEventListener("click", fetchFactorAblation);
+    btnRunFactors.addEventListener("click", () => {
+      window._teFactorsLoaded = true;
+      fetchFactorAblation();
+    });
   }
 
   const btnCopyEnv = document.getElementById("btnCopyEnv");
@@ -2948,6 +2989,38 @@ function initTradingEngineInsights() {
 
   // Populate available dates in teDateSelect if empty
   populateEngineDates();
+}
+
+function updateConfusionFromSweep(targetThreshold) {
+  if (!window._latestAiAnalyticsData || !Array.isArray(window._latestAiAnalyticsData.threshold_sweep)) return;
+  const sweep = window._latestAiAnalyticsData.threshold_sweep;
+  let best = sweep[0];
+  let minDiff = 999;
+  sweep.forEach(item => {
+    const diff = Math.abs(item.threshold - targetThreshold);
+    if (diff < minDiff) {
+      minDiff = diff;
+      best = item;
+    }
+  });
+  if (best) {
+    const mTP = document.getElementById("teMatrixTP");
+    if (mTP) mTP.innerText = best.true_positives || 0;
+    const mFP = document.getElementById("teMatrixFP");
+    if (mFP) mFP.innerText = best.false_positives || 0;
+    const mTN = document.getElementById("teMatrixTN");
+    if (mTN) mTN.innerText = best.true_negatives || 0;
+    const mFN = document.getElementById("teMatrixFN");
+    if (mFN) mFN.innerText = best.false_negatives || 0;
+
+    const kpiPrec = document.getElementById("teKpiAiPrecision");
+    if (kpiPrec) kpiPrec.innerText = (best.precision || 0).toFixed(1) + "%";
+    const kpiAcc = document.getElementById("teKpiAiAccuracy");
+    if (kpiAcc) kpiAcc.innerText = (best.accuracy || 0).toFixed(1) + "%";
+    const kpiFilt = document.getElementById("teKpiAiFilterRate");
+    const total = window._latestAiAnalyticsData.total_snapshots || 1;
+    if (kpiFilt) kpiFilt.innerText = `${best.signals_filtered || 0} (${(((best.signals_filtered || 0) / total) * 100).toFixed(0)}%)`;
+  }
 }
 
 async function populateEngineDates() {
@@ -3137,6 +3210,7 @@ async function fetchAiAnalytics() {
 }
 
 function renderAiAnalytics(data) {
+  window._latestAiAnalyticsData = data;
   const sum = data.summary || {};
   const mat = data.counterfactual_matrix || {};
 
