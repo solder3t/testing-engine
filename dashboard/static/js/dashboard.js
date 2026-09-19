@@ -7,6 +7,10 @@ let drawdownChart = null;
 let hourlyChart = null;
 let outcomeChart = null;
 let pnlDistChart = null;
+let teDriftChartInstance = null;
+let teCalibrationChartInstance = null;
+let teMonteCarloChartInstance = null;
+let teGreeksChartInstance = null;
 let allTrades = [];
 let filteredTrades = [];
 let currentSortColumn = "entry_time";
@@ -2895,6 +2899,12 @@ function initTradingEngineInsights() {
         fetchConfigExport();
       } else if (subId === "subAiAnalytics" && !window._latestAiAnalyticsData) {
         fetchAiAnalytics();
+      } else if (subId === "subMonteCarlo" && !window._teMonteCarloLoaded) {
+        window._teMonteCarloLoaded = true;
+        fetchMonteCarlo();
+      } else if (subId === "subMultiLeg" && !window._teMultiLegLoaded) {
+        window._teMultiLegLoaded = true;
+        fetchMultiLegSimulation();
       }
     });
   });
@@ -2918,9 +2928,9 @@ function initTradingEngineInsights() {
   if (dateSelect) {
     dateSelect.addEventListener("change", () => {
       fetchReconciliation();
-      if (window._teFactorsLoaded) {
-        fetchFactorAblation();
-      }
+      if (window._teFactorsLoaded) fetchFactorAblation();
+      if (window._teMonteCarloLoaded) fetchMonteCarlo();
+      if (window._teMultiLegLoaded) fetchMultiLegSimulation();
     });
   }
 
@@ -2935,10 +2945,14 @@ function initTradingEngineInsights() {
           fetchReconciliation(),
           fetchAiAnalytics(),
           fetchFactorAblation(),
-          fetchConfigExport()
+          fetchConfigExport(),
+          fetchMonteCarlo(),
+          fetchMultiLegSimulation()
         ]);
         window._teFactorsLoaded = true;
         window._teConfigLoaded = true;
+        window._teMonteCarloLoaded = true;
+        window._teMultiLegLoaded = true;
       } finally {
         btnRunAll.disabled = false;
         btnRunAll.innerText = "⚡ Run Full Analysis";
@@ -2961,6 +2975,98 @@ function initTradingEngineInsights() {
     btnRunFactors.addEventListener("click", () => {
       window._teFactorsLoaded = true;
       fetchFactorAblation();
+    });
+  }
+
+  const btnRunMonteCarlo = document.getElementById("btnRunMonteCarlo");
+  if (btnRunMonteCarlo) {
+    btnRunMonteCarlo.addEventListener("click", fetchMonteCarlo);
+  }
+
+  const btnRunMultiLeg = document.getElementById("btnRunMultiLeg");
+  if (btnRunMultiLeg) {
+    btnRunMultiLeg.addEventListener("click", fetchMultiLegSimulation);
+  }
+
+  // Session Audit Modal Handlers
+  const btnOpenAuditModal = document.getElementById("btnOpenAuditModal");
+  const auditModal = document.getElementById("teAuditModal");
+  const closeAuditModal = document.getElementById("closeAuditModal");
+  if (btnOpenAuditModal && auditModal) {
+    btnOpenAuditModal.addEventListener("click", () => {
+      auditModal.style.display = "flex";
+      fetchSessionAudit();
+    });
+  }
+  if (closeAuditModal && auditModal) {
+    closeAuditModal.addEventListener("click", () => {
+      auditModal.style.display = "none";
+    });
+  }
+  const btnOpenHtmlReport = document.getElementById("btnOpenHtmlReport");
+  if (btnOpenHtmlReport) {
+    btnOpenHtmlReport.addEventListener("click", () => {
+      const select = document.getElementById("teDateSelect");
+      const d = select ? select.value : "2026_09_11";
+      window.open(`/api/trading_engine/audit?date=${encodeURIComponent(d)}&format=html`, "_blank");
+    });
+  }
+  const btnDownloadHtmlReport = document.getElementById("btnDownloadHtmlReport");
+  if (btnDownloadHtmlReport) {
+    btnDownloadHtmlReport.addEventListener("click", () => {
+      const select = document.getElementById("teDateSelect");
+      const d = select ? select.value : "2026_09_11";
+      window.location.href = `/api/trading_engine/audit?date=${encodeURIComponent(d)}&format=html&download=1`;
+    });
+  }
+
+  // Production Config Sync Buttons
+  const btnApplyTradingEngine = document.getElementById("btnApplyTradingEngine");
+  if (btnApplyTradingEngine) {
+    btnApplyTradingEngine.addEventListener("click", async () => {
+      const confirmSync = confirm("Apply optimized parameters directly to trading-engine/.env?\n\nAn automated timestamped backup (.env.bak.<timestamp>) will be safely created.");
+      if (!confirmSync) return;
+
+      btnApplyTradingEngine.disabled = true;
+      btnApplyTradingEngine.innerText = "Applying to trading-engine...";
+      const alertBox = document.getElementById("teSyncAlert");
+
+      try {
+        const res = await fetch("/api/trading_engine/apply_config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({})
+        });
+        const json = await res.json();
+        if (json.status === "ok" && json.data) {
+          if (alertBox) {
+            alertBox.style.display = "block";
+            alertBox.style.background = "rgba(0, 245, 160, 0.12)";
+            alertBox.style.border = "1px solid rgba(0, 245, 160, 0.4)";
+            alertBox.style.color = "var(--green)";
+            alertBox.innerHTML = `<strong>✓ Successfully synchronized to trading-engine/.env!</strong><br>
+              <span style="font-size: 0.75rem; color: var(--text-muted);">Backup created: ${json.data.backup_file || "N/A"} | Updated keys: ${(json.data.updated_keys || []).join(", ")}</span>`;
+          }
+          btnApplyTradingEngine.innerText = "Applied Successfully! ✓";
+          setTimeout(() => {
+            btnApplyTradingEngine.disabled = false;
+            btnApplyTradingEngine.innerText = "⚡ Apply Directly to Trading Engine (.env)";
+          }, 3000);
+        } else {
+          throw new Error(json.message || "Failed to synchronize");
+        }
+      } catch (err) {
+        console.error("Error applying config:", err);
+        if (alertBox) {
+          alertBox.style.display = "block";
+          alertBox.style.background = "rgba(255, 77, 79, 0.12)";
+          alertBox.style.border = "1px solid rgba(255, 77, 79, 0.4)";
+          alertBox.style.color = "var(--red)";
+          alertBox.innerText = `Error applying config: ${err.message}`;
+        }
+        btnApplyTradingEngine.disabled = false;
+        btnApplyTradingEngine.innerText = "⚡ Apply Directly to Trading Engine (.env)";
+      }
     });
   }
 
@@ -3187,6 +3293,9 @@ function renderReconciliation(data) {
       }).join("");
     }
   }
+
+  // Render Intraday P&L Drift Chart
+  renderIntradayDriftChart(data);
 }
 
 async function fetchAiAnalytics() {
@@ -3283,6 +3392,9 @@ function renderAiAnalytics(data) {
       }).join("");
     }
   }
+
+  // Render AI Calibration Reliability Diagram
+  renderAiCalibrationChart(data);
 }
 
 async function fetchFactorAblation() {
@@ -3371,6 +3483,591 @@ function renderConfigExport(data) {
   const preview = document.getElementById("teEnvPreview");
   if (preview) {
     preview.innerText = data.env_content || "";
+  }
+}
+
+// ── Visual Chart: Intraday Execution Drift Timeline ─────────────────────────────
+function renderIntradayDriftChart(data) {
+  const canvas = document.getElementById("teDriftChart");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  if (teDriftChartInstance) {
+    teDriftChartInstance.destroy();
+    teDriftChartInstance = null;
+  }
+
+  const pairs = data.matched_pairs || [];
+  const points = [];
+  pairs.forEach(p => {
+    const t = (p.live_trade?.entry_time || p.sim_trade?.entry_time || "").split(" ")[1] || "10:00";
+    points.push({ time: t, livePnl: p.live_trade?.net_pnl || 0, simPnl: p.sim_trade?.net_pnl || 0 });
+  });
+
+  if (points.length === 0) {
+    points.push({ time: "09:15", livePnl: 0, simPnl: 0 });
+    points.push({ time: "11:30", livePnl: 0, simPnl: 0 });
+    points.push({ time: "15:15", livePnl: 0, simPnl: 0 });
+  }
+
+  points.sort((a, b) => a.time.localeCompare(b.time));
+
+  let cumLive = 0;
+  let cumSim = 0;
+  const labels = ["09:15"];
+  const liveSeries = [0];
+  const simSeries = [0];
+
+  points.forEach(pt => {
+    cumLive += pt.livePnl;
+    cumSim += pt.simPnl;
+    labels.push(pt.time);
+    liveSeries.push(roundTo(cumLive, 2));
+    simSeries.push(roundTo(cumSim, 2));
+  });
+
+  teDriftChartInstance = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: "Theoretical Strategy v4 P&L (₹)",
+          data: simSeries,
+          borderColor: "#00f2fe",
+          backgroundColor: "rgba(0, 242, 254, 0.08)",
+          fill: true,
+          tension: 0.2,
+          borderWidth: 2,
+          pointRadius: 3
+        },
+        {
+          label: "Realized Live Paper P&L (₹)",
+          data: liveSeries,
+          borderColor: cumLive >= 0 ? "#00f5a0" : "#ff4d4f",
+          backgroundColor: cumLive >= 0 ? "rgba(0, 245, 160, 0.08)" : "rgba(255, 77, 79, 0.08)",
+          fill: true,
+          tension: 0.2,
+          borderWidth: 2,
+          pointRadius: 3
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { display: true, labels: { color: "#8b949e", font: { size: 11 } } },
+        tooltip: {
+          backgroundColor: "rgba(10, 16, 28, 0.95)",
+          borderColor: "rgba(255, 255, 255, 0.1)",
+          borderWidth: 1
+        }
+      },
+      scales: {
+        x: { grid: { color: "rgba(255, 255, 255, 0.05)" }, ticks: { color: "#8b949e", font: { size: 10 } } },
+        y: {
+          grid: { color: "rgba(255, 255, 255, 0.05)" },
+          ticks: { color: "#8b949e", font: { size: 10 }, callback: v => `₹${v}` }
+        }
+      }
+    }
+  });
+}
+
+// ── Visual Chart: AI Decile Calibration Reliability Curve ────────────────────────
+function renderAiCalibrationChart(data) {
+  const canvas = document.getElementById("teCalibrationChart");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  if (teCalibrationChartInstance) {
+    teCalibrationChartInstance.destroy();
+    teCalibrationChartInstance = null;
+  }
+
+  const cal = data.calibration || [];
+  if (cal.length === 0) return;
+
+  const labels = cal.map(c => c.bucket);
+  const winRates = cal.map(c => c.win_rate);
+  const counts = cal.map(c => c.count);
+  const benchmarkLine = labels.map(l => {
+    if (l === "0.0-0.3") return 15;
+    if (l === "0.3-0.5") return 40;
+    if (l === "0.5-0.6") return 55;
+    if (l === "0.6-0.7") return 65;
+    if (l === "0.7-0.8") return 75;
+    if (l === "0.8-1.0") return 90;
+    return 50;
+  });
+
+  teCalibrationChartInstance = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          type: "line",
+          label: "Realized Win Rate %",
+          data: winRates,
+          borderColor: "#00f2fe",
+          backgroundColor: "transparent",
+          borderWidth: 2.5,
+          pointRadius: 4,
+          pointBackgroundColor: "#00f2fe",
+          yAxisID: "y"
+        },
+        {
+          type: "line",
+          label: "Perfect Calibration Diagonal %",
+          data: benchmarkLine,
+          borderColor: "rgba(255, 255, 255, 0.3)",
+          borderDash: [5, 5],
+          backgroundColor: "transparent",
+          borderWidth: 1.5,
+          pointRadius: 0,
+          yAxisID: "y"
+        },
+        {
+          type: "bar",
+          label: "Snapshot Sample Count",
+          data: counts,
+          backgroundColor: "rgba(168, 85, 247, 0.25)",
+          borderColor: "rgba(168, 85, 247, 0.6)",
+          borderWidth: 1,
+          yAxisID: "y1"
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: true, labels: { color: "#8b949e", font: { size: 11 } } },
+        tooltip: {
+          backgroundColor: "rgba(10, 16, 28, 0.95)",
+          borderColor: "rgba(255, 255, 255, 0.1)",
+          borderWidth: 1
+        }
+      },
+      scales: {
+        x: { grid: { color: "rgba(255, 255, 255, 0.05)" }, ticks: { color: "#8b949e" } },
+        y: {
+          type: "linear",
+          position: "left",
+          min: 0,
+          max: 100,
+          grid: { color: "rgba(255, 255, 255, 0.05)" },
+          ticks: { color: "#8b949e", callback: v => `${v}%` }
+        },
+        y1: {
+          type: "linear",
+          position: "right",
+          grid: { drawOnChartArea: false },
+          ticks: { color: "#a855f7" }
+        }
+      }
+    }
+  });
+}
+
+// ── Monte Carlo & Stress Test Engine ─────────────────────────────────────────────
+async function fetchMonteCarlo() {
+  const simSelect = document.getElementById("mcSimCount");
+  const capInput = document.getElementById("mcCapital");
+  const ruinSelect = document.getElementById("mcSoftRuin");
+  const dateSelect = document.getElementById("teDateSelect");
+
+  const numSims = simSelect ? parseInt(simSelect.value, 10) : 2500;
+  const capital = capInput ? parseFloat(capInput.value) : 100000;
+  const softRuin = ruinSelect ? parseFloat(ruinSelect.value) : 0.20;
+  const targetDate = dateSelect ? dateSelect.value : "2026_09_11";
+
+  const btn = document.getElementById("btnRunMonteCarlo");
+  if (btn) {
+    btn.disabled = true;
+    btn.innerText = "Simulating Paths...";
+  }
+
+  try {
+    const res = await fetch("/api/trading_engine/monte_carlo", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        date: targetDate === "all" ? "2026_09_11" : targetDate,
+        num_simulations: numSims,
+        capital: capital,
+        soft_ruin: softRuin,
+        hard_ruin: 0.50
+      })
+    });
+    const json = await res.json();
+    if (json.status === "ok" && json.data) {
+      renderMonteCarlo(json.data);
+    }
+  } catch (err) {
+    console.error("Error in monte carlo:", err);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerText = "🎲 Run Stress Test";
+    }
+  }
+}
+
+function renderMonteCarlo(data) {
+  const v = data.var || {};
+  const dd = data.drawdown || {};
+  const r = data.ruin_probability || {};
+  const perf = data.performance || {};
+  const ch = data.chart_data || {};
+
+  const kVaR95 = document.getElementById("mcKpiVaR95");
+  if (kVaR95) kVaR95.innerText = `₹${Math.abs(v.var_95_rs || 0).toLocaleString()} (${v.var_95_pct || 0}%)`;
+
+  const kVaR99 = document.getElementById("mcKpiVaR99");
+  if (kVaR99) kVaR99.innerText = `₹${Math.abs(v.var_99_rs || 0).toLocaleString()} (${v.var_99_pct || 0}%)`;
+
+  const kCVaR = document.getElementById("mcKpiCVaR");
+  if (kCVaR) kCVaR.innerText = `₹${Math.abs(v.cvar_95_rs || 0).toLocaleString()} (${v.cvar_95_pct || 0}%)`;
+
+  const kDD = document.getElementById("mcKpiMaxDD");
+  if (kDD) kDD.innerText = `${dd.p95_dd_pct || 0}%`;
+  const kDDSub = document.getElementById("mcKpiMaxDDSub");
+  if (kDDSub) kDDSub.innerText = `Median: ${dd.median_dd_pct || 0}% | Worst: ${dd.worst_dd_pct || 0}%`;
+
+  const kRuin = document.getElementById("mcKpiRuin");
+  if (kRuin) {
+    const sRuin = r.soft_ruin_pct || 0;
+    kRuin.innerText = `${sRuin.toFixed(1)}%`;
+    kRuin.style.color = sRuin < 5 ? "var(--green)" : (sRuin < 15 ? "var(--accent-yellow)" : "var(--red)");
+  }
+  const kRuinSub = document.getElementById("mcKpiRuinSub");
+  if (kRuinSub) kRuinSub.innerText = `50% Ruin: ${r.hard_ruin_pct || 0}% | Win Prob: ${perf.profit_probability || 0}%`;
+
+  // Render chart
+  const canvas = document.getElementById("teMonteCarloChart");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  if (teMonteCarloChartInstance) {
+    teMonteCarloChartInstance.destroy();
+    teMonteCarloChartInstance = null;
+  }
+
+  const steps = ch.steps || [];
+  const datasets = [
+    {
+      label: "95th Percentile (Optimistic)",
+      data: ch.p95_envelope || [],
+      borderColor: "rgba(0, 245, 160, 0.7)",
+      backgroundColor: "transparent",
+      borderWidth: 1.5,
+      pointRadius: 0
+    },
+    {
+      label: "Median Path (50th Percentile)",
+      data: ch.median_envelope || [],
+      borderColor: "#00f2fe",
+      backgroundColor: "transparent",
+      borderWidth: 2.5,
+      pointRadius: 0
+    },
+    {
+      label: "5th Percentile (Stress Boundary)",
+      data: ch.p5_envelope || [],
+      borderColor: "rgba(255, 77, 79, 0.8)",
+      backgroundColor: "rgba(255, 77, 79, 0.05)",
+      fill: "-1",
+      borderWidth: 1.5,
+      pointRadius: 0
+    }
+  ];
+
+  (ch.sample_paths || []).slice(0, 5).forEach((p, idx) => {
+    datasets.push({
+      label: `Path ${idx + 1}`,
+      data: p,
+      borderColor: "rgba(255, 255, 255, 0.12)",
+      backgroundColor: "transparent",
+      borderWidth: 1,
+      pointRadius: 0
+    });
+  });
+
+  teMonteCarloChartInstance = new Chart(ctx, {
+    type: "line",
+    data: { labels: steps.map(s => `Trade ${s}`), datasets: datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: true, labels: { color: "#8b949e", filter: item => !item.text.startsWith("Path") } },
+        tooltip: {
+          backgroundColor: "rgba(10, 16, 28, 0.95)",
+          borderColor: "rgba(255, 255, 255, 0.1)",
+          borderWidth: 1,
+          callbacks: { label: c => `${c.dataset.label}: ₹${c.parsed.y.toLocaleString()}` }
+        }
+      },
+      scales: {
+        x: { grid: { color: "rgba(255, 255, 255, 0.05)" }, ticks: { color: "#8b949e", maxTicksLimit: 10 } },
+        y: {
+          grid: { color: "rgba(255, 255, 255, 0.05)" },
+          ticks: { color: "#8b949e", callback: v => `₹${(v / 1000).toFixed(0)}k` }
+        }
+      }
+    }
+  });
+}
+
+// ── Multi-Leg Options & Greeks Simulation Engine ──────────────────────────────────
+async function fetchMultiLegSimulation() {
+  const stratSel = document.getElementById("mlStrategySelect");
+  const slSel = document.getElementById("mlSlSelect");
+  const tgtSel = document.getElementById("mlTargetSelect");
+  const dateSelect = document.getElementById("teDateSelect");
+
+  const strat = stratSel ? stratSel.value : "short_straddle";
+  const sl = slSel ? parseFloat(slSel.value) : 0.25;
+  const tgt = tgtSel ? parseFloat(tgtSel.value) : 0.60;
+  const dVal = dateSelect ? dateSelect.value : "2026_09_11";
+  const targetDate = dVal === "all" ? "2026_09_11" : dVal;
+
+  const btn = document.getElementById("btnRunMultiLeg");
+  if (btn) {
+    btn.disabled = true;
+    btn.innerText = "Simulating Greeks...";
+  }
+
+  const tbody = document.getElementById("mlLegsBody");
+  if (tbody) tbody.innerHTML = '<tr><td colspan="10" class="empty-state">Simulating multi-leg option progression and Greeks...</td></tr>';
+
+  try {
+    const res = await fetch("/api/trading_engine/multi_leg_simulation", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        date: targetDate,
+        strategy: strat,
+        underlying: "NIFTY",
+        sl_pct: sl,
+        target_pct: tgt
+      })
+    });
+    const json = await res.json();
+    if (json.status === "ok" && json.data) {
+      renderMultiLegSimulation(json.data);
+    } else {
+      if (tbody) tbody.innerHTML = `<tr><td colspan="10" class="empty-state" style="color: var(--red);">${json.message || "Simulation failed"}</td></tr>`;
+    }
+  } catch (err) {
+    console.error("Error in multi-leg simulation:", err);
+    if (tbody) tbody.innerHTML = `<tr><td colspan="10" class="empty-state" style="color: var(--red);">Error: ${err.message}</td></tr>`;
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerText = "⚡ Simulate Multi-Leg";
+    }
+  }
+}
+
+function renderMultiLegSimulation(data) {
+  const pnl = data.total_net_pnl || 0;
+  const theta = data.total_theta_harvested || 0;
+  const tl = data.timeline || [];
+
+  const kPnl = document.getElementById("mlKpiPnl");
+  if (kPnl) {
+    kPnl.innerText = `${pnl >= 0 ? "+" : ""}₹${pnl.toFixed(2)}`;
+    kPnl.style.color = pnl >= 0 ? "var(--green)" : "var(--red)";
+  }
+
+  const kTheta = document.getElementById("mlKpiTheta");
+  if (kTheta) kTheta.innerText = `₹${theta.toFixed(2)}`;
+
+  let peakDelta = 0;
+  let peakGamma = 0;
+  tl.forEach(pt => {
+    if (Math.abs(pt.net_delta || 0) > Math.abs(peakDelta)) peakDelta = pt.net_delta;
+    if (Math.abs(pt.net_gamma || 0) > Math.abs(peakGamma)) peakGamma = pt.net_gamma;
+  });
+
+  const kDelta = document.getElementById("mlKpiDelta");
+  if (kDelta) kDelta.innerText = `${peakDelta >= 0 ? "+" : ""}${peakDelta.toFixed(2)} Δ`;
+
+  const kGamma = document.getElementById("mlKpiGamma");
+  if (kGamma) kGamma.innerText = `${peakGamma.toFixed(5)} Γ`;
+
+  // Legs Table
+  const tbody = document.getElementById("mlLegsBody");
+  if (tbody) {
+    const legs = data.legs || [];
+    if (legs.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="10" class="empty-state">No executed legs.</td></tr>';
+    } else {
+      tbody.innerHTML = legs.map(l => {
+        const pColor = (l.pnl || 0) >= 0 ? "var(--green)" : "var(--red)";
+        const badge = l.type === "CE" ? "badge-long" : "badge-short";
+        return `
+          <tr>
+            <td><span class="badge ${badge}">${l.type}</span></td>
+            <td style="font-weight: 700;">${l.strike}</td>
+            <td><span class="badge badge-neutral">${l.side}</span></td>
+            <td style="font-family: 'JetBrains Mono', monospace;">${l.qty}</td>
+            <td style="font-family: 'JetBrains Mono', monospace;">${l.entry_time}</td>
+            <td style="font-family: 'JetBrains Mono', monospace;">₹${(l.entry_premium || 0).toFixed(2)}</td>
+            <td style="font-family: 'JetBrains Mono', monospace;">${l.exit_time || "--"}</td>
+            <td style="font-family: 'JetBrains Mono', monospace;">₹${(l.exit_premium || 0).toFixed(2)}</td>
+            <td><span class="badge ${l.exit_reason === 'STOP_LOSS' ? 'badge-short' : (l.exit_reason === 'TARGET_DECAY' ? 'badge-long' : 'badge-neutral')}">${l.exit_reason || "OPEN"}</span></td>
+            <td style="font-family: 'JetBrains Mono', monospace; font-weight: 700; color: ${pColor};">
+              ${(l.pnl >= 0 ? "+" : "")}₹${(l.pnl || 0).toFixed(2)}
+            </td>
+          </tr>
+        `;
+      }).join("");
+    }
+  }
+
+  // Chart
+  const canvas = document.getElementById("teGreeksChart");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  if (teGreeksChartInstance) {
+    teGreeksChartInstance.destroy();
+    teGreeksChartInstance = null;
+  }
+
+  const times = tl.map(t => t.time);
+  const pnlSeries = tl.map(t => t.cumulative_pnl);
+  const deltaSeries = tl.map(t => t.net_delta);
+
+  teGreeksChartInstance = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels: times,
+      datasets: [
+        {
+          label: "Intraday Cumulative P&L (₹)",
+          data: pnlSeries,
+          borderColor: pnl >= 0 ? "#00f5a0" : "#ff4d4f",
+          backgroundColor: pnl >= 0 ? "rgba(0, 245, 160, 0.08)" : "rgba(255, 77, 79, 0.08)",
+          fill: true,
+          tension: 0.2,
+          borderWidth: 2,
+          yAxisID: "y"
+        },
+        {
+          label: "Net Portfolio Delta (Δ)",
+          data: deltaSeries,
+          borderColor: "#00f2fe",
+          backgroundColor: "transparent",
+          borderWidth: 1.5,
+          borderDash: [4, 4],
+          pointRadius: 0,
+          yAxisID: "y1"
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: true, labels: { color: "#8b949e", font: { size: 11 } } },
+        tooltip: {
+          backgroundColor: "rgba(10, 16, 28, 0.95)",
+          borderColor: "rgba(255, 255, 255, 0.1)",
+          borderWidth: 1
+        }
+      },
+      scales: {
+        x: { grid: { color: "rgba(255, 255, 255, 0.05)" }, ticks: { color: "#8b949e", maxTicksLimit: 10 } },
+        y: {
+          grid: { color: "rgba(255, 255, 255, 0.05)" },
+          ticks: { color: "#8b949e", callback: v => `₹${v}` }
+        },
+        y1: {
+          position: "right",
+          grid: { drawOnChartArea: false },
+          ticks: { color: "#00f2fe" }
+        }
+      }
+    }
+  });
+}
+
+// ── Daily Session Audit Tearsheet Modal ───────────────────────────────────────────
+async function fetchSessionAudit() {
+  const select = document.getElementById("teDateSelect");
+  const targetDate = select ? select.value : "2026_09_11";
+  const content = document.getElementById("teAuditModalContent");
+  const modalTitle = document.getElementById("teAuditModalTitle");
+  if (modalTitle) modalTitle.innerText = `Session Audit Report: ${targetDate}`;
+  if (content) content.innerHTML = '<div class="empty-state">Running comprehensive session audit & synthesizing scorecard...</div>';
+
+  try {
+    const res = await fetch(`/api/trading_engine/audit?date=${encodeURIComponent(targetDate)}`);
+    const json = await res.json();
+    if (json.status === "ok" && json.data) {
+      const d = json.data;
+      const recon = d.reconciliation?.summary || {};
+      const ai = d.ai_analytics?.counterfactual_matrix || {};
+      const flags = d.flags || [];
+
+      const flagsHtml = flags.map(f => {
+        const col = f.severity === 'WARNING' ? 'var(--red)' : (f.severity === 'SUCCESS' ? 'var(--green)' : 'var(--accent-cyan)');
+        const bg = f.severity === 'WARNING' ? 'rgba(255,77,79,0.1)' : (f.severity === 'SUCCESS' ? 'rgba(0,245,160,0.1)' : 'rgba(0,242,254,0.1)');
+        return `
+          <div style="padding: 10px 14px; margin-bottom: 8px; border-radius: 6px; background: ${bg}; border-left: 4px solid ${col}; font-size: 0.84rem;">
+            <strong style="color: #fff;">[${f.severity}] ${f.code}:</strong> <span style="color: #c9d1d9;">${f.message}</span>
+          </div>
+        `;
+      }).join("") || '<div class="empty-state">No execution anomalies detected.</div>';
+
+      if (content) {
+        content.innerHTML = `
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 12px;">
+            <div>
+              <span style="font-size: 1.3rem; font-weight: 800; color: #fff;">Health Grade: </span>
+              <span style="font-size: 1.3rem; font-weight: 800; color: ${d.status_color};">${d.grade}</span>
+            </div>
+            <span style="font-size: 0.85rem; color: var(--text-muted);">Generated: ${d.generated_at}</span>
+          </div>
+
+          <div class="kpi-grid" style="margin-bottom: 20px;">
+            <div class="kpi-card">
+              <span class="kpi-label">Health Score</span>
+              <span class="kpi-value" style="color: ${d.status_color};">${d.health_score} / 100</span>
+              <span class="kpi-sub">Overall execution fidelity</span>
+            </div>
+            <div class="kpi-card">
+              <span class="kpi-label">Execution Efficiency</span>
+              <span class="kpi-value" style="color: var(--accent-cyan);">${(recon.execution_efficiency_score || 0).toFixed(1)}%</span>
+              <span class="kpi-sub">Latency & slippage rating</span>
+            </div>
+            <div class="kpi-card">
+              <span class="kpi-label">Avg Entry Slippage</span>
+              <span class="kpi-value">₹${(recon.avg_entry_slippage_rs || 0).toFixed(2)}</span>
+              <span class="kpi-sub">${(recon.avg_entry_slippage_pct || 0).toFixed(2)}% premium drag</span>
+            </div>
+            <div class="kpi-card">
+              <span class="kpi-label">AI Precision</span>
+              <span class="kpi-value" style="color: var(--green);">${(ai.precision || 0).toFixed(1)}%</span>
+              <span class="kpi-sub">Filtered ${ai.signals_filtered || 0} chop signals</span>
+            </div>
+          </div>
+
+          <div class="card" style="margin-bottom: 16px;">
+            <h4 style="margin: 0 0 10px; color: #fff;">Diagnostic Flags & Observations</h4>
+            ${flagsHtml}
+          </div>
+        `;
+      }
+    } else {
+      if (content) content.innerHTML = `<div class="empty-state" style="color: var(--red);">${json.message || "Failed to load audit"}</div>`;
+    }
+  } catch (err) {
+    console.error("Error fetching audit:", err);
+    if (content) content.innerHTML = `<div class="empty-state" style="color: var(--red);">Error: ${err.message}</div>`;
   }
 }
 

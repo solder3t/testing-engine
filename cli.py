@@ -395,6 +395,50 @@ def handle_walk_forward(args):
     console.print(w_table)
 
 
+def handle_audit(args):
+    from analytics.session_auditor import SessionAuditor
+    target_date = args.date
+    console.print(f"\n[bold cyan]⚡ Auditing session: {target_date}...[/bold cyan]\n")
+    auditor = SessionAuditor()
+    audit_data = auditor.audit_session(target_date)
+
+    score = audit_data.get("health_score", 0.0)
+    grade = audit_data.get("grade", "N/A")
+    recon = audit_data.get("reconciliation", {}).get("summary", {})
+    ai = audit_data.get("ai_analytics", {})
+    ai_mat = ai.get("counterfactual_matrix", {})
+
+    table = Table(title=f"Session Health Scorecard: {target_date} ({grade})", border_style="cyan")
+    table.add_column("Metric", style="bold white")
+    table.add_column("Value", justify="right")
+    table.add_column("Assessment", style="dim")
+
+    table.add_row("Health Score", f"{score:.1f} / 100", "Overall execution & AI fidelity")
+    table.add_row("Execution Efficiency", f"{recon.get('execution_efficiency_score', 0):.1f}%", "Slippage & latency quality")
+    table.add_row("Avg Entry Slippage", f"₹{recon.get('avg_entry_slippage_rs', 0):.2f} ({recon.get('avg_entry_slippage_pct', 0):.2f}%)", "Fill vs strategy trigger")
+    table.add_row("Avg Latency", f"{recon.get('avg_latency_seconds', 0):.1f}s", "Order placement delay")
+    table.add_row("Live Total Net P&L", f"₹{recon.get('live_total_pnl', 0):.2f}", "Realized live paper P&L")
+    table.add_row("Sim Total Net P&L", f"₹{recon.get('sim_total_pnl', 0):.2f}", "Theoretical Strategy v4 P&L")
+    table.add_row("AI Precision", f"{ai_mat.get('precision', 0):.1f}%", f"{ai_mat.get('true_positives', 0)} wins / {ai_mat.get('true_positives', 0) + ai_mat.get('false_positives', 0)} entries")
+    table.add_row("AI Signals Filtered", f"{ai_mat.get('signals_filtered', 0)}", f"{ai_mat.get('true_negatives', 0)} capital-preserving passes")
+
+    console.print(table)
+
+    flags = audit_data.get("flags", [])
+    if flags:
+        console.print("\n[bold yellow]Diagnostic Flags & Anomaly Warnings:[/bold yellow]")
+        for f in flags:
+            col = "green" if f["severity"] == "SUCCESS" else ("red" if f["severity"] == "WARNING" else "cyan")
+            console.print(f"  [{col}]• [{f['severity']}] {f['code']}:[/{col}] {f['message']}")
+
+    if getattr(args, "output", None):
+        html = auditor.generate_html_report(audit_data)
+        out_path = os.path.abspath(args.output)
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write(html)
+        console.print(f"\n[bold green]✓ Standalone HTML audit tearsheet exported to: {out_path}[/bold green]\n")
+
+
 def handle_dashboard(args):
     from dashboard.server import run_server
     data_dir = getattr(args, "data_dir", None) or DOWNLOADS_DIR
@@ -454,6 +498,12 @@ def main():
     p_wf.add_argument("--risk", type=float, default=DEFAULT_RISK_PCT_PER_TRADE, help="Risk pct")
     p_wf.add_argument("--data-dir", type=str, default=DOWNLOADS_DIR, help="Path to archive/data directory")
     p_wf.set_defaults(func=handle_walk_forward)
+
+    # audit command
+    p_audit = subparsers.add_parser("audit", help="Generate executive audit report for a trading session")
+    p_audit.add_argument("--date", type=str, default="2026_09_11", help="Target session date (default: 2026_09_11)")
+    p_audit.add_argument("--output", type=str, default=None, help="Optional HTML report output file path")
+    p_audit.set_defaults(func=handle_audit)
 
     # dashboard command
     p_dash = subparsers.add_parser("dashboard", help="Start the interactive web dashboard")

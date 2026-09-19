@@ -73,6 +73,10 @@ from analytics.tearsheet import generate_html_tearsheet
 from analytics.reconciliation import ReconciliationEngine
 from analytics.ai_decision_analyzer import AIDecisionAnalyzer
 from analytics.factor_attribution import FactorAttributionEngine
+from analytics.config_sync import sync_to_trading_engine
+from analytics.monte_carlo import MonteCarloSimulator
+from analytics.session_auditor import SessionAuditor
+from analytics.multi_leg_options import MultiLegOptionEngine
 from strategies.trading_engine_v4 import TradingEngineV4Strategy
 from data.data_loader import DataLoader
 
@@ -1162,6 +1166,140 @@ def api_trading_engine_export_config():
         return jsonify({"status": "ok", "data": export_data})
     except Exception as e:
         logger.error(f"Error in config export endpoint: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/api/trading_engine/apply_config", methods=["POST"])
+def api_trading_engine_apply_config():
+    """
+    Directly synchronizes configuration parameters to trading-engine/.env.
+    """
+    try:
+        data = request.get_json() or {}
+        updates = data.get("updates") or data.get("params")
+        target_path = data.get("target_path")
+
+        # If no explicit updates provided, obtain recommended config
+        if not updates:
+            dl = DataLoader()
+            engine = FactorAttributionEngine(data_loader=dl)
+            global _cached_ai_optimal
+            ai_analytics = _cached_ai_optimal
+            if not ai_analytics:
+                try:
+                    ai_analyzer = AIDecisionAnalyzer(data_loader=dl)
+                    ai_analytics = ai_analyzer.analyze_multi_session()
+                    _cached_ai_optimal = ai_analytics
+                except Exception:
+                    ai_analytics = None
+            export_data = engine.export_trading_engine_config(ai_analytics=ai_analytics)
+            cfg = export_data.get("config_json", {})
+            updates = {
+                "CONFIDENCE_THRESHOLD": str(cfg.get("GEMINI_MIN_CONFIDENCE", 0.70)),
+                "ADX_TREND_THRESHOLD": "22",
+                "VIX_HALT_THRESHOLD": str(cfg.get("STRATEGY_VIX_HALT_THRESHOLD", 24.0)),
+                "VIX_HIGH_THRESHOLD": "22.0",
+                "ENABLE_HTF_FILTER": str(cfg.get("STRATEGY_USE_HTF_15M", "true")),
+                "BREAKEVEN_SL_ENABLED": "True"
+            }
+
+        sync_result = sync_to_trading_engine(updates=updates, env_path=target_path)
+        return jsonify({"status": "ok", "data": sync_result})
+    except Exception as e:
+        logger.error(f"Error applying config to trading-engine: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/api/trading_engine/monte_carlo", methods=["POST"])
+def api_trading_engine_monte_carlo():
+    """
+    Runs Monte Carlo simulation and stress testing over trade sequence.
+    """
+    try:
+        data = request.get_json() or {}
+        num_simulations = int(data.get("num_simulations") or 2500)
+        capital = float(data.get("capital") or DEFAULT_CAPITAL)
+        horizon = int(data["horizon"]) if "horizon" in data and data["horizon"] else None
+        soft_ruin = float(data.get("soft_ruin") or 0.20)
+        hard_ruin = float(data.get("hard_ruin") or 0.50)
+
+        trades = data.get("trades")
+        if not trades:
+            target_date = data.get("date", "2026_09_11")
+            dl = DataLoader()
+            recorded = dl.get_recorded_trades(target_date)
+            if not recorded.empty:
+                trades = recorded.to_dict("records")
+            else:
+                from engine.backtest_engine import BacktestEngine
+                engine = BacktestEngine(TradingEngineV4Strategy(), initial_capital=capital)
+                res = engine.run_day(target_date)
+                trades = [t.to_dict() if hasattr(t, "to_dict") else t for t in res.trades]
+
+        sim = MonteCarloSimulator(num_simulations=num_simulations, initial_capital=capital)
+        result = sim.run_simulation(trades=trades, horizon_trades=horizon, soft_ruin_pct=soft_ruin, hard_ruin_pct=hard_ruin)
+        return jsonify({"status": "ok", "data": result})
+    except Exception as e:
+        logger.error(f"Error in monte carlo simulation: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/api/trading_engine/audit", methods=["GET"])
+def api_trading_engine_audit():
+    """
+    Returns executive session audit report (JSON or HTML).
+    """
+    try:
+        date_str = request.args.get("date", "2026_09_11")
+        fmt = request.args.get("format", "json").lower()
+        dl = DataLoader()
+        auditor = SessionAuditor(data_loader=dl)
+        audit_data = auditor.audit_session(date_str)
+
+        if fmt == "html" or request.args.get("download") == "1":
+            html_content = auditor.generate_html_report(audit_data)
+            return Response(
+                html_content,
+                mimetype="text/html",
+                headers={"Content-Disposition": f"inline; filename=audit_{date_str}.html"}
+            )
+
+        return jsonify({"status": "ok", "data": audit_data})
+    except Exception as e:
+        logger.error(f"Error generating session audit: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/api/trading_engine/multi_leg_simulation", methods=["POST"])
+def api_trading_engine_multi_leg_simulation():
+    """
+    Simulates multi-leg option strategy with real Greeks attribution.
+    """
+    try:
+        data = request.get_json() or {}
+        date_str = data.get("date", "2026_09_11")
+        strategy = data.get("strategy", "short_straddle")
+        underlying = data.get("underlying", "NIFTY")
+        entry_time = data.get("entry_time", "09:20")
+        sl_pct = float(data.get("sl_pct", 0.25))
+        target_pct = float(data.get("target_pct", 0.60))
+        otm_offset = float(data.get("otm_offset", 0.0))
+        lot_size = int(data.get("lot_size", 65))
+
+        engine = MultiLegOptionEngine()
+        result = engine.simulate_strategy(
+            date_str=date_str,
+            strategy_type=strategy,
+            underlying=underlying,
+            entry_time=entry_time,
+            sl_pct=sl_pct,
+            target_pct=target_pct,
+            otm_offset=otm_offset,
+            lot_size=lot_size
+        )
+        return jsonify({"status": "ok", "data": result})
+    except Exception as e:
+        logger.error(f"Error in multi-leg options simulation: {e}", exc_info=True)
         return jsonify({"status": "error", "message": str(e)}), 500
 
 

@@ -1325,6 +1325,9 @@
             <option value="2026_09_08">2026_09_08 (Recorded Trades)</option>
             <option value="all">All Available Sessions</option>
           </select>
+          <button id="btnOpenAuditModal" class="btn-secondary" style="padding: 6px 14px; font-size: 0.84rem; display: flex; align-items: center; gap: 6px;">
+            📑 Session Audit Tearsheet
+          </button>
           <button id="btnRunAllEngineInsights" class="btn-run" style="padding: 6px 16px; font-size: 0.84rem;">
             ⚡ Run Full Analysis
           </button>
@@ -1332,7 +1335,7 @@
       </div>
 
       <!-- Sub-Navigation Pills -->
-      <div class="sub-nav-pills" style="display: flex; gap: 8px; margin-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 12px;">
+      <div class="sub-nav-pills" style="display: flex; gap: 8px; margin-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 12px; overflow-x: auto;">
         <button class="btn-secondary te-subtab-btn active" data-sub="subReconciliation" id="btnSubRecon" style="font-size: 0.82rem; padding: 6px 14px;">
           🎯 Live vs Sim Reconciliation
         </button>
@@ -1341,6 +1344,12 @@
         </button>
         <button class="btn-secondary te-subtab-btn" data-sub="subFactorAlpha" id="btnSubFactors" style="font-size: 0.82rem; padding: 6px 14px;">
           🔬 Factor Alpha Attribution
+        </button>
+        <button class="btn-secondary te-subtab-btn" data-sub="subMonteCarlo" id="btnSubMonteCarlo" style="font-size: 0.82rem; padding: 6px 14px;">
+          🎲 Monte Carlo Stress Test
+        </button>
+        <button class="btn-secondary te-subtab-btn" data-sub="subMultiLeg" id="btnSubMultiLeg" style="font-size: 0.82rem; padding: 6px 14px;">
+          📉 Multi-Leg & Greeks Simulator
         </button>
         <button class="btn-secondary te-subtab-btn" data-sub="subConfigExport" id="btnSubExport" style="font-size: 0.82rem; padding: 6px 14px;">
           📤 Production Config Exporter
@@ -1374,6 +1383,20 @@
             <span class="kpi-label">Matched / Total Live</span>
             <span class="kpi-value" id="teKpiMatchedCount">--</span>
             <span class="kpi-sub" id="teKpiUnpromptedCount">--</span>
+          </div>
+        </div>
+
+        <!-- Intraday Cumulative P&L Drift Chart -->
+        <div class="card" style="margin-bottom: 20px;">
+          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 1.1rem;">📈</span>
+              <h3 style="margin: 0;">Intraday Execution Drift Timeline (Live Paper P&L vs Theoretical Backtest)</h3>
+            </div>
+            <span class="card-badge" id="teDriftBadge">Session Timeline</span>
+          </div>
+          <div style="height: 230px; position: relative; margin-top: 10px;">
+            <canvas id="teDriftChart"></canvas>
           </div>
         </div>
 
@@ -1496,6 +1519,20 @@
             <span class="kpi-label">Optimal Threshold</span>
             <span class="kpi-value" id="teKpiAiOptimalTh" style="color: var(--accent-cyan);">--</span>
             <span class="kpi-sub">Expectancy-maximizing cutoff</span>
+          </div>
+        </div>
+
+        <!-- AI Decile Calibration Reliability Curve -->
+        <div class="card" style="margin-bottom: 20px;">
+          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 1.1rem;">🎯</span>
+              <h3 style="margin: 0;">AI Decile Calibration Curve & Sample Distribution (Reliability Diagram)</h3>
+            </div>
+            <span class="card-badge" id="teCalibBadge">Decile Reliability</span>
+          </div>
+          <div style="height: 230px; position: relative; margin-top: 10px;">
+            <canvas id="teCalibrationChart"></canvas>
           </div>
         </div>
 
@@ -1624,11 +1661,15 @@
                 Synthesized parameter improvements based on backtests, factor ablation, and AI confidence calibration.
               </p>
             </div>
-            <div style="display: flex; gap: 8px;">
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
               <button id="btnCopyEnv" class="btn-secondary" style="font-size: 0.82rem;">📋 Copy .env</button>
-              <button id="btnDownloadEnv" class="btn-run" style="padding: 6px 14px; font-size: 0.82rem;">💾 Download .env</button>
+              <button id="btnDownloadEnv" class="btn-secondary" style="font-size: 0.82rem;">💾 Download .env</button>
+              <button id="btnApplyTradingEngine" class="btn-run" style="background: linear-gradient(135deg, #00f2fe, #00f5a0); color: #000; font-weight: 700; padding: 6px 14px; font-size: 0.82rem;">
+                ⚡ Apply Directly to Trading Engine (.env)
+              </button>
             </div>
           </div>
+          <div id="teSyncAlert" style="display: none; margin: 12px 18px 0; padding: 10px 14px; border-radius: 6px; font-size: 0.82rem;"></div>
           <div id="teRecommendationsContainer" style="padding: 14px 18px; border-bottom: 1px solid rgba(255,255,255,0.06);">
             <ul id="teRecommendationsList" style="margin: 0; padding-left: 20px; color: var(--accent-cyan); font-size: 0.85rem; line-height: 1.6;">
               <li>Click "Run Full Analysis" to generate data-driven recommendations.</li>
@@ -1640,6 +1681,181 @@
               <span style="font-size: 0.75rem; color: var(--green);">Ready for production</span>
             </div>
             <pre id="teEnvPreview" style="background: rgba(0,0,0,0.5); padding: 14px; border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-size: 0.84rem; color: #7ee787; overflow-x: auto; max-height: 320px; margin: 0; border: 1px solid rgba(255,255,255,0.08);"></pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Subpanel 5: Monte Carlo & Stress Test ───────────────────────── -->
+      <div id="subMonteCarlo" class="te-subpanel" style="display: none;">
+        <div class="card" style="margin-bottom: 20px; padding: 14px 18px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+            <div style="display: flex; align-items: center; gap: 16px; flex-wrap: wrap;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 0.85rem; color: var(--text-muted);">Simulations:</span>
+                <select id="mcSimCount" class="search-input" style="height: 32px; width: 110px;">
+                  <option value="1000">1,000 paths</option>
+                  <option value="2500" selected>2,500 paths</option>
+                  <option value="5000">5,000 paths</option>
+                </select>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 0.85rem; color: var(--text-muted);">Capital:</span>
+                <input type="number" id="mcCapital" value="100000" class="search-input" style="height: 32px; width: 110px;">
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 0.85rem; color: var(--text-muted);">Soft Ruin:</span>
+                <select id="mcSoftRuin" class="search-input" style="height: 32px; width: 95px;">
+                  <option value="0.15">15% DD</option>
+                  <option value="0.20" selected>20% DD</option>
+                  <option value="0.30">30% DD</option>
+                </select>
+              </div>
+            </div>
+            <button id="btnRunMonteCarlo" class="btn-run" style="padding: 6px 16px; font-size: 0.84rem;">
+              🎲 Run Stress Test
+            </button>
+          </div>
+        </div>
+
+        <div class="kpi-grid" style="margin-bottom: 20px;">
+          <div class="kpi-card">
+            <span class="kpi-label">Value at Risk (95% VaR)</span>
+            <span class="kpi-value" id="mcKpiVaR95" style="color: var(--accent-yellow);">--</span>
+            <span class="kpi-sub" id="mcKpiVaR95Sub">95% confidence max loss</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Tail Risk (99% VaR)</span>
+            <span class="kpi-value" id="mcKpiVaR99" style="color: var(--red);">--</span>
+            <span class="kpi-sub" id="mcKpiVaR99Sub">99% extreme event loss</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Conditional VaR (CVaR)</span>
+            <span class="kpi-value" id="mcKpiCVaR">--</span>
+            <span class="kpi-sub">Expected shortfall in tail</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Max Drawdown (95% CI)</span>
+            <span class="kpi-value" id="mcKpiMaxDD">--</span>
+            <span class="kpi-sub" id="mcKpiMaxDDSub">Median: --</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Risk of Ruin</span>
+            <span class="kpi-value" id="mcKpiRuin" style="color: var(--green);">--</span>
+            <span class="kpi-sub" id="mcKpiRuinSub">Catastrophic breach: --</span>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom: 20px;">
+          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 1.1rem;">📉</span>
+              <h3 style="margin: 0;">Monte Carlo Equity Trajectory Envelope (5th - 95th Percentile Cone)</h3>
+            </div>
+            <span class="card-badge" id="mcBadge">2,500 Bootstrap Paths</span>
+          </div>
+          <div style="height: 250px; position: relative; margin-top: 10px;">
+            <canvas id="teMonteCarloChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Subpanel 6: Multi-Leg & Greeks Simulator ─────────────────────── -->
+      <div id="subMultiLeg" class="te-subpanel" style="display: none;">
+        <div class="card" style="margin-bottom: 20px; padding: 14px 18px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+            <div style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 0.85rem; color: var(--text-muted);">Strategy:</span>
+                <select id="mlStrategySelect" class="search-input" style="height: 32px; width: 170px;">
+                  <option value="short_straddle" selected>09:20 Short Straddle</option>
+                  <option value="short_strangle">09:20 Short Strangle</option>
+                  <option value="iron_condor">Intraday Iron Condor</option>
+                </select>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 0.85rem; color: var(--text-muted);">Leg SL:</span>
+                <select id="mlSlSelect" class="search-input" style="height: 32px; width: 90px;">
+                  <option value="0.20">20%</option>
+                  <option value="0.25" selected>25%</option>
+                  <option value="0.35">35%</option>
+                  <option value="0.50">50%</option>
+                </select>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 0.85rem; color: var(--text-muted);">Target Decay:</span>
+                <select id="mlTargetSelect" class="search-input" style="height: 32px; width: 90px;">
+                  <option value="0.50">50%</option>
+                  <option value="0.60" selected>60%</option>
+                  <option value="0.75">75%</option>
+                </select>
+              </div>
+            </div>
+            <button id="btnRunMultiLeg" class="btn-run" style="padding: 6px 16px; font-size: 0.84rem;">
+              ⚡ Simulate Multi-Leg
+            </button>
+          </div>
+        </div>
+
+        <div class="kpi-grid" style="margin-bottom: 20px;">
+          <div class="kpi-card">
+            <span class="kpi-label">Net Realized P&L</span>
+            <span class="kpi-value" id="mlKpiPnl">--</span>
+            <span class="kpi-sub">Combined multi-leg return</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Theta Decay Harvested</span>
+            <span class="kpi-value" id="mlKpiTheta" style="color: var(--accent-cyan);">--</span>
+            <span class="kpi-sub">Total institutional time decay</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Peak Net Delta Exposure</span>
+            <span class="kpi-value" id="mlKpiDelta">--</span>
+            <span class="kpi-sub">Directional bias drift</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Peak Net Gamma Risk</span>
+            <span class="kpi-value" id="mlKpiGamma">--</span>
+            <span class="kpi-sub">Delta acceleration risk</span>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom: 20px;">
+          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 1.1rem;">📉</span>
+              <h3 style="margin: 0;">Intraday Greeks & Cumulative P&L Progression</h3>
+            </div>
+            <span class="card-badge" id="mlBadge">Tick Attribution</span>
+          </div>
+          <div style="height: 230px; position: relative; margin-top: 10px;">
+            <canvas id="teGreeksChart"></canvas>
+          </div>
+        </div>
+
+        <div class="card table-card">
+          <div class="card-header">
+            <h3>Leg Execution Breakdown</h3>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Option Type</th>
+                  <th>Strike</th>
+                  <th>Side</th>
+                  <th>Qty</th>
+                  <th>Entry Time</th>
+                  <th>Entry Premium</th>
+                  <th>Exit Time</th>
+                  <th>Exit Premium</th>
+                  <th>Exit Trigger</th>
+                  <th>Leg Net P&L</th>
+                </tr>
+              </thead>
+              <tbody id="mlLegsBody">
+                <tr><td colspan="10" class="empty-state">Run multi-leg simulation to view leg executions.</td></tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
@@ -1713,6 +1929,26 @@
     </div>
   </div>
 
-  <script src="/static/js/dashboard.js?v=4.3"></script>
+  <!-- Daily Session Audit Modal -->
+  <div id="teAuditModal" class="modal-backdrop" style="display: none;">
+    <div class="modal-card" style="max-width: 920px; max-height: 90vh; overflow-y: auto;">
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 1.2rem;">📑</span>
+          <h3 id="teAuditModalTitle">Session Audit Tearsheet</h3>
+        </div>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <button id="btnOpenHtmlReport" class="btn-secondary" style="font-size: 0.78rem; padding: 4px 10px;">🌐 Open Full HTML</button>
+          <button id="btnDownloadHtmlReport" class="btn-run" style="font-size: 0.78rem; padding: 4px 10px;">💾 Download HTML</button>
+          <button id="closeAuditModal" class="modal-close">&times;</button>
+        </div>
+      </div>
+      <div class="modal-body" id="teAuditModalContent" style="padding: 16px 20px;">
+        <div class="empty-state">Generating session audit tearsheet...</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/dashboard.js?v=4.4"></script>
 </body>
 </html>
