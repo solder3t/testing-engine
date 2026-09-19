@@ -19,6 +19,12 @@ let currentTradeFilter = "all";
 let currentSelectedTradeId = null;
 let lastRawArchives = [];
 
+function roundTo(num, decimals = 2) {
+  if (num === null || num === undefined || isNaN(num)) return 0;
+  const factor = Math.pow(10, decimals);
+  return Math.round((Number(num) + Number.EPSILON) * factor) / factor;
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   initTabs();
   initStrategySelector();
@@ -113,6 +119,12 @@ function switchTab(tabId) {
   } else if (tabId === "tabExplorer") {
     renderDataExplorer(lastRawArchives);
   } else if (tabId === "tabTradingEngine") {
+    setTimeout(() => {
+      if (teDriftChartInstance) teDriftChartInstance.resize();
+      if (teCalibrationChartInstance) teCalibrationChartInstance.resize();
+      if (teMonteCarloChartInstance) teMonteCarloChartInstance.resize();
+      if (teGreeksChartInstance) teGreeksChartInstance.resize();
+    }, 60);
     if (!window._teInsightsLoaded) {
       window._teInsightsLoaded = true;
       fetchReconciliation();
@@ -2891,20 +2903,29 @@ function initTradingEngineInsights() {
         p.style.display = p.id === subId ? "block" : "none";
       });
 
-      if (subId === "subFactorAlpha" && !window._teFactorsLoaded) {
+      if (subId === "subReconciliation") {
+        setTimeout(() => { if (teDriftChartInstance) teDriftChartInstance.resize(); }, 50);
+      } else if (subId === "subFactorAlpha" && !window._teFactorsLoaded) {
         window._teFactorsLoaded = true;
         fetchFactorAblation();
       } else if (subId === "subConfigExport" && !window._teConfigLoaded) {
         window._teConfigLoaded = true;
         fetchConfigExport();
-      } else if (subId === "subAiAnalytics" && !window._latestAiAnalyticsData) {
-        fetchAiAnalytics();
-      } else if (subId === "subMonteCarlo" && !window._teMonteCarloLoaded) {
-        window._teMonteCarloLoaded = true;
-        fetchMonteCarlo();
-      } else if (subId === "subMultiLeg" && !window._teMultiLegLoaded) {
-        window._teMultiLegLoaded = true;
-        fetchMultiLegSimulation();
+      } else if (subId === "subAiAnalytics") {
+        setTimeout(() => { if (teCalibrationChartInstance) teCalibrationChartInstance.resize(); }, 50);
+        if (!window._latestAiAnalyticsData) fetchAiAnalytics();
+      } else if (subId === "subMonteCarlo") {
+        setTimeout(() => { if (teMonteCarloChartInstance) teMonteCarloChartInstance.resize(); }, 50);
+        if (!window._teMonteCarloLoaded) {
+          window._teMonteCarloLoaded = true;
+          fetchMonteCarlo();
+        }
+      } else if (subId === "subMultiLeg") {
+        setTimeout(() => { if (teGreeksChartInstance) teGreeksChartInstance.resize(); }, 50);
+        if (!window._teMultiLegLoaded) {
+          window._teMultiLegLoaded = true;
+          fetchMultiLegSimulation();
+        }
       }
     });
   });
@@ -3496,20 +3517,61 @@ function renderIntradayDriftChart(data) {
     teDriftChartInstance = null;
   }
 
-  const pairs = data.matched_pairs || [];
-  const points = [];
+  const pairs = Array.isArray(data) ? data : (data?.matched_pairs || []);
+  const unprompted = Array.isArray(data?.unprompted_live) ? data.unprompted_live : [];
+  const missed = Array.isArray(data?.missed_signals) ? data.missed_signals : [];
+
+  const getTimeStr = (timeStr) => {
+    if (!timeStr || typeof timeStr !== "string") return "";
+    if (timeStr.includes(" ")) {
+      const parts = timeStr.split(" ");
+      return parts[1].substring(0, 5);
+    }
+    return timeStr.substring(0, 5);
+  };
+
+  const events = [];
+
+  // 1. Matched pairs
   pairs.forEach(p => {
-    const t = (p.live_trade?.entry_time || p.sim_trade?.entry_time || "").split(" ")[1] || "10:00";
-    points.push({ time: t, livePnl: p.live_trade?.net_pnl || 0, simPnl: p.sim_trade?.net_pnl || 0 });
+    const liveTime = getTimeStr(p.live_trade?.exit_time || p.live_trade?.entry_time);
+    const simTime = getTimeStr((p.sim_trade || p.simulated_trade)?.exit_time || (p.sim_trade || p.simulated_trade)?.entry_time);
+    const t = liveTime || simTime || "10:15";
+    events.push({
+      time: t,
+      livePnl: Number(p.live_trade?.net_pnl || 0),
+      simPnl: Number((p.sim_trade || p.simulated_trade)?.net_pnl || 0)
+    });
   });
 
-  if (points.length === 0) {
-    points.push({ time: "09:15", livePnl: 0, simPnl: 0 });
-    points.push({ time: "11:30", livePnl: 0, simPnl: 0 });
-    points.push({ time: "15:15", livePnl: 0, simPnl: 0 });
+  // 2. Unprompted live trades
+  unprompted.forEach(t => {
+    const timeStr = getTimeStr(t.exit_time || t.entry_time) || "11:30";
+    events.push({
+      time: timeStr,
+      livePnl: Number(t.net_pnl || 0),
+      simPnl: 0
+    });
+  });
+
+  // 3. Missed simulated trades
+  missed.forEach(t => {
+    const timeStr = getTimeStr(t.exit_time || t.entry_time) || "12:00";
+    events.push({
+      time: timeStr,
+      livePnl: 0,
+      simPnl: Number(t.net_pnl || 0)
+    });
+  });
+
+  // If no trades found, show baseline flat curve
+  if (events.length === 0) {
+    events.push({ time: "09:30", livePnl: 0, simPnl: 0 });
+    events.push({ time: "12:00", livePnl: 0, simPnl: 0 });
+    events.push({ time: "15:15", livePnl: 0, simPnl: 0 });
   }
 
-  points.sort((a, b) => a.time.localeCompare(b.time));
+  events.sort((a, b) => a.time.localeCompare(b.time));
 
   let cumLive = 0;
   let cumSim = 0;
@@ -3517,13 +3579,25 @@ function renderIntradayDriftChart(data) {
   const liveSeries = [0];
   const simSeries = [0];
 
-  points.forEach(pt => {
+  events.forEach(pt => {
     cumLive += pt.livePnl;
     cumSim += pt.simPnl;
     labels.push(pt.time);
     liveSeries.push(roundTo(cumLive, 2));
     simSeries.push(roundTo(cumSim, 2));
   });
+
+  if (labels[labels.length - 1] < "15:15") {
+    labels.push("15:30");
+    liveSeries.push(roundTo(cumLive, 2));
+    simSeries.push(roundTo(cumSim, 2));
+  }
+
+  const badge = document.getElementById("teDriftBadge");
+  if (badge) {
+    const totalTrades = pairs.length + unprompted.length + missed.length;
+    badge.innerText = totalTrades > 0 ? `${totalTrades} Trades Tracked` : "Session Baseline";
+  }
 
   teDriftChartInstance = new Chart(ctx, {
     type: "line",
@@ -3538,7 +3612,8 @@ function renderIntradayDriftChart(data) {
           fill: true,
           tension: 0.2,
           borderWidth: 2,
-          pointRadius: 3
+          pointRadius: 4,
+          pointHoverRadius: 6
         },
         {
           label: "Realized Live Paper P&L (₹)",
@@ -3548,7 +3623,8 @@ function renderIntradayDriftChart(data) {
           fill: true,
           tension: 0.2,
           borderWidth: 2,
-          pointRadius: 3
+          pointRadius: 4,
+          pointHoverRadius: 6
         }
       ]
     },
@@ -3561,14 +3637,24 @@ function renderIntradayDriftChart(data) {
         tooltip: {
           backgroundColor: "rgba(10, 16, 28, 0.95)",
           borderColor: "rgba(255, 255, 255, 0.1)",
-          borderWidth: 1
+          borderWidth: 1,
+          callbacks: {
+            label: (c) => `${c.dataset.label}: ₹${Number(c.parsed.y).toLocaleString()}`
+          }
         }
       },
       scales: {
-        x: { grid: { color: "rgba(255, 255, 255, 0.05)" }, ticks: { color: "#8b949e", font: { size: 10 } } },
+        x: {
+          grid: { color: "rgba(255, 255, 255, 0.05)" },
+          ticks: { color: "#8b949e", font: { size: 10 } }
+        },
         y: {
           grid: { color: "rgba(255, 255, 255, 0.05)" },
-          ticks: { color: "#8b949e", font: { size: 10 }, callback: v => `₹${v}` }
+          ticks: {
+            color: "#8b949e",
+            font: { size: 10 },
+            callback: (v) => `₹${Number(v).toLocaleString()}`
+          }
         }
       }
     }
