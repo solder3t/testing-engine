@@ -1351,10 +1351,26 @@
         <button class="btn-secondary te-subtab-btn" data-sub="subMultiLeg" id="btnSubMultiLeg" style="font-size: 0.82rem; padding: 6px 14px;">
           📉 Multi-Leg & Greeks Simulator
         </button>
+        <button class="btn-secondary te-subtab-btn" data-sub="subOptionChain" id="btnSubOptionChain" style="font-size: 0.82rem; padding: 6px 14px;">
+          📊 Option Chain & OI
+        </button>
+        <button class="btn-secondary te-subtab-btn" data-sub="subForensicReplay" id="btnSubReplay" style="font-size: 0.82rem; padding: 6px 14px;">
+          📼 Forensic Tape Replay
+        </button>
+        <button class="btn-secondary te-subtab-btn" data-sub="subRobustness" id="btnSubRobustness" style="font-size: 0.82rem; padding: 6px 14px;">
+          🛡️ Robustness & Overfitting
+        </button>
+        <button class="btn-secondary te-subtab-btn" data-sub="subPortfolioAllocation" id="btnSubPortfolio" style="font-size: 0.82rem; padding: 6px 14px;">
+          💼 Portfolio Allocation
+        </button>
+        <button class="btn-secondary te-subtab-btn" data-sub="subAutoTune" id="btnSubAutoTune" style="font-size: 0.82rem; padding: 6px 14px;">
+          🤖 Adaptive Auto-Tuner
+        </button>
         <button class="btn-secondary te-subtab-btn" data-sub="subConfigExport" id="btnSubExport" style="font-size: 0.82rem; padding: 6px 14px;">
           📤 Production Config Exporter
         </button>
       </div>
+
 
       <!-- ── Subpanel 1: Reconciliation ──────────────────────────────────── -->
       <div id="subReconciliation" class="te-subpanel">
@@ -1856,10 +1872,418 @@
                 <tr><td colspan="10" class="empty-state">Run multi-leg simulation to view leg executions.</td></tr>
               </tbody>
             </table>
+        </div>
+      </div>
+
+      <!-- ── Subpanel 7: Option Chain & OI Profile ────────────────────────── -->
+      <div id="subOptionChain" class="te-subpanel" style="display: none;">
+        <div class="card" style="margin-bottom: 20px; padding: 14px 18px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+            <div style="display: flex; align-items: center; gap: 16px; flex-wrap: wrap;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 0.85rem; color: var(--text-muted);">Contract Expiry Table:</span>
+                <select id="ocTableSelect" class="search-input" style="height: 32px; min-width: 220px;">
+                  <option value="" disabled selected>Loading tables...</option>
+                </select>
+              </div>
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 0.85rem; color: var(--text-muted);">Snapshot Time:</span>
+                <input type="range" id="ocTimeSlider" min="0" max="75" value="75" style="width: 140px; accent-color: var(--accent-cyan); cursor: pointer;">
+                <span id="ocTimeLabel" style="font-size: 0.85rem; font-weight: 700; color: var(--accent-cyan); min-width: 50px;">EOD</span>
+              </div>
+            </div>
+            <button id="btnRefreshOptionChain" class="btn-run" style="padding: 6px 16px; font-size: 0.84rem;">
+              ⚡ Analyze Option Chain
+            </button>
+          </div>
+        </div>
+
+        <div class="kpi-grid" style="margin-bottom: 20px;">
+          <div class="kpi-card">
+            <span class="kpi-label">Underlying Spot LTP</span>
+            <span class="kpi-value" id="ocKpiSpot">--</span>
+            <span class="kpi-sub" id="ocKpiAtm">ATM Strike: --</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Dynamic Max Pain Strike</span>
+            <span class="kpi-value" id="ocKpiMaxPain" style="color: var(--accent-gold);">--</span>
+            <span class="kpi-sub">Minimum total payout level</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Gamma Flip Inflection</span>
+            <span class="kpi-value" id="ocKpiGammaFlip" style="color: var(--accent-cyan);">--</span>
+            <span class="kpi-sub">Dealer Net Gamma boundary</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Put-Call Ratio (PCR)</span>
+            <span class="kpi-value" id="ocKpiPcr">--</span>
+            <span class="kpi-sub" id="ocKpiOiTotal">Total CE vs PE OI</span>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom: 20px;">
+          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 1.1rem;">📊</span>
+              <h3 style="margin: 0;">Strike-by-Strike Open Interest Profile (Call OI vs Put OI)</h3>
+            </div>
+            <span class="card-badge" id="ocBadge">Real Open Interest</span>
+          </div>
+          <div style="height: 280px; position: relative; margin-top: 10px;">
+            <canvas id="teOptionChainChart"></canvas>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom: 20px;">
+          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 1.1rem;">📈</span>
+              <h3 style="margin: 0;">Intraday PCR & Spot Price Velocity Timeline</h3>
+            </div>
+            <span class="card-badge">Sentiment Velocity</span>
+          </div>
+          <div style="height: 200px; position: relative; margin-top: 10px;">
+            <canvas id="tePcrTimelineChart"></canvas>
+          </div>
+        </div>
+
+        <div class="card table-card">
+          <div class="card-header">
+            <h3>Strike Detail Table (LTP, Greeks, IV & Volume)</h3>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th style="color: var(--accent-cyan);">CE IV</th>
+                  <th style="color: var(--accent-cyan);">CE LTP</th>
+                  <th style="color: var(--accent-cyan);">CE Delta</th>
+                  <th style="color: var(--accent-cyan);">CE OI</th>
+                  <th style="background: rgba(255,255,255,0.06); font-weight: 700;">Strike</th>
+                  <th style="color: var(--accent-red);">PE OI</th>
+                  <th style="color: var(--accent-red);">PE Delta</th>
+                  <th style="color: var(--accent-red);">PE LTP</th>
+                  <th style="color: var(--accent-red);">PE IV</th>
+                </tr>
+              </thead>
+              <tbody id="ocStrikesBody">
+                <tr><td colspan="9" class="empty-state">Select table and run analysis to view option chain.</td></tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
+
+      <!-- ── Subpanel 8: Forensic Tape Replay ─────────────────────────────── -->
+      <div id="subForensicReplay" class="te-subpanel" style="display: none;">
+        <div class="card" style="margin-bottom: 20px; padding: 14px 18px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;">
+            <div style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 0.85rem; color: var(--text-muted);">Symbol:</span>
+                <input type="text" id="replaySymbolInput" value="NIFTY" class="search-input" style="height: 32px; width: 90px; text-transform: uppercase;">
+              </div>
+              <div style="display: flex; gap: 6px;">
+                <button id="btnReplayPlay" class="btn-run" style="padding: 6px 14px; font-size: 0.82rem;">▶ Play</button>
+                <button id="btnReplayStepBack" class="btn-secondary" style="padding: 6px 10px; font-size: 0.82rem;">⏮ -1m</button>
+                <button id="btnReplayStepForward" class="btn-secondary" style="padding: 6px 10px; font-size: 0.82rem;">+1m ⏭</button>
+                <button id="btnReplayReset" class="btn-secondary" style="padding: 6px 10px; font-size: 0.82rem;">↺ Reset</button>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 0.85rem; color: var(--text-muted);">Speed:</span>
+                <select id="replaySpeedSelect" class="search-input" style="height: 32px; width: 80px;">
+                  <option value="1">1x</option>
+                  <option value="5" selected>5x</option>
+                  <option value="15">15x</option>
+                  <option value="60">60x</option>
+                </select>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <input type="range" id="replayScrubber" min="0" max="385" value="0" style="width: 140px; accent-color: var(--accent-cyan); cursor: pointer;">
+                <span id="replayTimeReadout" style="font-size: 0.9rem; font-weight: 700; color: var(--accent-cyan); min-width: 65px;">09:15</span>
+              </div>
+            </div>
+            <button id="btnLoadReplay" class="btn-secondary" style="padding: 6px 16px; font-size: 0.84rem;">
+              ↻ Load Session Tape
+            </button>
+          </div>
+        </div>
+
+        <div class="kpi-grid" style="margin-bottom: 20px;">
+          <div class="kpi-card">
+            <span class="kpi-label">Current Bar Price</span>
+            <span class="kpi-value" id="replayKpiPrice">--</span>
+            <span class="kpi-sub" id="replayKpiTime">Time: --</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Active Realized P&L</span>
+            <span class="kpi-value" id="replayKpiPnl">--</span>
+            <span class="kpi-sub">Simulated session equity</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Technical Alignment</span>
+            <span class="kpi-value" id="replayKpiIndicators" style="color: var(--accent-cyan);">--</span>
+            <span class="kpi-sub">Supertrend & VWAP state</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Decision Events</span>
+            <span class="kpi-value" id="replayKpiEventsCount">0</span>
+            <span class="kpi-sub">AI & execution markers</span>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom: 20px;">
+          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 1.1rem;">📼</span>
+              <h3 style="margin: 0;">Market Candlestick Tape Player (1-Minute Sequence)</h3>
+            </div>
+            <div style="display: flex; gap: 12px; font-size: 0.75rem; color: var(--text-muted);">
+              <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" id="chkReplaySt" checked> Supertrend</label>
+              <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" id="chkReplayVwap" checked> VWAP</label>
+              <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" id="chkReplayCpr" checked> CPR</label>
+            </div>
+          </div>
+          <div style="height: 280px; position: relative; margin-top: 10px;">
+            <canvas id="teReplayChart"></canvas>
+          </div>
+        </div>
+
+        <div class="card table-card">
+          <div class="card-header">
+            <h3>Chronological Event Stream (Gemini AI Decisions & Order Fills)</h3>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Event Type</th>
+                  <th>Action / Bias</th>
+                  <th>Confidence</th>
+                  <th>Details / Reasoning</th>
+                  <th>P&L</th>
+                </tr>
+              </thead>
+              <tbody id="replayEventsBody">
+                <tr><td colspan="6" class="empty-state">Load session tape to view events.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Subpanel 9: Robustness & Overfitting Defense ──────────────────── -->
+      <div id="subRobustness" class="te-subpanel" style="display: none;">
+        <div class="card" style="margin-bottom: 20px; padding: 14px 18px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+            <div style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 0.85rem; color: var(--text-muted);">Strategy:</span>
+                <select id="robStrategySelect" class="search-input" style="height: 32px; width: 180px;">
+                  <option value="trading-engine-v4" selected>Strategy v4 Directional</option>
+                  <option value="orb">ORB Breakout</option>
+                  <option value="supertrend">Supertrend Trend</option>
+                  <option value="short_straddle">09:20 Short Straddle</option>
+                </select>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 0.85rem; color: var(--text-muted);">Backtest Trials Tested (M):</span>
+                <input type="number" id="robTrialsInput" value="25" min="1" max="500" class="search-input" style="height: 32px; width: 70px;">
+              </div>
+            </div>
+            <button id="btnRunRobustness" class="btn-run" style="padding: 6px 16px; font-size: 0.84rem;">
+              ⚡ Audit Statistical Robustness
+            </button>
+          </div>
+        </div>
+
+        <div class="kpi-grid" style="margin-bottom: 20px;">
+          <div class="kpi-card">
+            <span class="kpi-label">Deflated Sharpe Ratio (DSR)</span>
+            <span class="kpi-value" id="robKpiDsr" style="color: var(--accent-green);">--</span>
+            <span class="kpi-sub">Corrected for selection bias</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Probabilistic Sharpe (PSR)</span>
+            <span class="kpi-value" id="robKpiPsr">--</span>
+            <span class="kpi-sub">Confidence of positive edge</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Robustness Grade</span>
+            <span class="kpi-value" id="robKpiGrade">--</span>
+            <span class="kpi-sub" id="robKpiGradeSub">Institutional audit tier</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Snooping Haircut Factor</span>
+            <span class="kpi-value" id="robKpiHaircut" style="color: var(--accent-gold);">--</span>
+            <span class="kpi-sub">Required Sharpe discount</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Plateau Stability Score</span>
+            <span class="kpi-value" id="robKpiPlateau">--</span>
+            <span class="kpi-sub" id="robKpiCliffRisk">Cliff edge hazard</span>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom: 20px;">
+          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 1.1rem;">🛡️</span>
+              <h3 style="margin: 0;">2D Parameter Sensitivity Surface (Plateau vs Cliff Edge Heatmap)</h3>
+            </div>
+            <span class="card-badge" id="robPlateauBadge">Surface Stability</span>
+          </div>
+          <div id="robGridContainer" style="margin-top: 14px; overflow-x: auto;">
+            <div class="empty-state">Run robustness audit to evaluate parameter stability matrix.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Subpanel 10: Portfolio Allocation & Correlation ──────────────── -->
+      <div id="subPortfolioAllocation" class="te-subpanel" style="display: none;">
+        <div class="card" style="margin-bottom: 20px; padding: 14px 18px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+              <span style="font-size: 0.85rem; color: var(--text-muted);">Optimization Preset:</span>
+              <button class="btn-secondary btn-sm port-preset-btn active" data-method="risk_parity">⚖️ Risk Parity (ERC)</button>
+              <button class="btn-secondary btn-sm port-preset-btn" data-method="max_sharpe">🎯 Max Sharpe</button>
+              <button class="btn-secondary btn-sm port-preset-btn" data-method="equal">➗ Equal Weight (1/N)</button>
+              <button class="btn-secondary btn-sm port-preset-btn" data-method="inverse_vol">📉 Inverse Volatility</button>
+            </div>
+            <button id="btnRunPortfolio" class="btn-run" style="padding: 6px 16px; font-size: 0.84rem;">
+              ⚡ Optimize Portfolio
+            </button>
+          </div>
+        </div>
+
+        <div class="kpi-grid" style="margin-bottom: 20px;">
+          <div class="kpi-card">
+            <span class="kpi-label">Blended Annual Return</span>
+            <span class="kpi-value" id="portKpiReturn" style="color: var(--accent-green);">--</span>
+            <span class="kpi-sub">Composite strategy return</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Portfolio Volatility</span>
+            <span class="kpi-value" id="portKpiVol">--</span>
+            <span class="kpi-sub">Diversified annualized risk</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Portfolio Sharpe Ratio</span>
+            <span class="kpi-value" id="portKpiSharpe" style="color: var(--accent-cyan);">--</span>
+            <span class="kpi-sub">Risk-adjusted return factor</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Diversification Ratio</span>
+            <span class="kpi-value" id="portKpiDiv">--</span>
+            <span class="kpi-sub">Weighted risk / Portfolio risk</span>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom: 20px;">
+          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 1.1rem;">📈</span>
+              <h3 style="margin: 0;">Blended Portfolio Equity vs Individual Strategies</h3>
+            </div>
+            <span class="card-badge">Equity Smoothing</span>
+          </div>
+          <div style="height: 250px; position: relative; margin-top: 10px;">
+            <canvas id="tePortfolioChart"></canvas>
+          </div>
+        </div>
+
+        <div class="card table-card" style="margin-bottom: 20px;">
+          <div class="card-header">
+            <h3>Strategy Cross-Correlation Matrix</h3>
+          </div>
+          <div class="table-wrap">
+            <table id="portCorrTable">
+              <thead><tr><th>Strategy</th><th>v4 Directional</th><th>09:20 Straddle</th><th>Iron Condor</th><th>Camarilla</th></tr></thead>
+              <tbody id="portCorrBody"><tr><td colspan="5" class="empty-state">Optimize portfolio to view correlation matrix.</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Subpanel 11: Adaptive Auto-Tuner ─────────────────────────────── -->
+      <div id="subAutoTune" class="te-subpanel" style="display: none;">
+        <!-- Market Regime Card -->
+        <div class="card" style="margin-bottom: 20px; border-left: 4px solid var(--accent-cyan);">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+            <div>
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 1.2rem;">🤖</span>
+                <h3 style="margin: 0; font-size: 1.1rem;" id="atRegimeName">Market Regime Diagnosis</h3>
+                <span class="card-badge" id="atRegimeBadge" style="background: rgba(88,166,255,0.15); color: var(--accent-cyan);">ANALYZING...</span>
+              </div>
+              <p id="atRegimeDesc" style="margin: 6px 0 0; color: var(--text-muted); font-size: 0.85rem;">
+                Evaluating session volatility expansion, market breadth, and execution drift.
+              </p>
+            </div>
+            <button id="btnRunAutoTune" class="btn-run" style="padding: 6px 16px; font-size: 0.84rem;">
+              ⚡ Run Regime Diagnosis
+            </button>
+          </div>
+        </div>
+
+        <div class="kpi-grid" style="margin-bottom: 20px;">
+          <div class="kpi-card">
+            <span class="kpi-label">NIFTY Intraday Move</span>
+            <span class="kpi-value" id="atKpiMove">--</span>
+            <span class="kpi-sub">Directional drift %</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Session Range %</span>
+            <span class="kpi-value" id="atKpiRange">--</span>
+            <span class="kpi-sub">High vs Low expansion</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">India VIX Level</span>
+            <span class="kpi-value" id="atKpiVix" style="color: var(--accent-gold);">--</span>
+            <span class="kpi-sub">Market fear baseline</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Execution Efficiency</span>
+            <span class="kpi-value" id="atKpiEff" style="color: var(--accent-cyan);">--</span>
+            <span class="kpi-sub">Slippage realization</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">AI Signal Precision</span>
+            <span class="kpi-value" id="atKpiPrec">--</span>
+            <span class="kpi-sub">Counterfactual win-rate</span>
+          </div>
+        </div>
+
+        <div class="card table-card" style="margin-bottom: 20px;">
+          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <h3>Adaptive Parameter Deltas (Tuned for Regime)</h3>
+            <button id="btnApplyAutoTune" class="btn-run" style="background: var(--accent-green); color: #000; padding: 6px 16px; font-size: 0.84rem;">
+              ⚡ Apply Tuned Parameters to Trading Engine (.env)
+            </button>
+          </div>
+          <div id="atSyncBanner" style="display: none; padding: 10px 16px; background: rgba(35, 134, 54, 0.15); border-left: 3px solid var(--accent-green); font-size: 0.82rem; margin: 10px 14px;">
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Config Key</th>
+                  <th>Current Production</th>
+                  <th>Recommended Adaptive</th>
+                  <th>Strategic Rationale</th>
+                </tr>
+              </thead>
+              <tbody id="atRecsBody">
+                <tr><td colspan="4" class="empty-state">Run regime diagnosis to view parameter recommendations.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
     </div>
+
 
   </div>
 

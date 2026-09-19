@@ -18,6 +18,14 @@ let sortAscending = false;
 let currentTradeFilter = "all";
 let currentSelectedTradeId = null;
 let lastRawArchives = [];
+let teOptionChainChartInstance = null;
+let tePcrChartInstance = null;
+let teReplayChartInstance = null;
+let tePortfolioChartInstance = null;
+let currentReplaySession = null;
+let currentReplayFrameIndex = 0;
+let replayIntervalTimer = null;
+let replayIsPlaying = false;
 
 function roundTo(num, decimals = 2) {
   if (num === null || num === undefined || isNaN(num)) return 0;
@@ -124,7 +132,12 @@ function switchTab(tabId) {
       if (teCalibrationChartInstance) teCalibrationChartInstance.resize();
       if (teMonteCarloChartInstance) teMonteCarloChartInstance.resize();
       if (teGreeksChartInstance) teGreeksChartInstance.resize();
+      if (teOptionChainChartInstance) teOptionChainChartInstance.resize();
+      if (tePcrChartInstance) tePcrChartInstance.resize();
+      if (teReplayChartInstance) teReplayChartInstance.resize();
+      if (tePortfolioChartInstance) tePortfolioChartInstance.resize();
     }, 60);
+
     if (!window._teInsightsLoaded) {
       window._teInsightsLoaded = true;
       fetchReconciliation();
@@ -2926,7 +2939,39 @@ function initTradingEngineInsights() {
           window._teMultiLegLoaded = true;
           fetchMultiLegSimulation();
         }
+      } else if (subId === "subOptionChain") {
+        setTimeout(() => {
+          if (teOptionChainChartInstance) teOptionChainChartInstance.resize();
+          if (tePcrChartInstance) tePcrChartInstance.resize();
+        }, 50);
+        if (!window._teOptionChainLoaded) {
+          window._teOptionChainLoaded = true;
+          fetchOptionChain();
+        }
+      } else if (subId === "subForensicReplay") {
+        setTimeout(() => { if (teReplayChartInstance) teReplayChartInstance.resize(); }, 50);
+        if (!window._teReplayLoaded) {
+          window._teReplayLoaded = true;
+          loadReplaySession();
+        }
+      } else if (subId === "subRobustness") {
+        if (!window._teRobustnessLoaded) {
+          window._teRobustnessLoaded = true;
+          fetchRobustnessAudit();
+        }
+      } else if (subId === "subPortfolioAllocation") {
+        setTimeout(() => { if (tePortfolioChartInstance) tePortfolioChartInstance.resize(); }, 50);
+        if (!window._tePortfolioLoaded) {
+          window._tePortfolioLoaded = true;
+          fetchPortfolioOptimization();
+        }
+      } else if (subId === "subAutoTune") {
+        if (!window._teAutoTuneLoaded) {
+          window._teAutoTuneLoaded = true;
+          fetchAutoTune();
+        }
       }
+
     });
   });
 
@@ -3008,6 +3053,78 @@ function initTradingEngineInsights() {
   if (btnRunMultiLeg) {
     btnRunMultiLeg.addEventListener("click", fetchMultiLegSimulation);
   }
+
+  // Option Chain Handlers
+  const btnRefreshOptionChain = document.getElementById("btnRefreshOptionChain");
+  if (btnRefreshOptionChain) btnRefreshOptionChain.addEventListener("click", fetchOptionChain);
+  const ocTableSelect = document.getElementById("ocTableSelect");
+  if (ocTableSelect) ocTableSelect.addEventListener("change", fetchOptionChain);
+  const ocTimeSlider = document.getElementById("ocTimeSlider");
+  if (ocTimeSlider) {
+    ocTimeSlider.addEventListener("input", (e) => {
+      const label = document.getElementById("ocTimeLabel");
+      const val = parseInt(e.target.value);
+      if (label) {
+        if (val >= 75) label.innerText = "EOD";
+        else {
+          const totalMin = val * 5;
+          const h = 9 + Math.floor((15 + totalMin) / 60);
+          const m = (15 + totalMin) % 60;
+          label.innerText = `${h}:${String(m).padStart(2, '0')}`;
+        }
+      }
+    });
+    ocTimeSlider.addEventListener("change", fetchOptionChain);
+  }
+
+  // Forensic Replay Handlers
+  const btnLoadReplay = document.getElementById("btnLoadReplay");
+  if (btnLoadReplay) btnLoadReplay.addEventListener("click", loadReplaySession);
+  const btnReplayPlay = document.getElementById("btnReplayPlay");
+  if (btnReplayPlay) btnReplayPlay.addEventListener("click", toggleReplayPlay);
+  const btnReplayStepBack = document.getElementById("btnReplayStepBack");
+  if (btnReplayStepBack) btnReplayStepBack.addEventListener("click", () => stepReplay(-1));
+  const btnReplayStepForward = document.getElementById("btnReplayStepForward");
+  if (btnReplayStepForward) btnReplayStepForward.addEventListener("click", () => stepReplay(1));
+  const btnReplayReset = document.getElementById("btnReplayReset");
+  if (btnReplayReset) btnReplayReset.addEventListener("click", resetReplay);
+  const replayScrubber = document.getElementById("replayScrubber");
+  if (replayScrubber) {
+    replayScrubber.addEventListener("input", (e) => {
+      seekReplay(parseInt(e.target.value));
+    });
+  }
+  const chkReplaySt = document.getElementById("chkReplaySt");
+  const chkReplayVwap = document.getElementById("chkReplayVwap");
+  const chkReplayCpr = document.getElementById("chkReplayCpr");
+  [chkReplaySt, chkReplayVwap, chkReplayCpr].forEach(chk => {
+    if (chk) chk.addEventListener("change", () => renderReplayFrame(currentReplayFrameIndex));
+  });
+
+  // Robustness Handlers
+  const btnRunRobustness = document.getElementById("btnRunRobustness");
+  if (btnRunRobustness) btnRunRobustness.addEventListener("click", fetchRobustnessAudit);
+
+  // Portfolio Handlers
+  const btnRunPortfolio = document.getElementById("btnRunPortfolio");
+  if (btnRunPortfolio) btnRunPortfolio.addEventListener("click", () => {
+    const activePreset = document.querySelector(".port-preset-btn.active");
+    fetchPortfolioOptimization(activePreset ? activePreset.getAttribute("data-method") : "risk_parity");
+  });
+  document.querySelectorAll(".port-preset-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".port-preset-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      fetchPortfolioOptimization(btn.getAttribute("data-method"));
+    });
+  });
+
+  // Auto-Tune Handlers
+  const btnRunAutoTune = document.getElementById("btnRunAutoTune");
+  if (btnRunAutoTune) btnRunAutoTune.addEventListener("click", fetchAutoTune);
+  const btnApplyAutoTune = document.getElementById("btnApplyAutoTune");
+  if (btnApplyAutoTune) btnApplyAutoTune.addEventListener("click", applyAutoTune);
+
 
   // Session Audit Modal Handlers
   const btnOpenAuditModal = document.getElementById("btnOpenAuditModal");
@@ -4156,4 +4273,686 @@ async function fetchSessionAudit() {
     if (content) content.innerHTML = `<div class="empty-state" style="color: var(--red);">Error: ${err.message}</div>`;
   }
 }
+
+// ── 7. Option Chain & OI Profile ─────────────────────────────────────────────
+async function fetchOptionChain() {
+  const select = document.getElementById("teDateSelect");
+  const dateStr = select ? select.value : "2026_09_11";
+  const tblSelect = document.getElementById("ocTableSelect");
+  const table = tblSelect && tblSelect.value ? tblSelect.value : "";
+  const slider = document.getElementById("ocTimeSlider");
+  const sliderVal = slider ? parseInt(slider.value) : 75;
+
+  let timeParam = "";
+  if (sliderVal < 75) {
+    const totalMin = sliderVal * 5;
+    const h = 9 + Math.floor((15 + totalMin) / 60);
+    const m = (15 + totalMin) % 60;
+    timeParam = `${h}:${String(m).padStart(2, '0')}`;
+  }
+
+  try {
+    const url = `/api/trading_engine/option_chain?date=${encodeURIComponent(dateStr)}&table=${encodeURIComponent(table)}&time=${encodeURIComponent(timeParam)}`;
+    const res = await fetch(url);
+    const json = await res.json();
+    if (json.status !== "ok") return;
+
+    const d = json.data;
+
+    // Populate tables dropdown if needed
+    if (tblSelect && d.available_tables && d.available_tables.length > 0) {
+      if (tblSelect.options.length <= 1 || !tblSelect.querySelector(`option[value="${d.table}"]`)) {
+        tblSelect.innerHTML = d.available_tables.map(t => `<option value="${t}" ${t === d.table ? 'selected' : ''}>${t}</option>`).join("");
+      }
+    }
+
+    // Update KPI Cards
+    const kpiSpot = document.getElementById("ocKpiSpot");
+    if (kpiSpot) kpiSpot.innerText = d.underlying_ltp ? `₹${d.underlying_ltp.toLocaleString()}` : "--";
+    const kpiAtm = document.getElementById("ocKpiAtm");
+    if (kpiAtm) kpiAtm.innerText = `ATM Strike: ${d.atm_strike || '--'}`;
+    const kpiMaxPain = document.getElementById("ocKpiMaxPain");
+    if (kpiMaxPain) kpiMaxPain.innerText = d.max_pain_strike ? `${d.max_pain_strike}` : "--";
+    const kpiGammaFlip = document.getElementById("ocKpiGammaFlip");
+    if (kpiGammaFlip) kpiGammaFlip.innerText = d.gamma_flip_strike ? `${d.gamma_flip_strike}` : "--";
+    const kpiPcr = document.getElementById("ocKpiPcr");
+    if (kpiPcr) {
+      kpiPcr.innerText = d.pcr !== undefined ? d.pcr.toFixed(2) : "--";
+      kpiPcr.style.color = d.pcr >= 1.0 ? 'var(--accent-green)' : 'var(--accent-red)';
+    }
+    const kpiOiTotal = document.getElementById("ocKpiOiTotal");
+    if (kpiOiTotal) kpiOiTotal.innerText = `CE: ${(d.total_ce_oi || 0).toLocaleString()} | PE: ${(d.total_pe_oi || 0).toLocaleString()}`;
+
+    // Render Charts
+    renderOptionChainCharts(d);
+
+    // Populate Table
+    const tbody = document.getElementById("ocStrikesBody");
+    if (tbody && d.strikes) {
+      tbody.innerHTML = d.strikes.map(s => {
+        const isAtm = Math.abs(s.strike_price - (d.atm_strike || 0)) < 25;
+        const bg = isAtm ? 'rgba(0, 242, 254, 0.08)' : '';
+        return `
+          <tr style="background: ${bg};">
+            <td style="color: var(--accent-cyan); font-size: 0.8rem;">${s.ce_iv || '--'}%</td>
+            <td style="color: #fff; font-weight: 600;">₹${s.ce_ltp}</td>
+            <td style="color: var(--text-muted); font-size: 0.8rem;">${s.ce_delta}</td>
+            <td style="color: var(--accent-cyan); font-weight: 700;">${(s.ce_oi || 0).toLocaleString()}</td>
+            <td style="font-weight: 800; color: #fff; background: rgba(255,255,255,0.04); text-align: center;">${s.strike_price}</td>
+            <td style="color: var(--accent-red); font-weight: 700;">${(s.pe_oi || 0).toLocaleString()}</td>
+            <td style="color: var(--text-muted); font-size: 0.8rem;">${s.pe_delta}</td>
+            <td style="color: #fff; font-weight: 600;">₹${s.pe_ltp}</td>
+            <td style="color: var(--accent-red); font-size: 0.8rem;">${s.pe_iv || '--'}%</td>
+          </tr>
+        `;
+      }).join("");
+    }
+  } catch (err) {
+    console.error("Error fetching option chain:", err);
+  }
+}
+
+function renderOptionChainCharts(data) {
+  // 1. Strike OI Distribution Chart
+  const ctxOi = document.getElementById("teOptionChainChart");
+  if (ctxOi && data.strikes) {
+    if (teOptionChainChartInstance) teOptionChainChartInstance.destroy();
+
+    const strikes = data.strikes.map(s => s.strike_price);
+    const ceOi = data.strikes.map(s => s.ce_oi);
+    const peOi = data.strikes.map(s => s.pe_oi);
+
+    teOptionChainChartInstance = new Chart(ctxOi, {
+      type: "bar",
+      data: {
+        labels: strikes,
+        datasets: [
+          {
+            label: "Call OI (Resistance)",
+            data: ceOi,
+            backgroundColor: "rgba(0, 242, 254, 0.7)",
+            borderColor: "var(--accent-cyan)",
+            borderWidth: 1
+          },
+          {
+            label: "Put OI (Support)",
+            data: peOi,
+            backgroundColor: "rgba(255, 77, 79, 0.7)",
+            borderColor: "var(--accent-red)",
+            borderWidth: 1
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          x: { grid: { color: "rgba(255,255,255,0.05)" }, ticks: { color: "#8b949e", font: { size: 10 } } },
+          y: { grid: { color: "rgba(255,255,255,0.05)" }, ticks: { color: "#8b949e", font: { size: 10 } } }
+        },
+        plugins: {
+          legend: { labels: { color: "#c9d1d9", font: { size: 11 } } },
+          tooltip: {
+            backgroundColor: "rgba(10, 16, 28, 0.95)",
+            callbacks: {
+              label: (c) => `${c.dataset.label}: ${Number(c.parsed.y).toLocaleString()} OI`
+            }
+          }
+        }
+      }
+    });
+  }
+
+  // 2. PCR Timeline Chart
+  const ctxPcr = document.getElementById("tePcrTimelineChart");
+  if (ctxPcr && data.pcr_timeline) {
+    if (tePcrChartInstance) tePcrChartInstance.destroy();
+
+    const labels = data.pcr_timeline.map(p => p.time);
+    const pcrs = data.pcr_timeline.map(p => p.pcr);
+    const spots = data.pcr_timeline.map(p => p.spot);
+
+    tePcrChartInstance = new Chart(ctxPcr, {
+      type: "line",
+      data: {
+        labels: labels,
+        datasets: [
+          {
+            label: "PCR (Put-Call Ratio)",
+            data: pcrs,
+            borderColor: "var(--accent-gold)",
+            backgroundColor: "rgba(250, 204, 21, 0.1)",
+            fill: true,
+            tension: 0.2,
+            borderWidth: 2,
+            yAxisID: "yPcr"
+          },
+          {
+            label: "Underlying Spot",
+            data: spots,
+            borderColor: "var(--accent-cyan)",
+            borderWidth: 1.5,
+            borderDash: [4, 4],
+            pointRadius: 0,
+            yAxisID: "ySpot"
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          x: { grid: { color: "rgba(255,255,255,0.05)" }, ticks: { color: "#8b949e", font: { size: 10 } } },
+          yPcr: {
+            position: "left",
+            grid: { color: "rgba(255,255,255,0.05)" },
+            ticks: { color: "var(--accent-gold)", font: { size: 10 } }
+          },
+          ySpot: {
+            position: "right",
+            grid: { drawOnChartArea: false },
+            ticks: { color: "var(--accent-cyan)", font: { size: 10 } }
+          }
+        },
+        plugins: {
+          legend: { labels: { color: "#c9d1d9", font: { size: 11 } } }
+        }
+      }
+    });
+  }
+}
+
+// ── 8. Forensic Market Tape Replay ───────────────────────────────────────────
+async function loadReplaySession() {
+  const select = document.getElementById("teDateSelect");
+  const dateStr = select ? select.value : "2026_09_11";
+  const symInput = document.getElementById("replaySymbolInput");
+  const sym = symInput ? symInput.value.toUpperCase() : "NIFTY";
+
+  try {
+    const res = await fetch(`/api/trading_engine/replay_data?date=${encodeURIComponent(dateStr)}&symbol=${encodeURIComponent(sym)}`);
+    const json = await res.json();
+    if (json.status !== "ok") return;
+
+    currentReplaySession = json.data;
+    currentReplayFrameIndex = 0;
+
+    const scrubber = document.getElementById("replayScrubber");
+    if (scrubber && currentReplaySession.frames) {
+      scrubber.max = Math.max(0, currentReplaySession.frames.length - 1);
+      scrubber.value = 0;
+    }
+
+    renderReplayFrame(0);
+  } catch (err) {
+    console.error("Error loading replay session:", err);
+  }
+}
+
+function renderReplayFrame(frameIdx) {
+  if (!currentReplaySession || !currentReplaySession.frames || currentReplaySession.frames.length === 0) return;
+  const frames = currentReplaySession.frames;
+  const idx = Math.max(0, Math.min(frames.length - 1, frameIdx));
+  currentReplayFrameIndex = idx;
+  const f = frames[idx];
+
+  // Update Scrubber & Time Readout
+  const scrubber = document.getElementById("replayScrubber");
+  if (scrubber) scrubber.value = idx;
+  const readout = document.getElementById("replayTimeReadout");
+  if (readout) readout.innerText = f.time || "--";
+
+  // Update KPI Cards
+  const kpiPrice = document.getElementById("replayKpiPrice");
+  if (kpiPrice) kpiPrice.innerText = `₹${f.close.toLocaleString()}`;
+  const kpiTime = document.getElementById("replayKpiTime");
+  if (kpiTime) kpiTime.innerText = `Bar: ${idx + 1} / ${frames.length} (${f.time})`;
+  const kpiPnl = document.getElementById("replayKpiPnl");
+  if (kpiPnl) {
+    kpiPnl.innerText = `₹${f.cumulative_pnl.toLocaleString()}`;
+    kpiPnl.style.color = f.cumulative_pnl >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
+  }
+  const kpiInd = document.getElementById("replayKpiIndicators");
+  if (kpiInd) {
+    const isBull = f.supertrend_dir === 1;
+    kpiInd.innerText = isBull ? "ST: Bullish ▲" : "ST: Bearish ▼";
+    kpiInd.style.color = isBull ? 'var(--accent-green)' : 'var(--accent-red)';
+  }
+
+  // Draw Replay Chart: Window of past 40 bars up to idx
+  const startIdx = Math.max(0, idx - 40);
+  const windowFrames = frames.slice(startIdx, idx + 1);
+
+  const ctx = document.getElementById("teReplayChart");
+  if (ctx) {
+    if (teReplayChartInstance) teReplayChartInstance.destroy();
+
+    const labels = windowFrames.map(w => w.time);
+    const closes = windowFrames.map(w => w.close);
+    const supertrend = windowFrames.map(w => w.supertrend);
+    const vwap = windowFrames.map(w => w.vwap);
+
+    const datasets = [
+      {
+        label: "Price",
+        data: closes,
+        borderColor: "rgba(255, 255, 255, 0.9)",
+        backgroundColor: "rgba(255, 255, 255, 0.05)",
+        fill: true,
+        borderWidth: 2,
+        pointRadius: 2,
+        pointHoverRadius: 5
+      }
+    ];
+
+    const chkSt = document.getElementById("chkReplaySt");
+    if (chkSt && chkSt.checked) {
+      datasets.push({
+        label: "Supertrend",
+        data: supertrend,
+        borderColor: "var(--accent-cyan)",
+        borderWidth: 1.5,
+        pointRadius: 0
+      });
+    }
+
+    const chkVwap = document.getElementById("chkReplayVwap");
+    if (chkVwap && chkVwap.checked) {
+      datasets.push({
+        label: "VWAP",
+        data: vwap,
+        borderColor: "var(--accent-gold)",
+        borderDash: [3, 3],
+        borderWidth: 1.5,
+        pointRadius: 0
+      });
+    }
+
+    teReplayChartInstance = new Chart(ctx, {
+      type: "line",
+      data: { labels, datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        scales: {
+          x: { grid: { color: "rgba(255,255,255,0.05)" }, ticks: { color: "#8b949e", font: { size: 10 } } },
+          y: { grid: { color: "rgba(255,255,255,0.05)" }, ticks: { color: "#8b949e", font: { size: 10 } } }
+        },
+        plugins: {
+          legend: { labels: { color: "#c9d1d9", font: { size: 10 } } }
+        }
+      }
+    });
+  }
+
+  // Populate Events Stream
+  const eventsCount = document.getElementById("replayKpiEventsCount");
+  const pastEvents = [];
+  for (let i = 0; i <= idx; i++) {
+    if (frames[i].events && frames[i].events.length > 0) {
+      pastEvents.push(...frames[i].events);
+    }
+  }
+  if (eventsCount) eventsCount.innerText = pastEvents.length;
+
+  const tbody = document.getElementById("replayEventsBody");
+  if (tbody) {
+    if (pastEvents.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="6" class="empty-state">No events triggered up to ${f.time}.</td></tr>`;
+    } else {
+      tbody.innerHTML = pastEvents.slice(-12).reverse().map(ev => {
+        const isAi = ev.type === "AI_EVALUATION";
+        const actionCol = (ev.action === "BUY" || ev.action === "APPROVE") ? 'var(--accent-green)' : 'var(--accent-red)';
+        return `
+          <tr>
+            <td style="color: var(--text-muted); font-weight: 600;">${ev.time || f.time}</td>
+            <td><span class="card-badge" style="background: ${isAi ? 'rgba(0,242,254,0.15)' : 'rgba(250,204,21,0.15)'}; color: ${isAi ? 'var(--accent-cyan)' : 'var(--accent-gold)'};">${ev.type}</span></td>
+            <td style="color: ${actionCol}; font-weight: 700;">${ev.action || ev.side || '--'}</td>
+            <td>${ev.confidence ? `${Math.round(ev.confidence * 100)}%` : '--'}</td>
+            <td style="font-size: 0.8rem; color: #c9d1d9; max-width: 320px;">${ev.reasoning || ev.title || '--'}</td>
+            <td style="font-weight: 700; color: ${(ev.pnl || 0) >= 0 ? 'var(--accent-green)' : 'var(--accent-red)'};">${ev.pnl !== undefined ? `₹${ev.pnl}` : '--'}</td>
+          </tr>
+        `;
+      }).join("");
+    }
+  }
+}
+
+function toggleReplayPlay() {
+  const btn = document.getElementById("btnReplayPlay");
+  if (replayIsPlaying) {
+    clearInterval(replayIntervalTimer);
+    replayIsPlaying = false;
+    if (btn) btn.innerText = "▶ Play";
+  } else {
+    if (!currentReplaySession) {
+      loadReplaySession();
+      return;
+    }
+    const speedSelect = document.getElementById("replaySpeedSelect");
+    const speed = speedSelect ? parseInt(speedSelect.value) : 5;
+    const intervalMs = Math.max(50, 1000 / speed);
+
+    replayIntervalTimer = setInterval(() => {
+      if (currentReplayFrameIndex < currentReplaySession.frames.length - 1) {
+        renderReplayFrame(currentReplayFrameIndex + 1);
+      } else {
+        clearInterval(replayIntervalTimer);
+        replayIsPlaying = false;
+        if (btn) btn.innerText = "▶ Play";
+      }
+    }, intervalMs);
+
+    replayIsPlaying = true;
+    if (btn) btn.innerText = "⏸ Pause";
+  }
+}
+
+function stepReplay(delta) {
+  if (!currentReplaySession) return;
+  renderReplayFrame(currentReplayFrameIndex + delta);
+}
+
+function seekReplay(idx) {
+  if (!currentReplaySession) return;
+  renderReplayFrame(idx);
+}
+
+function resetReplay() {
+  if (replayIsPlaying) toggleReplayPlay();
+  renderReplayFrame(0);
+}
+
+// ── 9. Robustness & Overfitting Defense ───────────────────────────────────────
+async function fetchRobustnessAudit() {
+  const select = document.getElementById("teDateSelect");
+  const dateStr = select ? select.value : "2026_09_11";
+  const stratSelect = document.getElementById("robStrategySelect");
+  const strat = stratSelect ? stratSelect.value : "trading-engine-v4";
+  const trialsInput = document.getElementById("robTrialsInput");
+  const numTrials = trialsInput ? parseInt(trialsInput.value) : 25;
+
+  try {
+    const res = await fetch("/api/trading_engine/robustness_audit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ date: dateStr, strategy: strat, num_trials: numTrials })
+    });
+    const json = await res.json();
+    if (json.status !== "ok") return;
+
+    const d = json.data;
+    const m = d.statistical_metrics;
+    const surf = d.parameter_surface;
+
+    // Update KPIs
+    const kpiDsr = document.getElementById("robKpiDsr");
+    if (kpiDsr) kpiDsr.innerText = `${m.dsr}%`;
+    const kpiPsr = document.getElementById("robKpiPsr");
+    if (kpiPsr) kpiPsr.innerText = `${m.psr}%`;
+    const kpiGrade = document.getElementById("robKpiGrade");
+    if (kpiGrade) {
+      kpiGrade.innerText = m.grade.split(" ")[0];
+      kpiGrade.style.color = m.dsr >= 85 ? 'var(--accent-green)' : (m.dsr >= 70 ? 'var(--accent-cyan)' : 'var(--accent-red)');
+    }
+    const kpiHaircut = document.getElementById("robKpiHaircut");
+    if (kpiHaircut) kpiHaircut.innerText = `-${m.haircut_pct}%`;
+    const kpiPlateau = document.getElementById("robKpiPlateau");
+    if (kpiPlateau) kpiPlateau.innerText = `${surf.plateau_score} / 100`;
+    const kpiCliff = document.getElementById("robKpiCliffRisk");
+    if (kpiCliff) kpiCliff.innerText = surf.cliff_risk;
+
+    // Render Heatmap Matrix
+    renderRobustnessGrid(surf);
+  } catch (err) {
+    console.error("Error fetching robustness audit:", err);
+  }
+}
+
+function renderRobustnessGrid(surf) {
+  const container = document.getElementById("robGridContainer");
+  if (!container || !surf.grid) return;
+
+  const xVals = surf.x_values;
+  const yVals = surf.y_values;
+
+  let html = `
+    <table style="width: 100%; text-align: center; border-collapse: collapse; font-size: 0.82rem;">
+      <thead>
+        <tr>
+          <th style="padding: 8px; color: var(--text-muted);">${surf.param_y} \\ ${surf.param_x}</th>
+          ${xVals.map(x => `<th style="padding: 8px; color: var(--accent-cyan);">${x}</th>`).join("")}
+        </tr>
+      </thead>
+      <tbody>
+  `;
+
+  yVals.forEach(y => {
+    html += `<tr><td style="font-weight: 700; color: var(--accent-gold); padding: 8px;">${y}</td>`;
+    xVals.forEach(x => {
+      const node = surf.grid.find(g => Math.abs(g.x - x) < 0.01 && Math.abs(g.y - y) < 0.01);
+      if (node) {
+        const isCur = node.is_current;
+        const color = node.sharpe >= 2.0 ? 'rgba(0, 245, 160, 0.3)' : (node.sharpe >= 1.2 ? 'rgba(0, 242, 254, 0.2)' : 'rgba(255, 77, 79, 0.2)');
+        const border = isCur ? '2px solid var(--accent-cyan)' : '1px solid rgba(255,255,255,0.06)';
+        html += `
+          <td style="background: ${color}; border: ${border}; padding: 10px; border-radius: 4px;">
+            <div style="font-weight: 800; color: #fff;">${node.sharpe} SR</div>
+            <div style="font-size: 0.72rem; color: #c9d1d9;">${node.win_rate}% Win</div>
+            ${isCur ? '<span style="font-size: 0.65rem; color: var(--accent-cyan); font-weight: bold;">[ACTIVE]</span>' : ''}
+          </td>
+        `;
+      } else {
+        html += `<td>--</td>`;
+      }
+    });
+    html += `</tr>`;
+  });
+
+  html += `</tbody></table>`;
+  container.innerHTML = html;
+}
+
+// ── 10. Multi-Strategy Portfolio Allocation ──────────────────────────────────
+async function fetchPortfolioOptimization(method = "risk_parity") {
+  try {
+    const res = await fetch("/api/trading_engine/portfolio_optimize", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ method, days: 30, initial_capital: 500000.0 })
+    });
+    const json = await res.json();
+    if (json.status !== "ok") return;
+
+    const d = json.data;
+    const m = d.portfolio_metrics;
+
+    // Update KPIs
+    const kpiRet = document.getElementById("portKpiReturn");
+    if (kpiRet) kpiRet.innerText = `+${m.annual_return_pct}%`;
+    const kpiVol = document.getElementById("portKpiVol");
+    if (kpiVol) kpiVol.innerText = `${m.annual_volatility_pct}%`;
+    const kpiSharpe = document.getElementById("portKpiSharpe");
+    if (kpiSharpe) kpiSharpe.innerText = `${m.sharpe_ratio}`;
+    const kpiDiv = document.getElementById("portKpiDiv");
+    if (kpiDiv) kpiDiv.innerText = `${m.diversification_ratio}x`;
+
+    // Render Correlation Matrix
+    const corrBody = document.getElementById("portCorrBody");
+    if (corrBody && d.correlation_matrix) {
+      corrBody.innerHTML = d.correlation_matrix.map(row => `
+        <tr>
+          <td style="font-weight: 700; color: #fff;">${row.strategy}</td>
+          <td style="color: ${row.strat_v4 > 0.3 ? 'var(--accent-red)' : 'var(--accent-cyan)'};">${row.strat_v4}</td>
+          <td style="color: ${row.strat_straddle > 0.3 ? 'var(--accent-red)' : 'var(--accent-cyan)'};">${row.strat_straddle}</td>
+          <td style="color: ${row.strat_iron_condor > 0.3 ? 'var(--accent-red)' : 'var(--accent-cyan)'};">${row.strat_iron_condor}</td>
+          <td style="color: ${row.strat_camarilla > 0.3 ? 'var(--accent-red)' : 'var(--accent-cyan)'};">${row.strat_camarilla}</td>
+        </tr>
+      `).join("");
+    }
+
+    // Render Blended Equity Chart
+    renderPortfolioChart(d.equity_timeline, d.strategies);
+  } catch (err) {
+    console.error("Error optimizing portfolio:", err);
+  }
+}
+
+function renderPortfolioChart(timeline, strategies) {
+  const ctx = document.getElementById("tePortfolioChart");
+  if (!ctx || !timeline) return;
+
+  if (tePortfolioChartInstance) tePortfolioChartInstance.destroy();
+
+  const labels = timeline.map(t => t.date);
+  const blended = timeline.map(t => t.blended_equity);
+
+  const colors = ["#00f2fe", "#00f5a0", "#facc15", "#a78bfa"];
+  const datasets = [
+    {
+      label: "Blended Optimized Portfolio (₹)",
+      data: blended,
+      borderColor: "#ffffff",
+      backgroundColor: "rgba(255, 255, 255, 0.1)",
+      borderWidth: 3,
+      fill: true,
+      tension: 0.2
+    }
+  ];
+
+  strategies.forEach((s, idx) => {
+    datasets.push({
+      label: `${s.name} (${s.weight_pct}%)`,
+      data: timeline.map(t => t[s.id]),
+      borderColor: colors[idx % colors.length],
+      borderWidth: 1.5,
+      borderDash: [3, 3],
+      pointRadius: 0,
+      tension: 0.2
+    });
+  });
+
+  tePortfolioChartInstance = new Chart(ctx, {
+    type: "line",
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: { grid: { color: "rgba(255,255,255,0.05)" }, ticks: { color: "#8b949e", font: { size: 10 } } },
+        y: {
+          grid: { color: "rgba(255,255,255,0.05)" },
+          ticks: { color: "#8b949e", font: { size: 10 }, callback: v => `₹${Number(v).toLocaleString()}` }
+        }
+      },
+      plugins: {
+        legend: { labels: { color: "#c9d1d9", font: { size: 10 } } }
+      }
+    }
+  });
+}
+
+// ── 11. Adaptive Regime Auto-Tuner ───────────────────────────────────────────
+async function fetchAutoTune() {
+  const select = document.getElementById("teDateSelect");
+  const dateStr = select ? select.value : "2026_09_11";
+
+  try {
+    const res = await fetch("/api/trading_engine/auto_tune", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ date: dateStr, apply: false })
+    });
+    const json = await res.json();
+    if (json.status !== "ok") return;
+
+    const d = json.data;
+    const r = d.regime;
+    const m = d.market_indicators;
+
+    // Update Regime Card
+    const nameEl = document.getElementById("atRegimeName");
+    if (nameEl) nameEl.innerText = r.name;
+    const badgeEl = document.getElementById("atRegimeBadge");
+    if (badgeEl) {
+      badgeEl.innerText = r.code;
+      badgeEl.style.color = r.badge_color;
+    }
+    const descEl = document.getElementById("atRegimeDesc");
+    if (descEl) descEl.innerText = r.description;
+
+    // Update Market KPIs
+    const kpiMove = document.getElementById("atKpiMove");
+    if (kpiMove) kpiMove.innerText = `${m.nifty_change_pct > 0 ? '+' : ''}${m.nifty_change_pct}%`;
+    const kpiRange = document.getElementById("atKpiRange");
+    if (kpiRange) kpiRange.innerText = `${m.nifty_range_pct}%`;
+    const kpiVix = document.getElementById("atKpiVix");
+    if (kpiVix) kpiVix.innerText = `${m.vix_level}`;
+    const kpiEff = document.getElementById("atKpiEff");
+    if (kpiEff) kpiEff.innerText = `${m.execution_efficiency}%`;
+    const kpiPrec = document.getElementById("atKpiPrec");
+    if (kpiPrec) kpiPrec.innerText = `${m.ai_precision}%`;
+
+    // Populate Recommendations Table
+    const tbody = document.getElementById("atRecsBody");
+    if (tbody && d.recommendations) {
+      tbody.innerHTML = d.recommendations.map(rec => `
+        <tr>
+          <td style="font-family: monospace; font-weight: 700; color: var(--accent-cyan);">${rec.key}</td>
+          <td style="font-family: monospace; color: var(--text-muted);">${rec.current}</td>
+          <td style="font-family: monospace; font-weight: 800; color: var(--accent-green);">${rec.recommended}</td>
+          <td style="font-size: 0.82rem; color: #c9d1d9;">${rec.rationale}</td>
+        </tr>
+      `).join("");
+    }
+  } catch (err) {
+    console.error("Error fetching auto-tune diagnosis:", err);
+  }
+}
+
+async function applyAutoTune() {
+  const btn = document.getElementById("btnApplyAutoTune");
+  const banner = document.getElementById("atSyncBanner");
+  const select = document.getElementById("teDateSelect");
+  const dateStr = select ? select.value : "2026_09_11";
+
+  if (btn) {
+    btn.disabled = true;
+    btn.innerText = "Applying Updates...";
+  }
+
+  try {
+    const res = await fetch("/api/trading_engine/auto_tune", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ date: dateStr, apply: true })
+    });
+    const json = await res.json();
+    if (json.status === "ok" && json.sync_result) {
+      if (banner) {
+        banner.style.display = "block";
+        banner.innerHTML = `
+          <strong>✓ Tuned Parameters Successfully Synced to Production (.env):</strong><br>
+          Updated Keys: <code>${Object.keys(json.sync_result.updated_keys || {}).join(", ")}</code><br>
+          <span style="font-size: 0.75rem; color: #8b949e;">Safety Backup: ${json.sync_result.backup_file || 'created'}</span>
+        `;
+      }
+    }
+  } catch (err) {
+    console.error("Error applying auto-tune updates:", err);
+    if (banner) {
+      banner.style.display = "block";
+      banner.style.background = "rgba(255,77,79,0.15)";
+      banner.style.borderColor = "var(--accent-red)";
+      banner.innerHTML = `Failed to apply tuning updates: ${err.message}`;
+    }
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerText = "⚡ Apply Tuned Parameters to Trading Engine (.env)";
+    }
+  }
+}
+
 
