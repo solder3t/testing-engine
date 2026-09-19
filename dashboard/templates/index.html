@@ -57,6 +57,10 @@
       <span class="tab-icon">🗄️</span>
       <span>Data Explorer</span>
     </button>
+    <button class="nav-tab" data-tab="tabTradingEngine" id="btnTabTradingEngine" style="border-left: 1px solid rgba(255,255,255,0.1); color: var(--accent-cyan);">
+      <span class="tab-icon">⚡</span>
+      <span>Trading Engine Insights</span>
+    </button>
   </nav>
 
   <!-- Global Live Progress Bar (Sticky during all running simulations) -->
@@ -1300,6 +1304,341 @@
               </tr>
             </tbody>
           </table>
+        </div>
+      </div>
+    <!-- ── Tab 7: Trading Engine Insights (Deep Integration & Cockpit) ────── -->
+    <div class="tab-pane" id="tabTradingEngine">
+      <div class="tab-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px;">
+        <div>
+          <h2 style="margin: 0; font-size: 1.4rem; color: #fff; display: flex; align-items: center; gap: 8px;">
+            <span style="color: var(--accent-cyan);">⚡</span> Trading Engine Insights & Optimization Cockpit
+          </h2>
+          <p style="margin: 4px 0 0; color: var(--text-muted); font-size: 0.85rem;">
+            Deep analytical bridge reconciling live/paper execution against theoretical backtests, auditing Gemini AI decision quality, and exporting empirical strategy enhancements.
+          </p>
+        </div>
+        <div style="display: flex; gap: 10px; align-items: center;">
+          <select id="teDateSelect" class="search-input" style="height: 36px; min-width: 170px; background: rgba(22,27,34,0.9);">
+            <option value="2026_09_11" selected>2026_09_11 (Recorded Trades)</option>
+            <option value="2026_09_08">2026_09_08 (Recorded Trades)</option>
+            <option value="all">All Available Sessions</option>
+          </select>
+          <button id="btnRunAllEngineInsights" class="btn-run" style="padding: 6px 16px; font-size: 0.84rem;">
+            ⚡ Run Full Analysis
+          </button>
+        </div>
+      </div>
+
+      <!-- Sub-Navigation Pills -->
+      <div class="sub-nav-pills" style="display: flex; gap: 8px; margin-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 12px;">
+        <button class="btn-secondary te-subtab-btn active" data-sub="subReconciliation" id="btnSubRecon" style="font-size: 0.82rem; padding: 6px 14px;">
+          🎯 Live vs Sim Reconciliation
+        </button>
+        <button class="btn-secondary te-subtab-btn" data-sub="subAiAnalytics" id="btnSubAi" style="font-size: 0.82rem; padding: 6px 14px;">
+          🧠 Gemini AI Calibration
+        </button>
+        <button class="btn-secondary te-subtab-btn" data-sub="subFactorAlpha" id="btnSubFactors" style="font-size: 0.82rem; padding: 6px 14px;">
+          🔬 Factor Alpha Attribution
+        </button>
+        <button class="btn-secondary te-subtab-btn" data-sub="subConfigExport" id="btnSubExport" style="font-size: 0.82rem; padding: 6px 14px;">
+          📤 Production Config Exporter
+        </button>
+      </div>
+
+      <!-- ── Subpanel 1: Reconciliation ──────────────────────────────────── -->
+      <div id="subReconciliation" class="te-subpanel">
+        <div class="kpi-grid" style="margin-bottom: 20px;">
+          <div class="kpi-card">
+            <span class="kpi-label">Execution Efficiency</span>
+            <span class="kpi-value" id="teKpiEfficiency" style="color: var(--accent-cyan);">--</span>
+            <span class="kpi-sub" id="teKpiEfficiencySub">Slippage & latency quality</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Avg Entry Slippage</span>
+            <span class="kpi-value" id="teKpiSlippage">--</span>
+            <span class="kpi-sub" id="teKpiSlippagePct">--</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Avg Latency</span>
+            <span class="kpi-value" id="teKpiLatency">--</span>
+            <span class="kpi-sub">Execution vs Sim trigger</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Net P&L Drift</span>
+            <span class="kpi-value" id="teKpiPnlDrift">--</span>
+            <span class="kpi-sub" id="teKpiPnlSub">Live P&L vs Sim P&L</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Matched / Total Live</span>
+            <span class="kpi-value" id="teKpiMatchedCount">--</span>
+            <span class="kpi-sub" id="teKpiUnpromptedCount">--</span>
+          </div>
+        </div>
+
+        <div class="card table-card" style="margin-bottom: 20px;">
+          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <h3>Matched Execution Pairs (Live Trade vs Backtest Signal)</h3>
+            <button id="btnRefreshRecon" class="btn-secondary btn-sm">Refresh Reconciliation ⟳</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Symbol</th>
+                  <th>Direction</th>
+                  <th>Live Entry Time</th>
+                  <th>Sim Entry Time</th>
+                  <th>Live Premium</th>
+                  <th>Sim Premium</th>
+                  <th>Entry Slippage</th>
+                  <th>Latency</th>
+                  <th>Live Net P&L</th>
+                  <th>Sim Net P&L</th>
+                  <th>P&L Variance</th>
+                  <th>Efficiency Score</th>
+                </tr>
+              </thead>
+              <tbody id="teMatchedBody">
+                <tr><td colspan="12" class="empty-state">Click "Run Full Analysis" or select a session to reconcile live trades.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div class="card">
+            <div class="card-header">
+              <h3>Unprompted Live Trades (Executed without Strategy v4 Signal)</h3>
+            </div>
+            <div class="table-wrap" style="max-height: 250px; overflow-y: auto;">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Symbol</th>
+                    <th>Time</th>
+                    <th>Entry ₹</th>
+                    <th>Exit ₹</th>
+                    <th>P&L ₹</th>
+                    <th>AI Confidence</th>
+                  </tr>
+                </thead>
+                <tbody id="teUnpromptedBody">
+                  <tr><td colspan="6" class="empty-state">No unprompted live trades.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h3>Missed Strategy Signals (Simulated but not Executed Live)</h3>
+            </div>
+            <div class="table-wrap" style="max-height: 250px; overflow-y: auto;">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Symbol</th>
+                    <th>Time</th>
+                    <th>Sim Entry ₹</th>
+                    <th>Sim Exit ₹</th>
+                    <th>Sim P&L ₹</th>
+                    <th>Score</th>
+                  </tr>
+                </thead>
+                <tbody id="teMissedBody">
+                  <tr><td colspan="6" class="empty-state">No missed strategy signals.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Subpanel 2: AI Analytics ────────────────────────────────────── -->
+      <div id="subAiAnalytics" class="te-subpanel" style="display: none;">
+        <div class="card" style="margin-bottom: 20px; padding: 14px 18px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+            <div style="display: flex; align-items: center; gap: 14px;">
+              <span style="font-weight: 600; font-size: 0.88rem; color: #fff;">Confidence Gating Cutoff:</span>
+              <input type="range" id="teConfSlider" min="0.40" max="0.90" step="0.05" value="0.70" style="width: 140px;">
+              <span id="teConfSliderVal" style="font-family: 'JetBrains Mono', monospace; color: var(--accent-cyan); font-weight: 700;">0.70</span>
+            </div>
+            <button id="btnRecalculateAi" class="btn-secondary" style="padding: 6px 14px; font-size: 0.82rem;">
+              Re-evaluate Calibration ⚡
+            </button>
+          </div>
+        </div>
+
+        <div class="kpi-grid" style="margin-bottom: 20px;">
+          <div class="kpi-card">
+            <span class="kpi-label">Decisions Analyzed</span>
+            <span class="kpi-value" id="teKpiAiDecisions">--</span>
+            <span class="kpi-sub">Total Gemini snapshots</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Precision @ Threshold</span>
+            <span class="kpi-value" id="teKpiAiPrecision" style="color: var(--green);">--</span>
+            <span class="kpi-sub">True Positives / Total Signals</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Overall Accuracy</span>
+            <span class="kpi-value" id="teKpiAiAccuracy">--</span>
+            <span class="kpi-sub">(TP + TN) / Total Decisions</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Filter Protection Rate</span>
+            <span class="kpi-value" id="teKpiAiFilterRate">--</span>
+            <span class="kpi-sub">Choppy/bad trades avoided</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Optimal Threshold</span>
+            <span class="kpi-value" id="teKpiAiOptimalTh" style="color: var(--accent-cyan);">--</span>
+            <span class="kpi-sub">Expectancy-maximizing cutoff</span>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px;">
+          <!-- Counterfactual Matrix -->
+          <div class="card">
+            <div class="card-header">
+              <h3>Counterfactual Confusion Matrix (15m Horizon)</h3>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 10px 0;">
+              <div style="background: rgba(46,160,67,0.12); border: 1px solid rgba(46,160,67,0.3); border-radius: 8px; padding: 14px; text-align: center;">
+                <div style="color: var(--text-muted); font-size: 0.72rem; text-transform: uppercase;">True Positives (TP)</div>
+                <div id="teMatrixTP" style="font-size: 1.6rem; font-weight: 800; color: var(--green); margin: 4px 0;">--</div>
+                <div style="font-size: 0.75rem; color: #8b949e;">AI Entered & Market Won</div>
+              </div>
+              <div style="background: rgba(248,81,73,0.12); border: 1px solid rgba(248,81,73,0.3); border-radius: 8px; padding: 14px; text-align: center;">
+                <div style="color: var(--text-muted); font-size: 0.72rem; text-transform: uppercase;">False Positives (FP)</div>
+                <div id="teMatrixFP" style="font-size: 1.6rem; font-weight: 800; color: var(--red); margin: 4px 0;">--</div>
+                <div style="font-size: 0.75rem; color: #8b949e;">AI Entered & Market Lost</div>
+              </div>
+              <div style="background: rgba(56,139,253,0.12); border: 1px solid rgba(56,139,253,0.3); border-radius: 8px; padding: 14px; text-align: center;">
+                <div style="color: var(--text-muted); font-size: 0.72rem; text-transform: uppercase;">True Negatives (TN)</div>
+                <div id="teMatrixTN" style="font-size: 1.6rem; font-weight: 800; color: var(--accent-cyan); margin: 4px 0;">--</div>
+                <div style="font-size: 0.75rem; color: #8b949e;">AI Passed & Avoided Chop</div>
+              </div>
+              <div style="background: rgba(210,153,34,0.12); border: 1px solid rgba(210,153,34,0.3); border-radius: 8px; padding: 14px; text-align: center;">
+                <div style="color: var(--text-muted); font-size: 0.72rem; text-transform: uppercase;">False Negatives (FN)</div>
+                <div id="teMatrixFN" style="font-size: 1.6rem; font-weight: 800; color: var(--accent-yellow); margin: 4px 0;">--</div>
+                <div style="font-size: 0.75rem; color: #8b949e;">AI Passed & Missed Alpha</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Calibration Table -->
+          <div class="card">
+            <div class="card-header">
+              <h3>Confidence Reliability Calibration (Deciles)</h3>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Confidence Bucket</th>
+                    <th>Count</th>
+                    <th>% of Total</th>
+                    <th>Win Rate %</th>
+                    <th>Avg Return %</th>
+                  </tr>
+                </thead>
+                <tbody id="teCalibrationBody">
+                  <tr><td colspan="5" class="empty-state">No calibration data.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Reasoning Keywords Attribution -->
+        <div class="card table-card">
+          <div class="card-header">
+            <h3>Gemini AI Rationale Attribution (High Alpha vs Drag Patterns)</h3>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Reasoning Keyword / Pattern</th>
+                  <th>Occurrences</th>
+                  <th>Win Rate %</th>
+                  <th>Avg 15m Return %</th>
+                  <th>Alpha Rating</th>
+                </tr>
+              </thead>
+              <tbody id="teKeywordsBody">
+                <tr><td colspan="5" class="empty-state">No reasoning keywords evaluated yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Subpanel 3: Factor Alpha Attribution ────────────────────────── -->
+      <div id="subFactorAlpha" class="te-subpanel" style="display: none;">
+        <div class="card table-card" style="margin-bottom: 20px;">
+          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <h3 style="margin: 0;">Strategy v4 Factor Ablation Alpha Matrix</h3>
+              <p style="margin: 4px 0 0; color: var(--text-muted); font-size: 0.8rem;">
+                Systematically disabling individual filters to measure marginal value-add vs drag.
+              </p>
+            </div>
+            <button id="btnRunFactorAblation" class="btn-run" style="padding: 6px 14px; font-size: 0.82rem;">
+              🔬 Run Factor Ablation
+            </button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Strategy Factor Filter</th>
+                  <th>Description</th>
+                  <th>Status</th>
+                  <th>Delta Sharpe</th>
+                  <th>Delta Win Rate %</th>
+                  <th>Delta Realized P&L</th>
+                  <th>Max DD Reduction</th>
+                  <th>Trades Pruned</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="teFactorsBody">
+                <tr><td colspan="9" class="empty-state">Click "Run Factor Ablation" to compute marginal alpha contributions.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Subpanel 4: Production Config Exporter ───────────────────────── -->
+      <div id="subConfigExport" class="te-subpanel" style="display: none;">
+        <div class="card" style="margin-bottom: 20px;">
+          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <h3 style="margin: 0;">Empirical Recommendations for Trading Engine</h3>
+              <p style="margin: 4px 0 0; color: var(--text-muted); font-size: 0.8rem;">
+                Synthesized parameter improvements based on backtests, factor ablation, and AI confidence calibration.
+              </p>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <button id="btnCopyEnv" class="btn-secondary" style="font-size: 0.82rem;">📋 Copy .env</button>
+              <button id="btnDownloadEnv" class="btn-run" style="padding: 6px 14px; font-size: 0.82rem;">💾 Download .env</button>
+            </div>
+          </div>
+          <div id="teRecommendationsContainer" style="padding: 14px 18px; border-bottom: 1px solid rgba(255,255,255,0.06);">
+            <ul id="teRecommendationsList" style="margin: 0; padding-left: 20px; color: var(--accent-cyan); font-size: 0.85rem; line-height: 1.6;">
+              <li>Click "Run Full Analysis" to generate data-driven recommendations.</li>
+            </ul>
+          </div>
+          <div style="padding: 16px;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+              <span style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">trading-engine/.env configuration payload</span>
+              <span style="font-size: 0.75rem; color: var(--green);">Ready for production</span>
+            </div>
+            <pre id="teEnvPreview" style="background: rgba(0,0,0,0.5); padding: 14px; border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-size: 0.84rem; color: #7ee787; overflow-x: auto; max-height: 320px; margin: 0; border: 1px solid rgba(255,255,255,0.08);"></pre>
+          </div>
         </div>
       </div>
     </div>

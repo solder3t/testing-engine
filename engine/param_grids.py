@@ -23,8 +23,9 @@ from strategies.pcr_reversion import PcrReversionStrategy
 from strategies.banknifty_options import BankNiftyOptionsStrategy
 from strategies.futures_trend import FuturesTrendStrategy
 from strategies.max_pain import MaxPainConvergenceStrategy
+from strategies.trading_engine_v4 import TradingEngineV4Strategy
 
-# Strategy class mapping (16 strategies)
+# Strategy class mapping (17 strategies)
 STRATEGY_REGISTRY: Dict[str, Type[BaseStrategy]] = {
     "equity": EquityMomentumStrategy,
     "orb": OrbBreakoutStrategy,
@@ -42,6 +43,8 @@ STRATEGY_REGISTRY: Dict[str, Type[BaseStrategy]] = {
     "banknifty-options": BankNiftyOptionsStrategy,
     "futures-trend": FuturesTrendStrategy,
     "max-pain": MaxPainConvergenceStrategy,
+    "trading-engine-v4": TradingEngineV4Strategy,
+    "trading_engine_v4": TradingEngineV4Strategy,
 }
 
 # Sensible default parameter grids for grid search & walk-forward analysis
@@ -125,6 +128,24 @@ DEFAULT_PARAM_GRIDS: Dict[str, Dict[str, List[Any]]] = {
         "min_displacement": [30.0, 40.0, 50.0],
         "sl_pct": [0.25, 0.30],
         "target_pct": [0.40, 0.50],
+    },
+    "trading-engine-v4": {
+        "min_signal_score": [60, 65, 70],
+        "vix_halt_threshold": [22.0, 24.0, 26.0],
+        "adx_trend_level": [20.0, 25.0],
+        "use_cpr": [True, False],
+        "use_htf_15m": [True, False],
+        "use_adx_regime": [True, False],
+        "use_vix_filter": [True, False],
+    },
+    "trading_engine_v4": {
+        "min_signal_score": [60, 65, 70],
+        "vix_halt_threshold": [22.0, 24.0, 26.0],
+        "adx_trend_level": [20.0, 25.0],
+        "use_cpr": [True, False],
+        "use_htf_15m": [True, False],
+        "use_adx_regime": [True, False],
+        "use_vix_filter": [True, False],
     },
 }
 

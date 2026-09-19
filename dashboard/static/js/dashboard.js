@@ -26,6 +26,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initWalkForward();
   initParameterOptimizer();
   initCompareModelPicker();
+  initTradingEngineInsights();
 
   // Load default directory
   loadArchives();
@@ -2858,4 +2859,444 @@ function applyParametersToConsole(strat, params) {
   }
 }
 window.applyParametersToConsole = applyParametersToConsole;
+
+
+// ── Trading Engine Deep Integration & Insights Cockpit ──────────────────────────
+function initTradingEngineInsights() {
+  const subBtns = document.querySelectorAll(".te-subtab-btn");
+  const subpanels = document.querySelectorAll(".te-subpanel");
+
+  subBtns.forEach(btn => {
+    btn.addEventListener("click", () => {
+      subBtns.forEach(b => {
+        b.classList.remove("active");
+        b.style.borderColor = "transparent";
+      });
+      btn.classList.add("active");
+      btn.style.borderColor = "var(--accent-cyan)";
+
+      const subId = btn.getAttribute("data-sub");
+      subpanels.forEach(p => {
+        p.style.display = p.id === subId ? "block" : "none";
+      });
+    });
+  });
+
+  // Slider event
+  const slider = document.getElementById("teConfSlider");
+  const sliderVal = document.getElementById("teConfSliderVal");
+  if (slider && sliderVal) {
+    slider.addEventListener("input", (e) => {
+      sliderVal.innerText = parseFloat(e.target.value).toFixed(2);
+    });
+  }
+
+  // Action Buttons
+  const btnRunAll = document.getElementById("btnRunAllEngineInsights");
+  if (btnRunAll) {
+    btnRunAll.addEventListener("click", async () => {
+      btnRunAll.disabled = true;
+      btnRunAll.innerText = "Analyzing...";
+      try {
+        await fetchReconciliation();
+        await fetchAiAnalytics();
+        await fetchConfigExport();
+      } finally {
+        btnRunAll.disabled = false;
+        btnRunAll.innerText = "⚡ Run Full Analysis";
+      }
+    });
+  }
+
+  const btnRefreshRecon = document.getElementById("btnRefreshRecon");
+  if (btnRefreshRecon) {
+    btnRefreshRecon.addEventListener("click", fetchReconciliation);
+  }
+
+  const btnRecalculateAi = document.getElementById("btnRecalculateAi");
+  if (btnRecalculateAi) {
+    btnRecalculateAi.addEventListener("click", fetchAiAnalytics);
+  }
+
+  const btnRunFactors = document.getElementById("btnRunFactorAblation");
+  if (btnRunFactors) {
+    btnRunFactors.addEventListener("click", fetchFactorAblation);
+  }
+
+  const btnCopyEnv = document.getElementById("btnCopyEnv");
+  if (btnCopyEnv) {
+    btnCopyEnv.addEventListener("click", () => {
+      const preview = document.getElementById("teEnvPreview");
+      if (preview && preview.innerText) {
+        navigator.clipboard.writeText(preview.innerText);
+        btnCopyEnv.innerText = "Copied! ✓";
+        btnCopyEnv.style.color = "var(--green)";
+        setTimeout(() => {
+          btnCopyEnv.innerText = "📋 Copy .env";
+          btnCopyEnv.style.color = "";
+        }, 2000);
+      }
+    });
+  }
+
+  const btnDownloadEnv = document.getElementById("btnDownloadEnv");
+  if (btnDownloadEnv) {
+    btnDownloadEnv.addEventListener("click", () => {
+      window.location.href = "/api/trading_engine/export_config?format=env&download=true";
+    });
+  }
+
+  // Populate available dates in teDateSelect if empty
+  populateEngineDates();
+}
+
+async function populateEngineDates() {
+  const select = document.getElementById("teDateSelect");
+  if (!select) return;
+  try {
+    const res = await fetch("/api/archives");
+    const json = await res.json();
+    if (json.status === "ok" && Array.isArray(json.archives)) {
+      const existing = Array.from(select.options).map(o => o.value);
+      json.archives.forEach(a => {
+        if (a.date && !existing.includes(a.date)) {
+          const opt = document.createElement("option");
+          opt.value = a.date;
+          opt.innerText = `${a.date}${a.date === "2026_09_11" ? " (Recorded Live Trades)" : ""}`;
+          select.appendChild(opt);
+        }
+      });
+    }
+  } catch (err) {
+    console.error("Error populating engine dates:", err);
+  }
+}
+
+async function fetchReconciliation() {
+  const select = document.getElementById("teDateSelect");
+  const dateVal = select ? select.value : "2026_09_11";
+  const dateToUse = dateVal === "all" ? "2026_09_11" : dateVal;
+
+  const tbody = document.getElementById("teMatchedBody");
+  if (tbody) {
+    tbody.innerHTML = '<tr><td colspan="12" class="empty-state">Reconciling live executions against theoretical simulation...</td></tr>';
+  }
+
+  try {
+    const res = await fetch(`/api/trading_engine/reconciliation?date=${encodeURIComponent(dateToUse)}`);
+    const json = await res.json();
+    if (json.status === "ok" && json.data) {
+      renderReconciliation(json.data);
+    } else {
+      if (tbody) tbody.innerHTML = `<tr><td colspan="12" class="empty-state" style="color: var(--red);">${json.message || "Reconciliation failed"}</td></tr>`;
+    }
+  } catch (err) {
+    console.error("Error fetching reconciliation:", err);
+    if (tbody) tbody.innerHTML = `<tr><td colspan="12" class="empty-state" style="color: var(--red);">Reconciliation request error: ${err.message}</td></tr>`;
+  }
+}
+
+function renderReconciliation(data) {
+  const sum = data.summary || {};
+
+  // KPIs
+  const kpiEff = document.getElementById("teKpiEfficiency");
+  if (kpiEff) kpiEff.innerText = (sum.overall_execution_efficiency || 0).toFixed(1) + "%";
+
+  const kpiSlip = document.getElementById("teKpiSlippage");
+  if (kpiSlip) {
+    const s = sum.avg_entry_slippage_rs || 0;
+    kpiSlip.innerText = (s >= 0 ? "+" : "") + "₹" + s.toFixed(2);
+    kpiSlip.style.color = s <= 0 ? "var(--green)" : "var(--red)";
+  }
+
+  const kpiSlipPct = document.getElementById("teKpiSlippagePct");
+  if (kpiSlipPct) kpiSlipPct.innerText = `${sum.avg_entry_slippage_pct || 0}% avg entry drift`;
+
+  const kpiLat = document.getElementById("teKpiLatency");
+  if (kpiLat) kpiLat.innerText = `${sum.avg_latency_seconds || 0}s`;
+
+  const kpiPnl = document.getElementById("teKpiPnlDrift");
+  if (kpiPnl) {
+    const d = sum.net_pnl_drift || 0;
+    kpiPnl.innerText = (d >= 0 ? "+" : "") + "₹" + d.toFixed(2);
+    kpiPnl.style.color = d >= 0 ? "var(--green)" : "var(--red)";
+  }
+
+  const kpiPnlSub = document.getElementById("teKpiPnlSub");
+  if (kpiPnlSub) kpiPnlSub.innerText = `Live ₹${sum.total_live_pnl || 0} vs Sim ₹${sum.total_sim_pnl || 0}`;
+
+  const kpiMatched = document.getElementById("teKpiMatchedCount");
+  if (kpiMatched) kpiMatched.innerText = `${sum.matched_count || 0} / ${sum.total_live_trades || 0}`;
+
+  const kpiUnprompted = document.getElementById("teKpiUnpromptedCount");
+  if (kpiUnprompted) kpiUnprompted.innerText = `${sum.unprompted_live_count || 0} unprompted live`;
+
+  // Matched Pairs Table
+  const tbody = document.getElementById("teMatchedBody");
+  if (tbody) {
+    const pairs = data.matched_pairs || [];
+    if (pairs.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="12" class="empty-state">No matching execution pairs found for this session.</td></tr>';
+    } else {
+      tbody.innerHTML = pairs.map(p => {
+        const live = p.live_trade || {};
+        const sim = p.sim_trade || {};
+        const slipColor = p.entry_slippage_rs <= 0 ? "var(--green)" : "var(--red)";
+        const pnlColor = (live.net_pnl || 0) >= 0 ? "var(--green)" : "var(--red)";
+        const effScore = p.execution_efficiency || 0;
+        const effBadge = effScore >= 70 ? "badge-long" : (effScore >= 40 ? "badge-neutral" : "badge-short");
+
+        return `
+          <tr>
+            <td style="font-weight: 700; color: #fff;">${live.symbol || sim.symbol || "--"}</td>
+            <td><span class="badge ${live.side === 'BUY' ? 'badge-long' : 'badge-short'}">${live.side || 'BUY'}</span></td>
+            <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.78rem;">${live.entry_time || "--"}</td>
+            <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; color: var(--text-muted);">${sim.entry_time || "--"}</td>
+            <td style="font-family: 'JetBrains Mono', monospace;">₹${(live.entry_price || 0).toFixed(2)}</td>
+            <td style="font-family: 'JetBrains Mono', monospace; color: var(--text-muted);">₹${(sim.entry_price || 0).toFixed(2)}</td>
+            <td style="font-family: 'JetBrains Mono', monospace; color: ${slipColor}; font-weight: 700;">
+              ${(p.entry_slippage_rs >= 0 ? "+" : "") + p.entry_slippage_rs.toFixed(2)} (${p.entry_slippage_pct.toFixed(1)}%)
+            </td>
+            <td style="font-family: 'JetBrains Mono', monospace;">${p.latency_seconds}s</td>
+            <td style="font-family: 'JetBrains Mono', monospace; color: ${pnlColor}; font-weight: 700;">₹${(live.net_pnl || 0).toFixed(2)}</td>
+            <td style="font-family: 'JetBrains Mono', monospace; color: var(--text-muted);">₹${(sim.net_pnl || 0).toFixed(2)}</td>
+            <td style="font-family: 'JetBrains Mono', monospace;">₹${(p.pnl_variance || 0).toFixed(2)}</td>
+            <td><span class="badge ${effBadge}" style="font-weight: 700;">${effScore.toFixed(0)} / 100</span></td>
+          </tr>
+        `;
+      }).join("");
+    }
+  }
+
+  // Unprompted Table
+  const unpBody = document.getElementById("teUnpromptedBody");
+  if (unpBody) {
+    const unprompted = data.unprompted_live || [];
+    if (unprompted.length === 0) {
+      unpBody.innerHTML = '<tr><td colspan="6" class="empty-state">None</td></tr>';
+    } else {
+      unpBody.innerHTML = unprompted.map(t => {
+        const pColor = (t.net_pnl || 0) >= 0 ? "var(--green)" : "var(--red)";
+        return `
+          <tr>
+            <td style="font-weight: 600;">${t.symbol}</td>
+            <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.76rem;">${t.entry_time.split(" ")[1] || t.entry_time}</td>
+            <td style="font-family: 'JetBrains Mono', monospace;">₹${(t.entry_price || 0).toFixed(2)}</td>
+            <td style="font-family: 'JetBrains Mono', monospace;">₹${(t.exit_price || 0).toFixed(2)}</td>
+            <td style="font-family: 'JetBrains Mono', monospace; color: ${pColor}; font-weight: 700;">₹${(t.net_pnl || 0).toFixed(2)}</td>
+            <td style="font-family: 'JetBrains Mono', monospace; color: var(--accent-cyan);">${t.gemini_confidence ? (t.gemini_confidence * 100).toFixed(0) + "%" : "--"}</td>
+          </tr>
+        `;
+      }).join("");
+    }
+  }
+
+  // Missed Table
+  const missedBody = document.getElementById("teMissedBody");
+  if (missedBody) {
+    const missed = data.missed_signals || [];
+    if (missed.length === 0) {
+      missedBody.innerHTML = '<tr><td colspan="6" class="empty-state">None</td></tr>';
+    } else {
+      missedBody.innerHTML = missed.map(t => {
+        const pColor = (t.net_pnl || 0) >= 0 ? "var(--green)" : "var(--red)";
+        return `
+          <tr>
+            <td style="font-weight: 600;">${t.symbol}</td>
+            <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.76rem;">${t.entry_time.split(" ")[1] || t.entry_time}</td>
+            <td style="font-family: 'JetBrains Mono', monospace;">₹${(t.entry_price || 0).toFixed(2)}</td>
+            <td style="font-family: 'JetBrains Mono', monospace;">₹${(t.exit_price || 0).toFixed(2)}</td>
+            <td style="font-family: 'JetBrains Mono', monospace; color: ${pColor};">₹${(t.net_pnl || 0).toFixed(2)}</td>
+            <td><span class="badge badge-neutral">${t.metadata?.score || "--"}</span></td>
+          </tr>
+        `;
+      }).join("");
+    }
+  }
+}
+
+async function fetchAiAnalytics() {
+  const select = document.getElementById("teDateSelect");
+  const dateVal = select ? select.value : "all";
+  const slider = document.getElementById("teConfSlider");
+  const confTh = slider ? slider.value : "0.70";
+
+  const calBody = document.getElementById("teCalibrationBody");
+  if (calBody) calBody.innerHTML = '<tr><td colspan="5" class="empty-state">Auditing Gemini AI snapshots & computing forward returns...</td></tr>';
+
+  try {
+    const res = await fetch(`/api/trading_engine/ai_analytics?date=${encodeURIComponent(dateVal)}&confidence_threshold=${encodeURIComponent(confTh)}`);
+    const json = await res.json();
+    if (json.status === "ok" && json.data) {
+      renderAiAnalytics(json.data);
+    }
+  } catch (err) {
+    console.error("Error fetching AI analytics:", err);
+  }
+}
+
+function renderAiAnalytics(data) {
+  const sum = data.summary || {};
+  const mat = data.counterfactual_matrix || {};
+
+  // KPIs
+  const kpiDec = document.getElementById("teKpiAiDecisions");
+  if (kpiDec) kpiDec.innerText = (data.total_snapshots || 0).toLocaleString();
+
+  const kpiPrec = document.getElementById("teKpiAiPrecision");
+  if (kpiPrec) kpiPrec.innerText = (mat.precision || 0).toFixed(1) + "%";
+
+  const kpiAcc = document.getElementById("teKpiAiAccuracy");
+  if (kpiAcc) kpiAcc.innerText = (mat.accuracy || 0).toFixed(1) + "%";
+
+  const kpiFilt = document.getElementById("teKpiAiFilterRate");
+  if (kpiFilt) kpiFilt.innerText = `${mat.signals_filtered || 0} (${(((mat.signals_filtered || 0) / (data.total_snapshots || 1)) * 100).toFixed(0)}%)`;
+
+  const kpiOpt = document.getElementById("teKpiAiOptimalTh");
+  if (kpiOpt) kpiOpt.innerText = data.optimal_threshold != null ? Number(data.optimal_threshold).toFixed(2) : "--";
+
+  // Matrix
+  const mTP = document.getElementById("teMatrixTP");
+  if (mTP) mTP.innerText = mat.true_positives || 0;
+  const mFP = document.getElementById("teMatrixFP");
+  if (mFP) mFP.innerText = mat.false_positives || 0;
+  const mTN = document.getElementById("teMatrixTN");
+  if (mTN) mTN.innerText = mat.true_negatives || 0;
+  const mFN = document.getElementById("teMatrixFN");
+  if (mFN) mFN.innerText = mat.false_negatives || 0;
+
+  // Calibration Table
+  const calBody = document.getElementById("teCalibrationBody");
+  if (calBody) {
+    const cal = data.calibration || [];
+    if (cal.length === 0) {
+      calBody.innerHTML = '<tr><td colspan="5" class="empty-state">No calibration buckets available.</td></tr>';
+    } else {
+      calBody.innerHTML = cal.map(c => {
+        const wrColor = c.win_rate >= 50 ? "var(--green)" : (c.win_rate > 0 ? "var(--accent-yellow)" : "var(--text-muted)");
+        return `
+          <tr>
+            <td style="font-family: 'JetBrains Mono', monospace; font-weight: 700;">${c.bucket}</td>
+            <td style="font-family: 'JetBrains Mono', monospace;">${c.count}</td>
+            <td style="font-family: 'JetBrains Mono', monospace;">${c.pct_of_total}%</td>
+            <td style="font-family: 'JetBrains Mono', monospace; color: ${wrColor}; font-weight: 700;">${c.win_rate.toFixed(1)}%</td>
+            <td style="font-family: 'JetBrains Mono', monospace;">${c.avg_return_pct.toFixed(3)}%</td>
+          </tr>
+        `;
+      }).join("");
+    }
+  }
+
+  // Keywords Table
+  const kwBody = document.getElementById("teKeywordsBody");
+  if (kwBody) {
+    const kws = data.reasoning_insights || [];
+    if (kws.length === 0) {
+      kwBody.innerHTML = '<tr><td colspan="5" class="empty-state">No reasoning keywords found.</td></tr>';
+    } else {
+      kwBody.innerHTML = kws.map(k => {
+        const badge = k.alpha_rating === 'HIGH' ? 'badge-long' : (k.alpha_rating === 'NEUTRAL' ? 'badge-neutral' : 'badge-short');
+        return `
+          <tr>
+            <td style="font-weight: 700; color: #fff;">"${k.keyword}"</td>
+            <td style="font-family: 'JetBrains Mono', monospace;">${k.occurrences}</td>
+            <td style="font-family: 'JetBrains Mono', monospace; font-weight: 700;">${k.win_rate.toFixed(1)}%</td>
+            <td style="font-family: 'JetBrains Mono', monospace;">${k.avg_return_pct.toFixed(3)}%</td>
+            <td><span class="badge ${badge}" style="font-weight: 700;">${k.alpha_rating}</span></td>
+          </tr>
+        `;
+      }).join("");
+    }
+  }
+}
+
+async function fetchFactorAblation() {
+  const select = document.getElementById("teDateSelect");
+  const dateVal = select ? select.value : "2026_09_11";
+  const dates = dateVal === "all" ? ["2026_09_11", "2026_09_08"] : [dateVal];
+
+  const tbody = document.getElementById("teFactorsBody");
+  if (tbody) tbody.innerHTML = '<tr><td colspan="9" class="empty-state">Executing factor ablation passes across market sessions...</td></tr>';
+
+  try {
+    const res = await fetch("/api/trading_engine/factor_attribution", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dates: dates })
+    });
+    const json = await res.json();
+    if (json.status === "ok" && json.data) {
+      renderFactorAblation(json.data);
+    }
+  } catch (err) {
+    console.error("Error fetching factor ablation:", err);
+  }
+}
+
+function renderFactorAblation(data) {
+  const tbody = document.getElementById("teFactorsBody");
+  if (!tbody) return;
+  const factors = data.factors || [];
+  if (factors.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="9" class="empty-state">No factor ablation data returned.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = factors.map(f => {
+    const badge = f.status === 'VALUE_ADD' ? 'badge-long' : (f.status === 'DRAG' ? 'badge-short' : 'badge-neutral');
+    const sharpeColor = f.delta_sharpe >= 0 ? "var(--green)" : "var(--red)";
+    const wrColor = f.delta_win_rate >= 0 ? "var(--green)" : "var(--red)";
+    const pnlColor = f.delta_net_pnl >= 0 ? "var(--green)" : "var(--red)";
+
+    return `
+      <tr>
+        <td style="font-weight: 700; color: #fff;">${f.factor_name}</td>
+        <td style="color: var(--text-muted); font-size: 0.8rem;">${f.description}</td>
+        <td><span class="badge ${badge}" style="font-weight: 700;">${f.status}</span></td>
+        <td style="font-family: 'JetBrains Mono', monospace; color: ${sharpeColor}; font-weight: 700;">
+          ${(f.delta_sharpe >= 0 ? "+" : "") + f.delta_sharpe.toFixed(2)}
+        </td>
+        <td style="font-family: 'JetBrains Mono', monospace; color: ${wrColor};">
+          ${(f.delta_win_rate >= 0 ? "+" : "") + f.delta_win_rate.toFixed(1)}%
+        </td>
+        <td style="font-family: 'JetBrains Mono', monospace; color: ${pnlColor}; font-weight: 700;">
+          ₹${(f.delta_net_pnl >= 0 ? "+" : "") + f.delta_net_pnl.toFixed(2)}
+        </td>
+        <td style="font-family: 'JetBrains Mono', monospace;">+${f.drawdown_reduction_pct.toFixed(1)}%</td>
+        <td style="font-family: 'JetBrains Mono', monospace;">${f.trades_filtered}</td>
+        <td><span class="badge ${f.status === 'VALUE_ADD' ? 'badge-long' : 'badge-neutral'}">${f.action_recommendation}</span></td>
+      </tr>
+    `;
+  }).join("");
+}
+
+async function fetchConfigExport() {
+  try {
+    const res = await fetch("/api/trading_engine/export_config");
+    const json = await res.json();
+    if (json.status === "ok" && json.data) {
+      renderConfigExport(json.data);
+    }
+  } catch (err) {
+    console.error("Error fetching config export:", err);
+  }
+}
+
+function renderConfigExport(data) {
+  const recList = document.getElementById("teRecommendationsList");
+  if (recList) {
+    const recs = data.recommendations || [];
+    if (recs.length === 0) {
+      recList.innerHTML = '<li>All strategy parameters verified against current quantitative standards.</li>';
+    } else {
+      recList.innerHTML = recs.map(r => `<li>${r}</li>`).join("");
+    }
+  }
+
+  const preview = document.getElementById("teEnvPreview");
+  if (preview) {
+    preview.innerText = data.env_content || "";
+  }
+}
 

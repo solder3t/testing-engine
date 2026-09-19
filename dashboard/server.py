@@ -70,6 +70,11 @@ from engine.walk_forward import WalkForwardOptimizer
 from engine.param_grids import STRATEGY_REGISTRY, DEFAULT_PARAM_GRIDS, get_strategy_class, get_default_param_grid
 from analytics.trade_exporter import TradeExporter
 from analytics.tearsheet import generate_html_tearsheet
+from analytics.reconciliation import ReconciliationEngine
+from analytics.ai_decision_analyzer import AIDecisionAnalyzer
+from analytics.factor_attribution import FactorAttributionEngine
+from strategies.trading_engine_v4 import TradingEngineV4Strategy
+from data.data_loader import DataLoader
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("dashboard_server")
@@ -1010,6 +1015,154 @@ def export_tearsheet():
         mimetype="text/html",
         headers={"Content-Disposition": f"attachment; filename=tearsheet_{strat}.html"}
     )
+
+
+# ── Trading Engine Deep Integration & Strategy Analytics Endpoints ──────────
+
+@app.route("/api/trading_engine/reconciliation", methods=["GET", "POST"])
+def api_trading_engine_reconciliation():
+    """
+    Reconciles live/paper recorded trades against backtest simulation trades.
+    """
+    try:
+        if request.method == "POST":
+            data = request.get_json() or {}
+        else:
+            data = request.args.to_dict()
+
+        source_dir = data.get("source_dir")
+        dl = DataLoader(source_dir=source_dir)
+        date_str = data.get("date")
+        if not date_str:
+            dates = dl.get_available_dates()
+            date_str = dates[-1] if dates else "2026_09_11"
+
+        symbols = data.get("symbols")
+        if isinstance(symbols, str):
+            symbols = [s.strip() for s in symbols.split(",") if s.strip()]
+
+        params = data.get("params") or {}
+        reconciler = ReconciliationEngine(data_loader=dl)
+        result = reconciler.run_reconciliation(
+            date_str=date_str,
+            strategy_params=params,
+            symbols=symbols
+        )
+        return jsonify({"status": "ok", "date": date_str, "data": result})
+    except Exception as e:
+        logger.error(f"Error in reconciliation endpoint: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/api/trading_engine/ai_analytics", methods=["GET", "POST"])
+def api_trading_engine_ai_analytics():
+    """
+    Evaluates Gemini AI snapshots against forward market returns,
+    confidence calibration, counterfactual accuracy, and reasoning attribution.
+    """
+    try:
+        if request.method == "POST":
+            data = request.get_json() or {}
+        else:
+            data = request.args.to_dict()
+
+        date_str = data.get("date", "all")
+        conf_threshold = float(data.get("confidence_threshold") or 0.70)
+        source_dir = data.get("source_dir")
+        dl = DataLoader(source_dir=source_dir)
+        analyzer = AIDecisionAnalyzer(data_loader=dl)
+
+        if str(date_str).lower() in ("all", "multi", ""):
+            result = analyzer.analyze_multi_session(confidence_threshold=conf_threshold)
+        else:
+            result = analyzer.analyze_session(date_str=date_str, confidence_threshold=conf_threshold)
+
+        return jsonify({"status": "ok", "data": result})
+    except Exception as e:
+        logger.error(f"Error in AI analytics endpoint: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/api/trading_engine/factor_attribution", methods=["POST"])
+def api_trading_engine_factor_attribution():
+    """
+    Runs factor ablation passes to quantify marginal alpha contributions of Strategy v4 filters.
+    """
+    try:
+        data = request.get_json() or {}
+        dates = data.get("dates") or []
+        if isinstance(dates, str):
+            dates = [d.strip() for d in dates.split(",") if d.strip()]
+        symbols = data.get("symbols") or ["NIFTY"]
+        if isinstance(symbols, str):
+            symbols = [s.strip() for s in symbols.split(",") if s.strip()]
+        base_params = data.get("base_params") or {}
+        capital = float(data.get("capital") or DEFAULT_CAPITAL)
+        source_dir = data.get("source_dir")
+
+        dl = DataLoader(source_dir=source_dir)
+        if not dates:
+            dates = dl.get_available_dates()[-2:]
+
+        engine = FactorAttributionEngine(data_loader=dl)
+        result = engine.run_ablation(date_strings=dates, symbols=symbols, base_params=base_params, capital=capital)
+        return jsonify({"status": "ok", "data": result})
+    except Exception as e:
+        logger.error(f"Error in factor attribution endpoint: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+_cached_ai_optimal = None
+
+
+@app.route("/api/trading_engine/export_config", methods=["GET", "POST"])
+def api_trading_engine_export_config():
+    """
+    Generates optimized production configuration for trading-engine (.env and JSON).
+    """
+    global _cached_ai_optimal
+    try:
+        if request.method == "POST":
+            data = request.get_json() or {}
+        else:
+            data = request.args.to_dict()
+
+        source_dir = data.get("source_dir")
+        dl = DataLoader(source_dir=source_dir)
+        engine = FactorAttributionEngine(data_loader=dl)
+
+        ablation_results = data.get("ablation_results")
+        ai_analytics = data.get("ai_analytics")
+
+        if not ai_analytics:
+            if _cached_ai_optimal:
+                ai_analytics = _cached_ai_optimal
+            else:
+                try:
+                    ai_analyzer = AIDecisionAnalyzer(data_loader=dl)
+                    ai_analytics = ai_analyzer.analyze_multi_session()
+                    _cached_ai_optimal = ai_analytics
+                except Exception:
+                    ai_analytics = None
+
+        export_data = engine.export_trading_engine_config(
+            ablation_results=ablation_results,
+            ai_analytics=ai_analytics,
+            custom_overrides=data.get("overrides")
+        )
+
+        fmt = str(data.get("format", "")).lower()
+        if fmt == "env" or data.get("download") == "true":
+            return Response(
+                export_data["env_content"],
+                mimetype="text/plain",
+                headers={"Content-Disposition": "attachment; filename=trading_engine.env"}
+            )
+
+        return jsonify({"status": "ok", "data": export_data})
+    except Exception as e:
+        logger.error(f"Error in config export endpoint: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
 def run_server(port: int = DASHBOARD_PORT, host: str = DASHBOARD_HOST):

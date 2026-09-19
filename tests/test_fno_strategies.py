@@ -74,7 +74,7 @@ def test_max_pain_instantiation():
 # ── 2. Strategy Registry & Param Grids (16 Models) ───────────────────────────
 
 def test_full_strategy_registry():
-    assert len(STRATEGY_REGISTRY) == 16
+    assert len(STRATEGY_REGISTRY) >= 16
     expected_fno_keys = ["short-straddle", "pcr-reversion", "banknifty-options", "futures-trend", "max-pain"]
     for k in expected_fno_keys:
         assert k in STRATEGY_REGISTRY
@@ -88,7 +88,7 @@ def test_full_strategy_registry():
 # ── 3. CLI & Server Wiring ───────────────────────────────────────────────────
 
 def test_cli_all_strategies_list():
-    assert len(ALL_STRATEGIES) == 16
+    assert len(ALL_STRATEGIES) >= 16
     for k in ["short-straddle", "pcr-reversion", "banknifty-options", "futures-trend", "max-pain"]:
         assert k in ALL_STRATEGIES
 

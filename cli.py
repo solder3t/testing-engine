@@ -70,7 +70,7 @@ ALL_STRATEGIES = [
     "equity", "orb", "supertrend", "camarilla", "ema-ribbon",
     "bollinger-b", "macd-accel", "vwap-reversion", "rsi-momentum",
     "options", "ai-replay", "short-straddle", "pcr-reversion",
-    "banknifty-options", "futures-trend", "max-pain"
+    "banknifty-options", "futures-trend", "max-pain", "trading-engine-v4"
 ]
 
 
@@ -119,6 +119,10 @@ def _build_strategy(strategy_name: str, args):
         return FuturesTrendStrategy(), ["NIFTY"]
     elif strategy_name == "max-pain":
         return MaxPainConvergenceStrategy(), ["NIFTY"]
+    elif strategy_name in ("trading-engine-v4", "trading_engine_v4"):
+        from strategies.trading_engine_v4 import TradingEngineV4Strategy
+        syms = ["NIFTY"] if cli_symbols == ["auto"] else cli_symbols
+        return TradingEngineV4Strategy(), syms
     else:
         raise ValueError(f"Unknown strategy: {strategy_name}")
 

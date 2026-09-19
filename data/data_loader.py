@@ -59,6 +59,11 @@ class DataLoader:
     def _get_db_path(self, date_str: str, db_name: str) -> Optional[str]:
         return self.archive_manager.get_database_path(date_str, db_name, target_dir=self.source_dir)
 
+    def get_available_dates(self) -> List[str]:
+        """Returns sorted list of available date strings (YYYY_MM_DD)."""
+        archives = self.archive_manager.list_archives(target_dir=self.source_dir)
+        return sorted(list({a["date"] for a in archives if a.get("date")}))
+
     # ── Equities Data ─────────────────────────────────────────────────────────
 
     def get_equity_ticks(self, date_str: str, security_id: int, symbol: str = "") -> pd.DataFrame:

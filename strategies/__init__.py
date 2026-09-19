@@ -19,6 +19,7 @@ from strategies.pcr_reversion import PcrReversionStrategy
 from strategies.banknifty_options import BankNiftyOptionsStrategy
 from strategies.futures_trend import FuturesTrendStrategy
 from strategies.max_pain import MaxPainConvergenceStrategy
+from strategies.trading_engine_v4 import TradingEngineV4Strategy
 
 __all__ = [
     "BaseStrategy",
@@ -38,4 +39,5 @@ __all__ = [
     "BankNiftyOptionsStrategy",
     "FuturesTrendStrategy",
     "MaxPainConvergenceStrategy",
+    "TradingEngineV4Strategy",
 ]
