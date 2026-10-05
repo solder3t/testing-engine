@@ -90,3 +90,72 @@ def test_charges_breakdown_in_portfolio():
     assert "stamp_duty" in cb
     assert cb["total"] > 0
     assert cb["total"] == closed[0].charges
+
+
+def test_portfolio_sector_and_correlation_limits():
+    port = Portfolio(initial_capital=100000.0)
+
+    # 1. Sector Concentration Limit (MAX_SECTOR_EXPOSURE_PCT = 0.35 -> max 35,000 INR)
+    # Opening 30,000 INR of IT sector is OK (30%)
+    t1 = port.open_trade(
+        symbol="INFY",
+        security_id=1,
+        side=OrderSide.BUY,
+        price=1000.0,
+        qty=30,
+        sl=950.0,
+        target=1100.0,
+        entry_time="2026-09-02 09:30:00",
+        metadata={"sector": "Information Technology"}
+    )
+    assert t1 is not None
+    assert len(port.open_trades) == 1
+
+    # Attempting another 10,000 INR in IT would make 40,000 INR (40% > 35%) -> Blocked!
+    t2 = port.open_trade(
+        symbol="TCS",
+        security_id=2,
+        side=OrderSide.BUY,
+        price=1000.0,
+        qty=10,
+        sl=950.0,
+        target=1100.0,
+        entry_time="2026-09-02 09:31:00",
+        metadata={"sector": "Information Technology"}
+    )
+    assert t2 is None
+    assert len(port.open_trades) == 1
+
+
+def test_span_margin_tracking_and_release():
+    port = Portfolio(initial_capital=100000.0)
+    assert port.blocked_margin == 0.0
+
+    # Open a futures trade (Futures margin ~22% of notional)
+    # Notional = 20,000 * 25 = 500,000. Margin ~ 110,000.
+    # Let's open 1 lot of 10 qty at 1000 = 10,000 notional -> margin ~ 2,200
+    trade = port.open_trade(
+        symbol="NIFTY",
+        security_id=100,
+        side=OrderSide.BUY,
+        price=1000.0,
+        qty=10,
+        sl=980.0,
+        target=1040.0,
+        entry_time="2026-09-02 09:30:00",
+        instrument_type=InstrumentType.FUTURES
+    )
+    assert trade is not None
+    assert "margin_blocked" in trade.metadata
+    blocked = trade.metadata["margin_blocked"]
+    assert blocked > 0
+    assert port.blocked_margin == blocked
+
+    # Close trade and verify margin is released
+    quotes = {"NIFTY": {"open": 1020.0, "high": 1045.0, "low": 1015.0, "close": 1042.0}}
+    closed = port.update_open_trades("2026-09-02 09:40:00", quotes)
+
+    assert len(closed) == 1
+    assert closed[0].metadata.get("margin_freed") == blocked
+    assert port.blocked_margin == 0.0
+

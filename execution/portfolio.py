@@ -1,37 +1,35 @@
 """
-execution/portfolio.py — Portfolio Manager, Position Sizing & Risk Controls.
+execution/portfolio.py — Portfolio Manager, Dynamic Position Sizing & Risk Controls.
 """
 
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple, Union
 import math
 
-from config import (
-    DEFAULT_CAPITAL,
-    DEFAULT_RISK_PCT_PER_TRADE,
-    MAX_POSITIONS,
-    MAX_POSITIONS_PER_SECTOR,
-    MAX_QTY_PER_TRADE,
-    FORCE_SQUARE_OFF_TIME
-)
+import config
+from data.instrument_master import InstrumentMaster
+from data.expiry_calendar import ExpiryCalendar
+from data.span_margin import SpanMarginCalculator, estimate_span_margin
 from execution.order import OrderSide, InstrumentType, Trade
+from execution.risk_manager import RiskManager
 from execution.simulator import ExecutionSimulator
 
 
 class Portfolio:
-    """Tracks capital, active positions, trailing stop-losses, and performance."""
+    """Tracks capital, active positions, trailing stop-losses, kill switches, and performance."""
 
     def __init__(
         self,
-        initial_capital: float = DEFAULT_CAPITAL,
-        risk_pct_per_trade: float = DEFAULT_RISK_PCT_PER_TRADE,
+        initial_capital: float = config.DEFAULT_CAPITAL,
+        risk_pct_per_trade: float = config.DEFAULT_RISK_PCT_PER_TRADE,
         simulator: Optional[ExecutionSimulator] = None,
-        circuit_limits: Optional[Dict[str, Any]] = None
+        risk_manager: Optional[RiskManager] = None
     ):
         self.initial_capital = initial_capital
         self.capital = initial_capital
+        self.blocked_margin: float = 0.0
         self.risk_pct_per_trade = risk_pct_per_trade
         self.simulator = simulator or ExecutionSimulator()
-        self.circuit_limits = circuit_limits or {}
+        self.risk_manager = risk_manager or RiskManager(capital=initial_capital)
 
         self.open_trades: List[Trade] = []
         self.closed_trades: List[Trade] = []
@@ -42,33 +40,47 @@ class Portfolio:
         self,
         symbol: str,
         sector: str = "",
-        side: Optional[OrderSide] = None,
-        price: float = 0.0
-    ) -> tuple[bool, str]:
-        """Check portfolio capacity, sector concentration, and circuit limits."""
-        if len(self.open_trades) >= MAX_POSITIONS:
-            return False, f"Max positions reached ({MAX_POSITIONS})"
+        new_trade_value: float = 0.0,
+        price_history: Optional[Dict[str, List[float]]] = None
+    ) -> Tuple[bool, str]:
+        """Check risk manager state, portfolio capacity, sector limits, and correlation limits."""
+        # 1. Institutional Risk Controls / Kill Switch Check
+        allowed, reason = self.risk_manager.check_entry_allowed()
+        if not allowed:
+            return False, reason
 
-        # Check if already in trade on this symbol
+        # 2. Maximum Concurrent Positions
+        if len(self.open_trades) >= config.MAX_POSITIONS:
+            return False, f"Max positions reached ({config.MAX_POSITIONS})"
+
+        # 3. No duplicate positions in same symbol
         if any(t.symbol == symbol for t in self.open_trades):
             return False, f"Already holding position in {symbol}"
 
-        # Sector concentration check
-        if sector and sector != "Other" and sector != "Index":
+        # 4. Sector Concentration (Position count limit)
+        if sector and sector not in ("Other", "Index", "Unknown"):
             sector_count = sum(1 for t in self.open_trades if t.metadata.get("sector") == sector)
-            if sector_count >= MAX_POSITIONS_PER_SECTOR:
-                return False, f"Sector limit reached for {sector} ({MAX_POSITIONS_PER_SECTOR})"
+            if sector_count >= config.MAX_POSITIONS_PER_SECTOR:
+                return False, f"Sector limit reached for {sector} ({config.MAX_POSITIONS_PER_SECTOR})"
 
-        # Circuit limit validation
-        if self.circuit_limits and price > 0 and side is not None:
-            limit = self.circuit_limits.get(symbol) or self.circuit_limits.get(str(symbol))
-            if limit:
-                upper = float(limit.get("upper", 0.0))
-                lower = float(limit.get("lower", 0.0))
-                if side == OrderSide.BUY and upper > 0 and price >= upper:
-                    return False, f"Upper circuit limit reached for {symbol} ({upper})"
-                elif side == OrderSide.SELL and lower > 0 and price <= lower:
-                    return False, f"Lower circuit limit reached for {symbol} ({lower})"
+        # 5. Sector Exposure Limit (% of capital)
+        sec_allowed, sec_reason = self.risk_manager.check_sector_exposure(
+            self.open_trades,
+            sector,
+            new_trade_value=new_trade_value,
+            capital=self.capital
+        )
+        if not sec_allowed:
+            return False, sec_reason
+
+        # 6. Correlated Legs Limit
+        corr_allowed, corr_reason = self.risk_manager.check_correlation_limit(
+            self.open_trades,
+            symbol,
+            price_history=price_history
+        )
+        if not corr_allowed:
+            return False, corr_reason
 
         return True, "OK"
 
@@ -84,27 +96,35 @@ class Portfolio:
         entry_price: float,
         stop_loss: float,
         score: int = 70,
-        lot_size: int = 1,
-        instrument_type: Optional[InstrumentType] = None,
-        underlying: str = ""
+        lot_size: Optional[int] = None,
+        symbol: str = "NIFTY",
+        trade_date: Optional[str] = None,
+        instrument_type: InstrumentType = InstrumentType.FUTURES,
+        side: OrderSide = OrderSide.BUY
     ) -> int:
         """
-        Calculates position size strictly bounded by risk-per-trade and statutory freeze limits.
-
-        Uses effective capital (realized cash + unrealized P&L from open positions)
-        so that ongoing losing trades reduce the available risk budget for new entries.
+        Calculates position size strictly bounded by risk-per-trade,
+        margin requirements, instrument-specific point-in-time lot sizes, and NSE freeze limits.
         """
         risk_per_unit = abs(entry_price - stop_loss)
-        if risk_per_unit <= 0:
-            return lot_size
+        
+        # Determine point-in-time lot size dynamically
+        effective_lot = lot_size
+        if effective_lot is None or effective_lot <= 1:
+            effective_lot = InstrumentMaster.get_lot_size(symbol, trade_date, is_derivative=True)
+        if effective_lot <= 0:
+            effective_lot = 1
 
-        # Effective capital includes unrealized P&L from open trades (from last equity snapshot)
-        # Falls back to realized capital if no equity points recorded yet
+        if risk_per_unit <= 0:
+            return effective_lot
+
+        # Effective capital includes unrealized P&L
         effective_capital = (
             self.equity_curve[-1]["equity"] if self.equity_curve else self.capital
         )
+        available_capital = max(0.0, effective_capital - getattr(self, "blocked_margin", 0.0))
 
-        risk_capital = effective_capital * self.risk_pct_per_trade
+        risk_capital = available_capital * self.risk_pct_per_trade
 
         # Score scaling
         if score >= 80:
@@ -115,21 +135,28 @@ class Portfolio:
         raw_qty = risk_capital / risk_per_unit
 
         # Lot size normalization
-        lots = max(1, math.floor(raw_qty / lot_size))
-        qty = lots * lot_size
+        lots = max(1, math.floor(raw_qty / effective_lot))
+        qty = lots * effective_lot
 
-        # Statutory freeze limit (NSE limits: 1800 for NIFTY options, 900 for BANKNIFTY)
-        max_limit = MAX_QTY_PER_TRADE
-        if instrument_type in (InstrumentType.OPTION_CE, InstrumentType.OPTION_PE, InstrumentType.FUTURES) or (
-            instrument_type and "OPTION" in str(instrument_type)
-        ):
-            u_str = str(underlying).upper()
-            if "BANKNIFTY" in u_str:
-                max_limit = 900
-            else:
-                max_limit = 1800
+        # Dynamic SPAN Margin Constraint
+        margin_per_lot = SpanMarginCalculator.estimate_margin(
+            symbol=symbol,
+            instrument_type=instrument_type,
+            side=side,
+            price=entry_price,
+            qty=effective_lot,
+            trade_date=trade_date
+        )
+        if margin_per_lot > 0 and available_capital > 0:
+            max_lots_by_margin = math.floor(available_capital / margin_per_lot)
+            if max_lots_by_margin < lots:
+                lots = max(1, max_lots_by_margin)
+                qty = lots * effective_lot
 
-        return max(lot_size, min(qty, max_limit))
+        # Clamp by instrument freeze limit and configured max qty
+        freeze_qty = InstrumentMaster.get_freeze_qty(symbol)
+        max_allowed = min(freeze_qty, config.MAX_QTY_PER_TRADE)
+        return max(effective_lot, min(qty, max_allowed))
 
     def open_trade(
         self,
@@ -144,23 +171,42 @@ class Portfolio:
         instrument_type: InstrumentType = InstrumentType.EQUITY,
         metadata: Optional[Dict] = None,
         bid_ask_spread: float = 0.0,
-        bar_range_pct: float = 0.0
+        depth_row: Optional[Dict] = None
     ) -> Optional[Trade]:
-        """Opens a new trade, applying slippage, volatility adjustments, and entry charges."""
+        """Opens a new trade, applying slippage, entry charges, and margin blocking."""
+        meta = metadata.copy() if metadata else {}
+        est_val = price * qty
         can_open, reason = self.can_open_trade(
             symbol=symbol,
-            sector=metadata.get("sector", "") if metadata else "",
-            side=side,
-            price=price
+            sector=meta.get("sector", ""),
+            new_trade_value=est_val,
+            price_history=meta.get("price_history")
         )
         if not can_open:
             return None
+
+        # Block margin
+        trade_date_str = entry_time.split(" ")[0] if " " in entry_time else None
+        required_margin = SpanMarginCalculator.estimate_margin(
+            symbol=symbol,
+            instrument_type=instrument_type,
+            side=side,
+            price=price,
+            qty=qty,
+            underlying_price=meta.get("underlying_price"),
+            trade_date=trade_date_str
+        )
+        meta["margin_blocked"] = required_margin
+        self.blocked_margin += required_margin
+
+        meta["entry_bar_time"] = entry_time
 
         fill_price = self.simulator.calculate_fill_price(
             side=side,
             reference_price=price,
             bid_ask_spread=bid_ask_spread,
-            bar_range_pct=bar_range_pct
+            qty=qty,
+            depth_row=depth_row
         )
 
         entry_charges_dict = self.simulator.calculate_charges(
@@ -171,105 +217,227 @@ class Portfolio:
         )
         entry_charges = entry_charges_dict["total"]
 
-        trade_meta = dict(metadata or {})
-        trade_meta["entry_charges"] = entry_charges_dict
-
+        meta["entry_charges"] = entry_charges_dict
         trade = Trade(
             symbol=symbol,
             security_id=security_id,
             side=side,
-            qty=qty,
             entry_time=entry_time,
             entry_price=fill_price,
+            qty=qty,
             initial_sl=sl,
             current_sl=sl,
             target=target,
             instrument_type=instrument_type,
             charges=entry_charges,
-            metadata=trade_meta
+            metadata=meta
         )
-
+        self._record_trade_component_charges(trade, entry_charges_dict)
         self.open_trades.append(trade)
         return trade
 
+    def _record_trade_component_charges(self, trade: Trade, charges_dict: Dict[str, float]):
+        trade.metadata["brokerage"] = trade.metadata.get("brokerage", 0.0) + charges_dict["brokerage"]
+        trade.metadata["stt"] = trade.metadata.get("stt", 0.0) + charges_dict["stt"]
+        trade.metadata["exchange_fee"] = trade.metadata.get("exchange_fee", 0.0) + charges_dict["exchange_fee"]
+        trade.metadata["gst"] = trade.metadata.get("gst", 0.0) + charges_dict["gst"]
+        trade.metadata["sebi"] = trade.metadata.get("sebi", 0.0) + charges_dict["sebi"]
+        trade.metadata["stamp_duty"] = trade.metadata.get("stamp_duty", 0.0) + charges_dict["stamp_duty"]
+
     def _finalize_trade_charges(self, trade: Trade, exit_charges_dict: Dict[str, float]):
-        entry_dict = trade.metadata.get("entry_charges", {})
-        combined = {
-            "brokerage": round(entry_dict.get("brokerage", 0.0) + exit_charges_dict.get("brokerage", 0.0), 2),
-            "stt": round(entry_dict.get("stt", 0.0) + exit_charges_dict.get("stt", 0.0), 2),
-            "exchange_fee": round(entry_dict.get("exchange_fee", 0.0) + exit_charges_dict.get("exchange_fee", 0.0), 2),
-            "gst": round(entry_dict.get("gst", 0.0) + exit_charges_dict.get("gst", 0.0), 2),
-            "sebi": round(entry_dict.get("sebi", 0.0) + exit_charges_dict.get("sebi", 0.0), 2),
-            "stamp_duty": round(entry_dict.get("stamp_duty", 0.0) + exit_charges_dict.get("stamp_duty", 0.0), 2),
-            "total": round(entry_dict.get("total", 0.0) + exit_charges_dict.get("total", 0.0), 2),
-        }
+        self._record_trade_component_charges(trade, exit_charges_dict)
         trade.metadata["exit_charges"] = exit_charges_dict
+        entry_c = trade.metadata.get("entry_charges", {})
+        combined = {}
+        for k in ["brokerage", "stt", "exchange_fee", "gst", "sebi", "stamp_duty", "total"]:
+            combined[k] = round(entry_c.get(k, 0.0) + exit_charges_dict.get(k, 0.0), 2)
         trade.metadata["charges_breakdown"] = combined
 
-    def update_open_trades(
+    def _release_trade_margin(self, trade: Trade) -> float:
+        """Frees blocked margin associated with a trade upon exit."""
+        margin_blocked = trade.metadata.get("margin_blocked", 0.0)
+        if margin_blocked > 0:
+            self.blocked_margin = max(0.0, self.blocked_margin - margin_blocked)
+            trade.metadata["margin_freed"] = margin_blocked
+        return margin_blocked
+
+    def close_trade(
+        self,
+        trade: Trade,
+        exit_time: str,
+        exit_price: float,
+        exit_reason: str = "MANUAL_CLOSE",
+        exit_charges: float = 0.0
+    ) -> Trade:
+        """Explicitly closes an active trade, updates PnL, frees margin, and moves to closed trades."""
+        trade.close(
+            exit_time=exit_time,
+            exit_price=exit_price,
+            exit_reason=exit_reason,
+            total_charges=trade.charges + exit_charges
+        )
+        self.capital += trade.net_pnl
+        self.daily_pnl += trade.net_pnl
+        self.risk_manager.record_trade_completion(trade.net_pnl, exit_time)
+        self._release_trade_margin(trade)
+        if trade in self.open_trades:
+            self.open_trades.remove(trade)
+        self.closed_trades.append(trade)
+        return trade
+
+    def close_position_manually(
+        self,
+        symbol: str,
+        timestamp: str,
+        exit_price: float,
+        reason: str = "MANUAL_EXIT",
+        depth_row: Optional[Dict] = None
+    ) -> Optional[Trade]:
+        """Manually closes an active open position."""
+        trade = self.get_position(symbol)
+        if not trade:
+            return None
+
+        exit_side = OrderSide.SELL if trade.side == OrderSide.BUY else OrderSide.BUY
+        fill_exit_price = self.simulator.calculate_fill_price(
+            side=exit_side,
+            reference_price=exit_price,
+            qty=trade.qty,
+            depth_row=depth_row
+        )
+
+        exit_charges_dict = self.simulator.calculate_charges(
+            side=exit_side,
+            price=fill_exit_price,
+            qty=trade.qty,
+            instrument_type=trade.instrument_type
+        )
+        exit_charges = exit_charges_dict["total"]
+        self._finalize_trade_charges(trade, exit_charges_dict)
+
+        trade.close(
+            exit_time=timestamp,
+            exit_price=fill_exit_price,
+            exit_reason=reason,
+            total_charges=trade.charges + exit_charges
+        )
+
+        self.capital += trade.net_pnl
+        self.daily_pnl += trade.net_pnl
+        self.risk_manager.record_trade_completion(trade.net_pnl, timestamp)
+        self._release_trade_margin(trade)
+
+        self.open_trades.remove(trade)
+        self.closed_trades.append(trade)
+        return trade
+
+    def check_positions_on_bar(
         self,
         timestamp: str,
         symbol_quotes: Dict[str, Dict]
     ) -> List[Trade]:
         """
-        Evaluates open trades against latest high/low/close prices.
-        Checks for Target hit, Stop-Loss hit, and updates breakeven/trailing stops.
-        Returns list of trades closed during this step.
+        Evaluates stops, targets, time exits, and kill switches on every incoming bar.
+        Enforces:
+        1. Intraday Daily Loss Kill Switch.
+        2. Lookahead bias protection (no intra-bar SL/target exit on entry bar).
+        3. Conservative SL before Target priority during ambiguous bars.
         """
-        just_closed = []
-        remaining = []
+        just_closed: List[Trade] = []
+        self.risk_manager.step_bar()
 
-        is_eod = False
-        time_part = timestamp.split(" ")[-1] if " " in timestamp else timestamp
-        if time_part >= FORCE_SQUARE_OFF_TIME:
-            is_eod = True
+        # Check Kill Switch
+        if self.risk_manager.evaluate_intraday_pnl(self.daily_pnl, timestamp):
+            # Liquidate all open positions immediately
+            for trade in list(self.open_trades):
+                quote = symbol_quotes.get(trade.symbol)
+                mkt_price = quote.get("close", trade.entry_price) if quote else trade.entry_price
+                closed_trade = self.close_position_manually(
+                    trade.symbol, timestamp, mkt_price, reason="KILL_SWITCH_HIT"
+                )
+                if closed_trade:
+                    just_closed.append(closed_trade)
+            return just_closed
+
+        remaining: List[Trade] = []
+        time_part = timestamp.split(" ")[-1][:5] if " " in timestamp else timestamp[:5]
 
         for trade in self.open_trades:
-            trade.holding_bars += 1
             quote = symbol_quotes.get(trade.symbol)
             if not quote:
                 remaining.append(trade)
                 continue
 
-            curr_close = quote.get("close", quote.get("ltp", trade.entry_price))
-            curr_high = quote.get("high", curr_close)
-            curr_low = quote.get("low", curr_close)
-            spread = quote.get("bid_ask_spread", 0.0)
+            curr_close = float(quote.get("close", quote.get("ltp", trade.entry_price)))
+            curr_high = float(quote.get("high", curr_close))
+            curr_low = float(quote.get("low", curr_close))
 
-            # ── Check EOD Force Close ─────────────────────────────────────────
-            if is_eod:
-                exit_price = self.simulator.calculate_fill_price(
-                    side=OrderSide.SELL if trade.side == OrderSide.BUY else OrderSide.BUY,
-                    reference_price=curr_close,
-                    bid_ask_spread=spread
-                )
+            # ── Excursion tracking (MFE & MAE) ───────────────────────────────
+            if trade.side == OrderSide.BUY:
+                favorable_pts = curr_high - trade.entry_price
+                adverse_pts = trade.entry_price - curr_low
+            else:
+                favorable_pts = trade.entry_price - curr_low
+                adverse_pts = curr_high - trade.entry_price
+
+            if favorable_pts > trade.mfe_pts:
+                trade.mfe_pts = round(favorable_pts, 2)
+                trade.mfe_pct = round((favorable_pts / trade.entry_price) * 100, 4) if trade.entry_price > 0 else 0.0
+
+            if adverse_pts > trade.mae_pts:
+                trade.mae_pts = round(adverse_pts, 2)
+                trade.mae_pct = round((adverse_pts / trade.entry_price) * 100, 4) if trade.entry_price > 0 else 0.0
+
+            # ── Expiry Day ITM Option STT Penalty ────────────────────────────
+            date_part = timestamp.split(" ")[0] if " " in timestamp else ""
+            if date_part and time_part >= "15:15":
+                if trade.instrument_type in (InstrumentType.OPTION_CE, InstrumentType.OPTION_PE):
+                    underlying = trade.metadata.get("underlying", "NIFTY")
+                    try:
+                        if ExpiryCalendar.is_expiry(date_part, underlying):
+                            strike = float(trade.metadata.get("strike", 0.0))
+                            und_price = float(symbol_quotes.get(underlying, {}).get("close", curr_close))
+                            is_itm = (
+                                (trade.instrument_type == InstrumentType.OPTION_CE and und_price > strike)
+                                or (trade.instrument_type == InstrumentType.OPTION_PE and und_price < strike)
+                            ) if strike > 0 else False
+
+                            if is_itm and trade.side == OrderSide.BUY and "expiry_stt_penalty" not in trade.metadata:
+                                notional = curr_close * trade.qty
+                                expiry_stt = round(notional * 0.00125, 2)
+                                trade.metadata["expiry_stt_penalty"] = expiry_stt
+                                trade.charges += expiry_stt
+                    except Exception:
+                        pass
+
+            # ── 1. End of Day Force Square-off ────────────────────────────────
+            if time_part >= config.FORCE_SQUARE_OFF_TIME:
+                exit_price = curr_close
+                exit_side = OrderSide.SELL if trade.side == OrderSide.BUY else OrderSide.BUY
                 exit_charges_dict = self.simulator.calculate_charges(
-                    side=OrderSide.SELL if trade.side == OrderSide.BUY else OrderSide.BUY,
-                    price=exit_price,
-                    qty=trade.qty,
-                    instrument_type=trade.instrument_type
+                    exit_side, exit_price, trade.qty, trade.instrument_type
                 )
                 exit_charges = exit_charges_dict["total"]
                 self._finalize_trade_charges(trade, exit_charges_dict)
-                trade.close(
-                    exit_time=timestamp,
-                    exit_price=exit_price,
-                    reason="EOD_SQUAREOFF",
-                    charges=trade.charges + exit_charges
-                )
+                trade.close(timestamp, exit_price, "TIME_SQUARE_OFF", trade.charges + exit_charges)
+
                 self.capital += trade.net_pnl
                 self.daily_pnl += trade.net_pnl
+                self.risk_manager.record_trade_completion(trade.net_pnl, timestamp)
+                self._release_trade_margin(trade)
                 self.closed_trades.append(trade)
                 just_closed.append(trade)
                 continue
 
-            # ── Check Target and SL Hits ──────────────────────────────────────
-            # Conservative bar-ambiguity rule: if both SL and target are breached
-            # within the same bar, SL is assumed to have triggered first.
+            # ── 2. Lookahead Bias Protection ──────────────────────────────────
+            # A trade entered on the current bar cannot be triggered on the bar's extreme
+            # range formed prior to entry
+            is_entry_bar = (trade.metadata.get("entry_bar_time") == timestamp)
+
             closed = False
             if trade.side == OrderSide.BUY:
-                # 1. Stop Loss Hit — checked BEFORE target to avoid optimistic bias
-                if curr_low <= trade.current_sl:
+                # 1. Stop Loss Hit — checked BEFORE target
+                if not is_entry_bar and curr_low <= trade.current_sl:
                     exit_price = trade.current_sl
                     exit_charges_dict = self.simulator.calculate_charges(
                         OrderSide.SELL, exit_price, trade.qty, trade.instrument_type
@@ -278,8 +446,8 @@ class Portfolio:
                     self._finalize_trade_charges(trade, exit_charges_dict)
                     trade.close(timestamp, exit_price, "SL_HIT", trade.charges + exit_charges)
                     closed = True
-                # 2. Target Hit — only if SL was NOT also hit on same bar
-                elif curr_high >= trade.target:
+                # 2. Target Hit — only if SL was NOT hit
+                elif not is_entry_bar and curr_high >= trade.target:
                     exit_price = trade.target
                     exit_charges_dict = self.simulator.calculate_charges(
                         OrderSide.SELL, exit_price, trade.qty, trade.instrument_type
@@ -292,14 +460,12 @@ class Portfolio:
                 else:
                     initial_risk = trade.entry_price - trade.initial_sl
                     if initial_risk > 0 and (curr_close - trade.entry_price) >= initial_risk:
-                        # Move SL to breakeven
                         if trade.current_sl < trade.entry_price:
                             trade.current_sl = trade.entry_price
                             trade.trailing_sl = trade.entry_price
 
             else:  # SELL
-                # 1. Stop Loss Hit — checked BEFORE target to avoid optimistic bias
-                if curr_high >= trade.current_sl:
+                if not is_entry_bar and curr_high >= trade.current_sl:
                     exit_price = trade.current_sl
                     exit_charges_dict = self.simulator.calculate_charges(
                         OrderSide.BUY, exit_price, trade.qty, trade.instrument_type
@@ -308,8 +474,7 @@ class Portfolio:
                     self._finalize_trade_charges(trade, exit_charges_dict)
                     trade.close(timestamp, exit_price, "SL_HIT", trade.charges + exit_charges)
                     closed = True
-                # 2. Target Hit — only if SL was NOT also hit on same bar
-                elif curr_low <= trade.target:
+                elif not is_entry_bar and curr_low <= trade.target:
                     exit_price = trade.target
                     exit_charges_dict = self.simulator.calculate_charges(
                         OrderSide.BUY, exit_price, trade.qty, trade.instrument_type
@@ -318,7 +483,6 @@ class Portfolio:
                     self._finalize_trade_charges(trade, exit_charges_dict)
                     trade.close(timestamp, exit_price, "TARGET_HIT", trade.charges + exit_charges)
                     closed = True
-                # 3. Trailing / Breakeven SL Update
                 else:
                     initial_risk = trade.initial_sl - trade.entry_price
                     if initial_risk > 0 and (trade.entry_price - curr_close) >= initial_risk:
@@ -326,10 +490,11 @@ class Portfolio:
                             trade.current_sl = trade.entry_price
                             trade.trailing_sl = trade.entry_price
 
-
             if closed:
                 self.capital += trade.net_pnl
                 self.daily_pnl += trade.net_pnl
+                self.risk_manager.record_trade_completion(trade.net_pnl, timestamp)
+                self._release_trade_margin(trade)
                 self.closed_trades.append(trade)
                 just_closed.append(trade)
             else:
@@ -351,6 +516,8 @@ class Portfolio:
                     unrealized += (trade.entry_price - curr_price) * trade.qty
 
         current_equity = round(self.capital + unrealized, 2)
+        self.risk_manager.evaluate_equity_drawdown(current_equity, timestamp)
+
         self.equity_curve.append({
             "timestamp": timestamp,
             "equity": current_equity,
@@ -358,3 +525,8 @@ class Portfolio:
             "open_positions": len(self.open_trades),
             "unrealized_pnl": round(unrealized, 2)
         })
+
+    def update_open_trades(self, timestamp: str, symbol_quotes: Dict[str, Dict]) -> List[Trade]:
+        """Backward-compatible alias for check_positions_on_bar."""
+        return self.check_positions_on_bar(timestamp, symbol_quotes)
+

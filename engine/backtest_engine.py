@@ -9,10 +9,11 @@ import logging
 from config import DEFAULT_CAPITAL, DEFAULT_RISK_PCT_PER_TRADE, WATCHLIST_PATH
 from execution.portfolio import Portfolio
 from execution.simulator import ExecutionSimulator
-from execution.order import InstrumentType
+from execution.order import InstrumentType, OrderSide
 from strategies.base_strategy import BaseStrategy
 from data.data_loader import DataLoader
 from data.option_chain_loader import OptionChainLoader
+from data.instrument_master import InstrumentMaster
 from analytics.metrics import calculate_performance_metrics
 
 logger = logging.getLogger("backtest_engine")
@@ -49,16 +50,11 @@ class BacktestEngine:
         """
         Runs a complete backtest session for a specific trading date.
         """
-        # Load circuit limits for the session
-        circuit_limits = self.data_loader.get_circuit_limits(date_str)
         port = portfolio or Portfolio(
             initial_capital=self.capital,
             risk_pct_per_trade=self.risk_pct,
-            simulator=self.simulator,
-            circuit_limits=circuit_limits
+            simulator=self.simulator
         )
-        if not getattr(port, "circuit_limits", None) and circuit_limits:
-            port.circuit_limits = circuit_limits
 
         # 1. Resolve symbols to test
         # 'auto' mode: discover all available equities from equity_master for this date
@@ -84,13 +80,20 @@ class BacktestEngine:
             ohlc_map["BANKNIFTY"] = df_banknifty
             symbol_meta["BANKNIFTY"] = {"security_id": 25, "sector": "Index"}
 
+        # Preload option chains into memory for instantaneous bar-loop lookup
+        if self.option_loader:
+            for und in ["NIFTY", "BANKNIFTY"]:
+                try:
+                    self.option_loader.load_session_chains(date_str, underlying=und)
+                except Exception:
+                    pass
+
         # Load VIX for volatility filter
         df_vix = self.data_loader.get_index_ohlc(date_str, "INDIA_VIX", timeframe=timeframe)
         vix_series = {}
         vix_available = not df_vix.empty
         if vix_available:
-            for _, r in df_vix.iterrows():
-                vix_series[str(r["timestamp"])] = float(r["close"])
+            vix_series = dict(zip(df_vix["timestamp"].astype(str), df_vix["close"].astype(float)))
         else:
             logger.warning(
                 f"[{date_str}] INDIA_VIX data not found — VIX filter will use fallback 15.0. "
@@ -102,10 +105,10 @@ class BacktestEngine:
         df_master = self.data_loader.get_equity_master(date_str)
         master_lookup = {}
         if not df_master.empty:
-            for _, r in df_master.iterrows():
-                master_lookup[str(r["symbol"])] = {
-                    "security_id": int(r["security_id"]),
-                    "sector": str(r.get("sector") or "Other")
+            for r in df_master.itertuples(index=False):
+                master_lookup[str(r.symbol)] = {
+                    "security_id": int(r.security_id),
+                    "sector": str(getattr(r, "sector", None) or "Other")
                 }
 
         if auto_discover and master_lookup:
@@ -141,13 +144,12 @@ class BacktestEngine:
             all_timestamps.update(df["timestamp"].astype(str).tolist())
         timeline = sorted(list(all_timestamps))
 
-        # Index data by timestamp for O(1) bar streaming (vectorized records)
+        # Index data by timestamp for O(1) bar streaming
         bar_stream: Dict[str, Dict[str, Dict]] = {ts: {} for ts in timeline}
         for sym, df in ohlc_map.items():
-            sid = symbol_meta[sym]["security_id"]
+            s_id = symbol_meta[sym]["security_id"]
             sec = symbol_meta[sym]["sector"]
-            records = df.to_dict("records")
-            for r in records:
+            for r in df.to_dict("records"):
                 ts = str(r["timestamp"])
                 bar_stream[ts][sym] = {
                     "open": float(r["open"]),
@@ -156,9 +158,9 @@ class BacktestEngine:
                     "close": float(r["close"]),
                     "volume": float(r["volume"]),
                     "vwap": float(r["vwap"]),
-                    "bid_ask_spread": float(r.get("bid_ask_spread", 0.0) or 0.0),
-                    "depth_imbalance": float(r.get("depth_imbalance", 0.0) or 0.0),
-                    "security_id": sid,
+                    "bid_ask_spread": float(r.get("bid_ask_spread", 0.0)),
+                    "depth_imbalance": float(r.get("depth_imbalance", 0.0)),
+                    "security_id": s_id,
                     "sector": sec
                 }
 
@@ -217,31 +219,28 @@ class BacktestEngine:
             # C. Open new trades for valid signals
             for sig in signals:
                 sym = sig["symbol"]
-                side = sig["side"]
-                price = sig["price"]
-                sl = sig["sl"]
-                target = sig["target"]
+                side = sig.get("side", OrderSide.BUY)
+                price = float(sig.get("price") or quotes.get(sym, {}).get("close", 0.0))
+                sl = float(sig.get("sl") or (price * 0.98 if side == OrderSide.BUY else price * 1.02))
+                target = float(sig.get("target") or (price * 1.04 if side == OrderSide.BUY else price * 0.96))
                 score = sig.get("score", 70)
                 sec_id = sig.get("security_id", 0)
-                inst_type = sig.get("instrument_type")
+                inst_type = sig.get("instrument_type") or InstrumentType.EQUITY
                 meta = sig.get("metadata", {})
-                q_sym = quotes.get(sym, {})
-                spread = q_sym.get("bid_ask_spread", 0.0)
-                bar_high = q_sym.get("high", price)
-                bar_low = q_sym.get("low", price)
-                bar_range_pct = ((bar_high - bar_low) / price) if price > 0 else 0.0
+                spread = quotes.get(sym, {}).get("bid_ask_spread", 0.0)
 
                 lot_size = sig.get("lot_size")
                 if not lot_size:
-                    lot_size = 25 if "OPTION" in str(inst_type) else 1
+                    is_deriv = "OPTION" in str(inst_type) or "FUTURES" in str(inst_type)
+                    lot_size = InstrumentMaster.get_lot_size(sym, date_str, is_derivative=is_deriv)
 
                 qty = port.calculate_position_size(
                     entry_price=price,
                     stop_loss=sl,
                     score=score,
                     lot_size=lot_size,
-                    instrument_type=inst_type,
-                    underlying=meta.get("underlying", sym)
+                    symbol=sym,
+                    trade_date=date_str
                 )
 
                 port.open_trade(
@@ -255,15 +254,15 @@ class BacktestEngine:
                     entry_time=ts,
                     instrument_type=inst_type,
                     metadata=meta,
-                    bid_ask_spread=spread,
-                    bar_range_pct=bar_range_pct
+                    bid_ask_spread=spread
                 )
 
             # D. Record equity point
             port.record_equity_point(ts, quotes)
 
         # 6. End session
-        strategy.on_session_end(date_str, port, context)
+        if hasattr(strategy, "on_session_end"):
+            strategy.on_session_end(date_str, port, context)
 
         # Compute summary metrics
         metrics = calculate_performance_metrics(
@@ -277,7 +276,13 @@ class BacktestEngine:
             "strategy": strategy.name,
             "initial_capital": port.initial_capital,
             "final_equity": port.capital,
+            "ending_equity": port.capital,
             "metrics": metrics,
             "trades": port.closed_trades,
             "equity_curve": port.equity_curve
         }
+
+    # Alias for convenience
+    run = run_session
+
+

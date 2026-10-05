@@ -1,0 +1,86 @@
+# Testing Engine Configuration (config.yaml)
+
+engine:
+  name: "Institutional Multi-Instrument Backtesting Engine"
+  version: "2.0.0"
+  timezone: "Asia/Kolkata"
+
+paths:
+  # Auto-discovery will search these candidates in order
+  live_db_dirs:
+    - "../../databases/daily"
+    - "../databases/daily"
+    - "Database/daily"
+    - "databases/daily"
+  data_cache_dir: "data_cache"
+  results_dir: "results"
+  data_dir: "data"
+  results_db_path: "results/results.db"
+
+database:
+  mode: "auto"              # "auto", "unified", or "legacy"
+  cache_resampled_bars: true
+  cache_format: "parquet"
+
+capital_and_risk:
+  default_capital: 500000.0           # ₹5,00,000
+  risk_pct_per_trade: 0.01            # 1% risk per trade
+  max_positions: 5
+  max_positions_per_sector: 2
+  max_qty_per_trade: 500
+  min_rr_ratio: 1.5
+  
+  # Institutional Kill Switches
+  daily_max_loss_pct: 0.03            # 3% daily loss limit (hard halt)
+  daily_max_loss_inr: 25000.0         # Absolute daily loss limit (hard halt)
+  max_drawdown_stop_pct: 0.15         # 15% overall peak-to-trough drawdown halt
+  max_consecutive_losses: 4           # Cooldown triggered after N consecutive losses
+  cooldown_bars: 5                    # Number of bars to wait during cooldown
+
+timings:
+  trading_start: "09:15"
+  trading_end: "15:00"
+  force_square_off_time: "15:15"
+  expiry_cutoff_time: "13:00"
+
+execution:
+  slippage_model: "pct"               # "fixed", "pct", "depth_walk"
+  default_slippage_pct: 0.0005        # 5 bps
+  fixed_slippage_ticks: 1             # 1 tick slippage
+  latency_ms: 0                       # Execution delay simulation (ms)
+  enable_depth_slippage: true         # Depth-walk using market_depth_20 when available
+  fill_probability_limit_orders: 1.0  # 1.0 for standard fills, < 1.0 for realistic touch fills
+
+statutory_charges:
+  brokerage_flat_per_order: 20.0      # ₹20 per executed order
+  stt_equity_intraday: 0.00025        # 0.025% on equity sell turnover
+  stt_options_turnover: 0.000625      # 0.0625% on option sell premium
+  stt_options_exercise: 0.00125       # 0.125% on intrinsic value of exercised ITM options at expiry
+  exchange_txn_fee_equity: 0.0000297  # NSE 0.00297% turnover
+  exchange_txn_fee_options: 0.00035   # NSE 0.035% premium turnover
+  gst_rate: 0.18                      # 18% on (brokerage + exchange txn fee)
+  sebi_charges: 0.000001              # ₹10 per crore (0.0001%)
+  stamp_duty_equity_buy: 0.00003      # 0.003% buy value
+  stamp_duty_options_buy: 0.00003     # 0.003% buy premium
+
+margin:
+  span_exposure_futures_pct: 0.20     # ~20% margin for futures
+  span_exposure_short_opt_pct: 0.20   # ~20% margin for short options
+  long_option_premium_required: 1.0   # 100% premium paid upfront
+
+validation:
+  pbo_partitions: 10                  # Combinatorially Symmetric Cross-Validation splits
+  monte_carlo_runs: 1000              # Number of bootstrap permutations
+  wfe_hurdle: 0.50                    # Minimum acceptable Walk-Forward Efficiency (50%)
+  confidence_level: 0.95              # 95% confidence intervals for VaR / DD
+
+dashboard:
+  host: "127.0.0.1"
+  port: 5690
+
+chrome:
+  path: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+  profile_dir: "C:\\selenium\\ChromeProfile"
+  debug_port: 9222
+  auto_open: true
+

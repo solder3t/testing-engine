@@ -15,43 +15,43 @@ class TradeExporter:
     """Exports trades and backtest run summaries."""
 
     @staticmethod
-    def to_dataframe(trades: List[Trade]) -> pd.DataFrame:
+    def to_dataframe(trades: Any) -> pd.DataFrame:
         if not trades:
             return pd.DataFrame()
 
         records = []
         for t in trades:
-            meta = getattr(t, "metadata", {}) or {}
-            entry_t = str(getattr(t, "entry_time", ""))
-            date_val = meta.get("date") or (entry_t.split(" ")[0] if " " in entry_t else "")
             records.append({
                 "trade_id": getattr(t, "trade_id", ""),
-                "date": date_val,
                 "symbol": getattr(t, "symbol", ""),
                 "security_id": getattr(t, "security_id", 0),
-                "instrument_type": getattr(t.instrument_type, "value", str(getattr(t, "instrument_type", ""))),
-                "side": getattr(t.side, "value", str(getattr(t, "side", ""))),
-                "qty": getattr(t, "qty", 0),
+                "instrument_type": getattr(getattr(t, "instrument_type", ""), "value", str(getattr(t, "instrument_type", ""))),
+                "side": getattr(getattr(t, "side", ""), "value", str(getattr(t, "side", ""))),
+                "qty": getattr(t, "qty", getattr(t, "quantity", 0)),
                 "entry_time": getattr(t, "entry_time", ""),
-                "entry_price": t.entry_price,
-                "exit_time": t.exit_time,
-                "exit_price": t.exit_price,
-                "exit_reason": t.exit_reason,
-                "initial_sl": t.initial_sl,
-                "target": t.target,
-                "gross_pnl": t.gross_pnl,
-                "charges": t.charges,
-                "charges_breakdown": (t.metadata or {}).get("charges_breakdown", {}),
-                "net_pnl": t.net_pnl,
-                "pnl_pct": t.pnl_pct,
-                "holding_bars": t.holding_bars,
-                "status": t.status,
-                "metadata": t.metadata or {}
+                "entry_price": getattr(t, "entry_price", 0.0),
+                "exit_time": getattr(t, "exit_time", ""),
+                "exit_price": getattr(t, "exit_price", 0.0),
+                "exit_reason": getattr(t, "exit_reason", ""),
+                "initial_sl": getattr(t, "initial_sl", 0.0),
+                "target": getattr(t, "target", 0.0),
+                "gross_pnl": getattr(t, "gross_pnl", getattr(t, "pnl_gross", 0.0)),
+                "charges": getattr(t, "charges", 0.0),
+                "charges_breakdown": (getattr(t, "metadata", None) or {}).get("charges_breakdown", {}),
+                "net_pnl": getattr(t, "net_pnl", getattr(t, "pnl_net", 0.0)),
+                "pnl_pct": getattr(t, "pnl_pct", 0.0),
+                "mfe_pts": getattr(t, "mfe_pts", 0.0),
+                "mfe_pct": getattr(t, "mfe_pct", 0.0),
+                "mae_pts": getattr(t, "mae_pts", 0.0),
+                "mae_pct": getattr(t, "mae_pct", 0.0),
+                "holding_bars": getattr(t, "holding_bars", 0),
+                "status": getattr(t, "status", ""),
+                "metadata": getattr(t, "metadata", None) or {}
             })
         return pd.DataFrame(records)
 
     @classmethod
-    def export_csv(cls, trades: List[Trade], file_path: str):
+    def export_csv(cls, trades: Any, file_path: str):
         df = cls.to_dataframe(trades)
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         df.to_csv(file_path, index=False)

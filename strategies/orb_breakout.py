@@ -102,9 +102,13 @@ class OrbBreakoutStrategy(BaseStrategy):
             atr_val = float(atr_series.iloc[-1]) if not atr_series.empty and not np.isnan(atr_series.iloc[-1]) else 5.0
             buffer = float(self.params.get("breakout_buffer", 0.0))
 
+            if sym not in self.orb_levels:
+                continue
+
             orb_high = self.orb_levels[sym]["high"]
             orb_low = self.orb_levels[sym]["low"]
             orb_range = orb_high - orb_low
+
 
             if orb_range <= 0:
                 continue

@@ -1,5 +1,5 @@
 """
-tests/test_sprint5.py — Verification of Sprint 5 Features:
+tests/test_optimization_and_tearsheet.py — Verification of Optimization and Analytics Features:
 1. Strategy Parameter Grids registry
 2. Institutional Performance Tearsheet generation
 3. Walk-Forward API (/api/walk_forward)

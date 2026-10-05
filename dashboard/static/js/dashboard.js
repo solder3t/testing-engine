@@ -1,5 +1,24 @@
-// dashboard.js — Real-Data Dashboard Engine
-// Strictly zero hardcoded data: all metrics, charts, and tables are generated from real databases.
+// Centralized Chart Registry with Lifecycle Management (CHART-01)
+const ChartRegistry = {
+  charts: {},
+  register(name, chartInstance) {
+    if (this.charts[name]) {
+      try { this.charts[name].destroy(); } catch (e) {}
+    }
+    this.charts[name] = chartInstance;
+    return chartInstance;
+  },
+  destroy(name) {
+    if (this.charts[name]) {
+      try { this.charts[name].destroy(); } catch (e) {}
+      delete this.charts[name];
+    }
+  },
+  destroyAll() {
+    Object.keys(this.charts).forEach(name => this.destroy(name));
+  }
+};
+window.ChartRegistry = ChartRegistry;
 
 let equityChart = null;
 let dailyChart = null;
@@ -7,10 +26,6 @@ let drawdownChart = null;
 let hourlyChart = null;
 let outcomeChart = null;
 let pnlDistChart = null;
-let teDriftChartInstance = null;
-let teCalibrationChartInstance = null;
-let teMonteCarloChartInstance = null;
-let teGreeksChartInstance = null;
 let allTrades = [];
 let filteredTrades = [];
 let currentSortColumn = "entry_time";
@@ -18,20 +33,8 @@ let sortAscending = false;
 let currentTradeFilter = "all";
 let currentSelectedTradeId = null;
 let lastRawArchives = [];
-let teOptionChainChartInstance = null;
-let tePcrChartInstance = null;
-let teReplayChartInstance = null;
-let tePortfolioChartInstance = null;
-let currentReplaySession = null;
-let currentReplayFrameIndex = 0;
-let replayIntervalTimer = null;
-let replayIsPlaying = false;
-
-function roundTo(num, decimals = 2) {
-  if (num === null || num === undefined || isNaN(num)) return 0;
-  const factor = Math.pow(10, decimals);
-  return Math.round((Number(num) + Number.EPSILON) * factor) / factor;
-}
+let isBacktestRunning = false;
+let latest_run_cache = null;
 
 document.addEventListener("DOMContentLoaded", () => {
   initTabs();
@@ -44,7 +47,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initWalkForward();
   initParameterOptimizer();
   initCompareModelPicker();
-  initTradingEngineInsights();
+  initMassIterationLab();
 
   // Load default directory
   loadArchives();
@@ -59,16 +62,72 @@ document.addEventListener("DOMContentLoaded", () => {
     window.location.href = "/api/export_csv";
   });
 
-  const searchInput = document.getElementById("tradeSearchInput");
-  if (searchInput) {
-    searchInput.addEventListener("input", () => {
-      filterAndRenderTrades();
+  // DOM-01: Decoupled event listeners
+  const btnLaunchProfile = document.getElementById("btnLaunchChromeProfile");
+  if (btnLaunchProfile) {
+    btnLaunchProfile.addEventListener("click", async () => {
+      try {
+        const res = await fetch("/api/open_browser", { method: "POST" });
+        const data = await res.json();
+        if (data.status === "success") {
+          showToast("Opened dashboard in Chrome profile!", "success");
+        } else {
+          showToast("Failed to launch Chrome profile", "warning");
+        }
+      } catch (err) {
+        showToast("Error contacting browser launcher: " + err.message, "error");
+      }
     });
   }
 
-  const dateFilter = document.getElementById("tradeDateFilter");
-  if (dateFilter) {
-    dateFilter.addEventListener("change", () => {
+  const btnBrowse = document.getElementById("btnBrowseDir");
+  if (btnBrowse) {
+    btnBrowse.addEventListener("click", openFileBrowser);
+  }
+
+  const btnExpBrowse = document.getElementById("btnExplorerBrowse");
+  if (btnExpBrowse) {
+    btnExpBrowse.addEventListener("click", openFileBrowser);
+  }
+
+  const btnAnTearsheet = document.getElementById("btnAnalyticsTearsheet");
+  if (btnAnTearsheet) {
+    btnAnTearsheet.addEventListener("click", openTearsheet);
+  }
+
+  const btnInspTearsheet = document.getElementById("btnInspectorTearsheet");
+  if (btnInspTearsheet) {
+    btnInspTearsheet.addEventListener("click", openTearsheet);
+  }
+
+  const btnDlTearsheet = document.getElementById("btnDownloadTearsheet");
+  if (btnDlTearsheet) {
+    btnDlTearsheet.addEventListener("click", () => {
+      window.location.href = "/api/export_tearsheet";
+    });
+  }
+
+  const btnAnExportCsv = document.getElementById("btnAnalyticsExportCsv");
+  if (btnAnExportCsv) {
+    btnAnExportCsv.addEventListener("click", () => {
+      window.location.href = "/api/export_csv";
+    });
+  }
+
+  // UX-02: Ctrl+Enter / Cmd+Enter shortcut to trigger Run Backtest
+  window.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+      e.preventDefault();
+      const runBtn = document.getElementById("btnRun");
+      if (runBtn && !runBtn.disabled) {
+        runBacktest();
+      }
+    }
+  });
+
+  const searchInput = document.getElementById("tradeSearchInput");
+  if (searchInput) {
+    searchInput.addEventListener("input", () => {
       filterAndRenderTrades();
     });
   }
@@ -80,7 +139,170 @@ document.addEventListener("DOMContentLoaded", () => {
       loadArchives(dirInput ? dirInput.value.trim() : "");
     });
   }
+
+  // TOPBAR-01: Start live clock
+  startTopbarClock();
+
+  // FORM-01: Universe selector chips
+  document.querySelectorAll(".chip-symbol").forEach(chip => {
+    chip.addEventListener("click", () => {
+      const symInput = document.getElementById("symbolsInput");
+      if (symInput) {
+        symInput.value = chip.getAttribute("data-symbol");
+        symInput.dispatchEvent(new Event("change"));
+      }
+    });
+  });
+
+  // Phase 3 & 4 Initializations (API-01, API-02, API-03, STORE-01, HIST-01, PRESET-01, EXP-01)
+  loadStrategyCatalog();
+  renderRunHistory();
+  restoreFormState();
+  initPresets();
+  initExportCenter();
+  initCommandPalette();
+
+  const btnAudit = document.getElementById("btnExplorerAudit");
+  if (btnAudit) {
+    btnAudit.addEventListener("click", () => {
+      runDataQualityAudit();
+    });
+  }
+
+  const btnCloseAudit = document.getElementById("btnCloseAuditBanner");
+  if (btnCloseAudit) {
+    btnCloseAudit.addEventListener("click", () => {
+      const banner = document.getElementById("explorerAuditBanner");
+      if (banner) banner.style.display = "none";
+    });
+  }
+
+  const btnRunVal = document.getElementById("btnRunValidation");
+  if (btnRunVal) {
+    btnRunVal.addEventListener("click", () => {
+      runValidationAudit();
+    });
+  }
+
+  ["strategySelect", "timeframeSelect", "symbolsInput", "capitalInput", "riskPctInput", "dirInput"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.addEventListener("change", saveFormState);
+      if (id === "strategySelect") {
+        el.addEventListener("change", updateStrategyMetaCard);
+      }
+    }
+  });
 });
+
+function startTopbarClock() {
+  const clockEl = document.getElementById("topbarClock");
+  if (!clockEl) return;
+  function update() {
+    const now = new Date();
+    clockEl.innerText = now.toLocaleTimeString("en-GB", { hour12: false }) + " IST";
+  }
+  update();
+  setInterval(update, 1000);
+}
+
+// ── Toast Notification System (NOTIF-01) ─────────────────────────────────────
+function showToast(message, type = "info", duration = 4000) {
+  const container = document.getElementById("toastContainer");
+  if (!container) return;
+
+  const toast = document.createElement("div");
+  toast.className = `toast toast-${type}`;
+
+  let icon = "ℹ️";
+  if (type === "success") icon = "✅";
+  else if (type === "error") icon = "❌";
+  else if (type === "warning") icon = "⚠️";
+
+  toast.innerHTML = `
+    <span class="toast-icon">${icon}</span>
+    <span class="toast-msg">${message}</span>
+    <button class="toast-close" title="Dismiss">&times;</button>
+  `;
+
+  const closeBtn = toast.querySelector(".toast-close");
+  const dismiss = () => {
+    toast.classList.remove("toast-show");
+    setTimeout(() => toast.remove(), 260);
+  };
+
+  if (closeBtn) closeBtn.addEventListener("click", dismiss);
+  container.appendChild(toast);
+
+  requestAnimationFrame(() => {
+    toast.classList.add("toast-show");
+  });
+
+  if (duration > 0) {
+    setTimeout(dismiss, duration);
+  }
+}
+window.showToast = showToast;
+
+// ── Accessible Modal Prompt System (NOTIF-03) ────────────────────────────────
+function showPromptModal(title, message, defaultValue = "") {
+  return new Promise((resolve) => {
+    const backdrop = document.getElementById("promptModalBackdrop");
+    const titleEl = document.getElementById("promptModalTitle");
+    const msgEl = document.getElementById("promptModalMessage");
+    const inputEl = document.getElementById("promptModalInput");
+    const btnCancel = document.getElementById("btnPromptCancel");
+    const btnConfirm = document.getElementById("btnPromptConfirm");
+
+    if (!backdrop || !inputEl || !btnConfirm || !btnCancel) {
+      const fallback = prompt(`${title}\n${message}`, defaultValue);
+      return resolve(fallback);
+    }
+
+    if (titleEl) titleEl.innerText = title;
+    if (msgEl) msgEl.innerText = message;
+    inputEl.value = defaultValue;
+
+    backdrop.classList.add("active");
+    backdrop.setAttribute("aria-hidden", "false");
+    inputEl.focus();
+    inputEl.select();
+
+    const cleanup = () => {
+      backdrop.classList.remove("active");
+      backdrop.setAttribute("aria-hidden", "true");
+      btnConfirm.removeEventListener("click", onConfirm);
+      btnCancel.removeEventListener("click", onCancel);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+
+    const onConfirm = () => {
+      const val = inputEl.value.trim();
+      cleanup();
+      resolve(val || null);
+    };
+
+    const onCancel = () => {
+      cleanup();
+      resolve(null);
+    };
+
+    const onKeyDown = (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        onConfirm();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        onCancel();
+      }
+    };
+
+    btnConfirm.addEventListener("click", onConfirm);
+    btnCancel.addEventListener("click", onCancel);
+    window.addEventListener("keydown", onKeyDown);
+  });
+}
+window.showPromptModal = showPromptModal;
 
 // ── Top Navigation Tabs ───────────────────────────────────────────────────────
 function initTabs() {
@@ -98,18 +320,24 @@ function switchTab(tabId) {
   const panes = document.querySelectorAll(".tab-pane");
 
   tabs.forEach(t => {
-    if (t.getAttribute("data-tab") === tabId) {
+    const isTarget = t.getAttribute("data-tab") === tabId;
+    if (isTarget) {
       t.classList.add("active");
+      t.setAttribute("aria-selected", "true");
     } else {
       t.classList.remove("active");
+      t.setAttribute("aria-selected", "false");
     }
   });
 
   panes.forEach(p => {
-    if (p.id === tabId) {
+    const isTarget = p.id === tabId;
+    if (isTarget) {
       p.classList.add("active");
+      p.setAttribute("aria-hidden", "false");
     } else {
       p.classList.remove("active");
+      p.setAttribute("aria-hidden", "true");
     }
   });
 
@@ -126,24 +354,6 @@ function switchTab(tabId) {
     }, 50);
   } else if (tabId === "tabExplorer") {
     renderDataExplorer(lastRawArchives);
-  } else if (tabId === "tabTradingEngine") {
-    setTimeout(() => {
-      if (teDriftChartInstance) teDriftChartInstance.resize();
-      if (teCalibrationChartInstance) teCalibrationChartInstance.resize();
-      if (teMonteCarloChartInstance) teMonteCarloChartInstance.resize();
-      if (teGreeksChartInstance) teGreeksChartInstance.resize();
-      if (teOptionChainChartInstance) teOptionChainChartInstance.resize();
-      if (tePcrChartInstance) tePcrChartInstance.resize();
-      if (teReplayChartInstance) teReplayChartInstance.resize();
-      if (tePortfolioChartInstance) tePortfolioChartInstance.resize();
-    }, 60);
-
-    if (!window._teInsightsLoaded) {
-      window._teInsightsLoaded = true;
-      fetchReconciliation();
-      fetchConfigExport();
-      fetchAiAnalytics();
-    }
   }
 }
 window.switchTab = switchTab;
@@ -167,6 +377,7 @@ function initStrategySelector() {
   const bnGroup = document.getElementById("bankniftyOptionsParams");
   const futGroup = document.getElementById("futuresTrendParams");
   const mpGroup = document.getElementById("maxPainParams");
+  const dynGroup = document.getElementById("dynamicParamsBlock");
 
   const hideAll = () => {
     if (eqGroup) eqGroup.style.display = "none";
@@ -185,6 +396,7 @@ function initStrategySelector() {
     if (bnGroup) bnGroup.style.display = "none";
     if (futGroup) futGroup.style.display = "none";
     if (mpGroup) mpGroup.style.display = "none";
+    if (dynGroup) dynGroup.style.display = "none";
   };
 
   select.addEventListener("change", () => {
@@ -222,6 +434,9 @@ function initStrategySelector() {
       futGroup.style.display = "block";
     } else if (val === "max-pain" && mpGroup) {
       mpGroup.style.display = "block";
+    } else if (dynGroup) {
+      renderDynamicParams(val);
+      dynGroup.style.display = "block";
     }
   });
 }
@@ -517,43 +732,23 @@ async function loadArchives(customDir = "") {
 
 // ── Symbol Discovery Helper ──────────────────────────────────────────────────
 function getSymbolsFromInput(elemId) {
-  const el = document.getElementById(elemId);
+  let el = document.getElementById(elemId);
+  if (!el || !el.value) {
+    el = document.getElementById("symbolsInput");
+  }
   if (!el) return ["auto"];
   const symRaw = el.value.trim().toLowerCase();
   if (!symRaw || symRaw === "auto") return ["auto"];
   return symRaw.toUpperCase().split(",").map(s => s.trim()).filter(Boolean);
 }
 
-// ── Global Live Progress Indicator ──────────────────────────────────────────
-function setGlobalProgress(pct, label, active = true) {
-  const container = document.getElementById("globalProgressContainer");
-  const fill = document.getElementById("globalProgressBarFill");
-  const pctEl = document.getElementById("globalProgressPct");
-  const labelEl = document.getElementById("globalProgressLabel");
-  const headerStatus = document.getElementById("headerStatusText");
-
-  if (!container) return;
-
-  if (!active) {
-    if (fill) fill.style.width = "100%";
-    if (pctEl) pctEl.innerText = "100%";
-    setTimeout(() => {
-      container.style.display = "none";
-      if (headerStatus) headerStatus.innerText = "ENGINE READY";
-    }, 450);
+// ── Run Real Backtest Simulation ─────────────────────────────────────────────
+async function runBacktest() {
+  if (isBacktestRunning) {
+    console.warn("Backtest simulation already in progress. Ignoring duplicate trigger.");
     return;
   }
 
-  container.style.display = "block";
-  const clamped = Math.max(0, Math.min(100, Math.round(pct)));
-  if (fill) fill.style.width = `${clamped}%`;
-  if (pctEl) pctEl.innerText = `${clamped}%`;
-  if (labelEl && label) labelEl.innerText = label;
-  if (headerStatus && label) headerStatus.innerText = label.toUpperCase().slice(0, 32);
-}
-
-// ── Run Real Backtest Simulation ─────────────────────────────────────────────
-async function runBacktest() {
   const btn = document.getElementById("btnRun");
   const status = document.getElementById("runStatus");
   const headerStatus = document.getElementById("headerStatusText");
@@ -571,12 +766,20 @@ async function runBacktest() {
     return;
   }
 
-  const strat = document.getElementById("strategySelect").value;
-  const tf = document.getElementById("timeframeSelect").value;
-  const capital = parseFloat(document.getElementById("capitalInput").value) || 500000.0;
-  const maxLoss = (parseFloat(document.getElementById("maxLossInput").value) || 1.5) / 100.0;
-  const trailingSl = (parseFloat(document.getElementById("trailingSlInput").value) || 1.0) / 100.0;
-  const archiveDir = dirInput ? dirInput.value.trim() : "";
+  isBacktestRunning = true;
+  if (btn) {
+    btn.disabled = true;
+    btn.innerText = "⏳ SIMULATING...";
+  }
+  if (headerStatus) headerStatus.innerText = "BACKTEST RUNNING";
+
+  try {
+    const strat = document.getElementById("strategySelect").value;
+    const tf = document.getElementById("timeframeSelect").value;
+    const capital = parseFloat(document.getElementById("capitalInput").value) || 500000.0;
+    const maxLoss = (parseFloat(document.getElementById("maxLossInput").value) || 1.5) / 100.0;
+    const trailingSl = (parseFloat(document.getElementById("trailingSlInput").value) || 1.0) / 100.0;
+    const archiveDir = dirInput ? dirInput.value.trim() : "";
 
   const payload = {
     archive_dir: archiveDir,
@@ -681,13 +884,22 @@ async function runBacktest() {
     payload.lot_size = parseInt(document.getElementById("mpLotSize").value) || 25;
   }
 
+  // Dynamic parameters from catalog form (DYN-01)
+  const dynInputs = document.querySelectorAll("#dynamicParamsGrid [data-param-key]");
+  dynInputs.forEach(inp => {
+    const key = inp.getAttribute("data-param-key");
+    const val = inp.type === "number" ? parseFloat(inp.value) : inp.value;
+    payload[key] = val;
+  });
+  if (!payload.symbols) {
+    payload.symbols = getSymbolsFromInput("symbolsInput");
+  }
+
   btn.disabled = true;
   btn.innerText = "⏳ SIMULATING...";
   status.innerText = `Connecting session stream for [${selectedDates.join(", ")}]...`;
   status.style.color = "var(--accent-cyan)";
   if (headerStatus) headerStatus.innerText = "BACKTEST RUNNING";
-
-  setGlobalProgress(0, `Connecting simulation stream for ${selectedDates.length} session(s)...`, true);
 
   const progressBox = document.getElementById("runProgressContainer");
   const progressBar = document.getElementById("runProgressBar");
@@ -732,11 +944,9 @@ async function runBacktest() {
               const pct = Math.round((event.day / event.total) * 100);
               if (progressBar) progressBar.style.width = `${pct}%`;
               if (progressPct) progressPct.innerText = `${pct}%`;
-              const progressMsg = `Session ${event.day}/${event.total} (${event.date}) · Trades: ${event.trades} · Day P&L: ₹${event.net_pnl}`;
               if (progressLabel) {
-                progressLabel.innerText = progressMsg;
+                progressLabel.innerText = `Session ${event.day}/${event.total} (${event.date}) · Trades: ${event.trades} · Day P&L: ₹${event.net_pnl}`;
               }
-              setGlobalProgress(pct, progressMsg, true);
               status.innerText = `Replaying session ${event.day}/${event.total} [${event.date}] · Trades: ${event.trades} · Day P&L: ₹${event.net_pnl}`;
             } else if (event.type === "complete") {
               streamSucceeded = true;
@@ -744,7 +954,6 @@ async function runBacktest() {
               const tradeCount = resultPayload.trades ? resultPayload.trades.length : 0;
               if (progressBar) progressBar.style.width = "100%";
               if (progressPct) progressPct.innerText = "100%";
-              setGlobalProgress(100, `Simulation complete! Processed ${tradeCount} trades.`, false);
               status.innerText = `Simulation complete! Processed ${tradeCount} executed trades.`;
               status.style.color = "var(--green)";
               renderResults(resultPayload);
@@ -752,7 +961,6 @@ async function runBacktest() {
             } else if (event.type === "error") {
               status.innerText = `Error: ${event.message}`;
               status.style.color = "var(--red)";
-              setGlobalProgress(0, "", false);
             }
           } catch (pe) {
             // chunk parse error, wait for next chunk
@@ -768,7 +976,6 @@ async function runBacktest() {
   if (!streamSucceeded) {
     try {
       status.innerText = `Processing simulation across selected dates...`;
-      setGlobalProgress(50, `Processing simulation across ${selectedDates.length} session(s)...`, true);
       const fallbackRes = await fetch("/api/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -780,7 +987,6 @@ async function runBacktest() {
         const tradeCount = resultPayload.trades ? resultPayload.trades.length : 0;
         if (progressBar) progressBar.style.width = "100%";
         if (progressPct) progressPct.innerText = "100%";
-        setGlobalProgress(100, `Simulation complete! Processed ${tradeCount} trades.`, false);
         status.innerText = `Simulation complete! Processed ${tradeCount} executed trades.`;
         status.style.color = "var(--green)";
         renderResults(resultPayload);
@@ -788,20 +994,21 @@ async function runBacktest() {
       } else {
         status.innerText = `Error: ${data.message}`;
         status.style.color = "var(--red)";
-        setGlobalProgress(0, "", false);
       }
     } catch (err) {
       status.innerText = `Execution failed: ${err}`;
       status.style.color = "var(--red)";
-      setGlobalProgress(0, "", false);
     }
   }
-
-  btn.disabled = false;
-  btn.innerText = "⚡ RUN BACKTEST";
-  if (headerStatus) headerStatus.innerText = "ENGINE READY";
+} finally {
+    isBacktestRunning = false;
+    if (btn) {
+      btn.disabled = false;
+      btn.innerText = "⚡ RUN BACKTEST";
+    }
+    if (headerStatus) headerStatus.innerText = "ENGINE READY";
+  }
 }
-
 
 
 // ── Load Latest Results on Initial Launch ────────────────────────────────────
@@ -933,97 +1140,33 @@ async function runComparison() {
   btn.innerHTML = `<span class="btn-icon">⚖️</span><span class="btn-text">COMPARING (${selectedStrats.length})...</span>`;
   status.innerText = `Benchmarking ${selectedStrats.length} strategies across [${selectedDates.join(", ")}]...`;
   status.style.color = "var(--accent-cyan)";
-  setGlobalProgress(0, `Benchmarking ${selectedStrats.length} strategies across ${selectedDates.length} session(s)...`, true);
-
-  let streamSucceeded = false;
 
   try {
-    const res = await fetch("/api/compare/stream", {
+    const res = await fetch("/api/compare", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
     });
-
-    if (res.ok && res.body && window.ReadableStream) {
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder("utf-8");
-      let buffer = "";
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n\n");
-        buffer = lines.pop();
-
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed.startsWith("data:")) continue;
-          const jsonStr = trimmed.slice(5).trim();
-          try {
-            const event = JSON.parse(jsonStr);
-            if (event.type === "progress") {
-              const pct = Math.round((event.current / event.total) * 100);
-              const sName = event.strategy_name || event.strategy;
-              const pnlTxt = event.net_pnl !== undefined ? ` · Net P&L: ₹${event.net_pnl}` : "";
-              setGlobalProgress(pct, `Strategy ${event.current}/${event.total}: ${sName}${pnlTxt}`, true);
-              status.innerText = `Benchmarking ${event.current}/${event.total} [${sName}]${pnlTxt}...`;
-            } else if (event.type === "complete") {
-              streamSucceeded = true;
-              setGlobalProgress(100, `Benchmark complete for ${event.comparison.length} models!`, false);
-              status.innerText = `Strategy benchmark complete for ${event.comparison.length} models!`;
-              status.style.color = "var(--green)";
-              renderComparisonResults(event.comparison);
-              switchTab("tabAnalytics");
-              const sec = document.getElementById("compareSection");
-              if (sec) sec.scrollIntoView({ behavior: "smooth" });
-            } else if (event.type === "error") {
-              status.innerText = `Comparison stream error: ${event.message}`;
-              status.style.color = "var(--red)";
-              setGlobalProgress(0, "", false);
-            }
-          } catch (pe) {}
-        }
-      }
-    }
-  } catch (streamErr) {
-    console.warn("Compare stream fetch interrupted, falling back to /api/compare:", streamErr);
-  }
-
-  // Fallback to non-streaming /api/compare if stream failed
-  if (!streamSucceeded) {
-    try {
-      setGlobalProgress(50, `Benchmarking ${selectedStrats.length} strategies...`, true);
-      const fallbackRes = await fetch("/api/compare", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-      const data = await fallbackRes.json();
-      if (data.status === "success" && data.comparison) {
-        setGlobalProgress(100, `Benchmark complete for ${data.comparison.length} models!`, false);
-        status.innerText = `Strategy benchmark complete for ${data.comparison.length} models!`;
-        status.style.color = "var(--green)";
-        renderComparisonResults(data.comparison);
-        switchTab("tabAnalytics");
-        const sec = document.getElementById("compareSection");
-        if (sec) sec.scrollIntoView({ behavior: "smooth" });
-      } else {
-        status.innerText = `Comparison failed: ${data.message || "Unknown error"}`;
-        status.style.color = "var(--red)";
-        setGlobalProgress(0, "", false);
-      }
-    } catch (err) {
-      status.innerText = `Comparison failed: ${err}`;
+    const data = await res.json();
+    if (data.status === "success" && data.comparison) {
+      status.innerText = `Strategy benchmark complete for ${data.comparison.length} models!`;
+      status.style.color = "var(--green)";
+      renderComparisonResults(data.comparison);
+      switchTab("tabAnalytics");
+      const sec = document.getElementById("compareSection");
+      if (sec) sec.scrollIntoView({ behavior: "smooth" });
+    } else {
+      status.innerText = `Comparison failed: ${data.message || "Unknown error"}`;
       status.style.color = "var(--red)";
-      setGlobalProgress(0, "", false);
     }
+  } catch (err) {
+    status.innerText = `Comparison failed: ${err}`;
+    status.style.color = "var(--red)";
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = `<span class="btn-icon">⚖️</span><span class="btn-text">COMPARE (${selectedStrats.length})</span>`;
   }
-
-  btn.disabled = false;
-  btn.innerHTML = `<span class="btn-icon">⚖️</span><span class="btn-text">COMPARE (${selectedStrats.length})</span>`;
 }
-
 
 function renderComparisonResults(comparisonList) {
   const section = document.getElementById("compareSection");
@@ -1124,6 +1267,7 @@ function renderComparisonResults(comparisonList) {
 
 // ── Render Results: Institutional KPIs, Charts, and Trades Table ─────────────
 function renderResults(raw) {
+  latest_run_cache = raw;
   const data = raw.result || raw;
   const m = data.metrics || {};
   allTrades = data.trades || [];
@@ -1186,35 +1330,33 @@ function renderResults(raw) {
   // 2. Charts (6-Chart Quantitative Suite)
   const equityCurve = data.equity_curve || m.equity_curve || [];
   let dailyPnls = data.daily_breakdown || data.daily_pnls || m.daily_pnls || [];
-  if ((!dailyPnls || dailyPnls.length === 0) && (data.date || (allTrades.length > 0 && (allTrades[0].date || allTrades[0].exit_time)))) {
-    const sessionDate = data.date || allTrades[0].date || (allTrades[0].exit_time ? allTrades[0].exit_time.split(" ")[0] : "Session");
-    dailyPnls = [{
-      date: sessionDate,
-      starting_equity: data.initial_capital || 500000,
-      ending_equity: data.final_equity || ((data.initial_capital || 500000) + (m.net_pnl || 0)),
-      gross_pnl: m.gross_pnl || 0,
-      charges: m.total_charges || 0,
-      net_pnl: m.net_pnl || 0,
-      pnl: m.net_pnl || 0,
-      return_pct: m.return_pct || 0,
-      trades: m.total_trades || allTrades.length,
-      win_rate: m.win_rate || 0
-    }];
+  if ((!dailyPnls || dailyPnls.length === 0) && (data.date || (allTrades.length > 0 && allTrades[0].exit_time))) {
+    const sessionDate = data.date || (allTrades[0].exit_time ? allTrades[0].exit_time.split(" ")[0] : "Session");
+    dailyPnls = [{ date: sessionDate, net_pnl: m.net_pnl || 0 }];
   }
+  const drawdownCurve = m.drawdown_curve || data.drawdown_curve || [];
 
   renderEquityChart(equityCurve);
   renderDailyChart(dailyPnls);
-  renderSessionBreakdownTable(dailyPnls);
   renderDrawdownChart(drawdownCurve);
   renderHourlyChart(allTrades);
   renderOutcomeChart(m, allTrades);
   renderPnlDistChart(allTrades);
+  renderCalendarHeatmap(dailyPnls, allTrades);
+  renderWeekdayBreakdown(allTrades, dailyPnls);
 
   // 3. Trades Table & Trade Inspector
-  updateDateFilterOptions();
   updateSymbolFilterOptions();
   updateSortHeaderUI();
   filterAndRenderTrades();
+
+  // 4. Trust verdict banner & Run History persistence (TRUST-01, HIST-01)
+  updateTrustBanner(m, allTrades);
+  const currentStrat = document.getElementById("strategySelect") ? document.getElementById("strategySelect").value : "orb";
+  saveRunToHistory({ strategy: currentStrat, metrics: m, raw: raw });
+
+  // 5. Automatically initiate institutional validation check (API-03)
+  runValidationAudit();
 
   // If trades exist, auto-select first trade in Inspector
   if (allTrades.length > 0) {
@@ -1222,161 +1364,19 @@ function renderResults(raw) {
   }
 }
 
-// ── Session-by-Session Breakdown Data Table ─────────────────────────────────
-function renderSessionBreakdownTable(dailyPnls) {
-  const card = document.getElementById("sessionBreakdownCard");
-  const badge = document.getElementById("sessionCountBadge");
-  const tbody = document.getElementById("sessionBreakdownBody");
-  const tfoot = document.getElementById("sessionBreakdownFoot");
-  if (!card || !tbody) return;
-
-  if (!dailyPnls || dailyPnls.length === 0) {
-    card.style.display = "none";
-    tbody.innerHTML = "";
-    if (tfoot) tfoot.innerHTML = "";
-    return;
-  }
-
-  card.style.display = "block";
-  if (badge) {
-    badge.innerText = `${dailyPnls.length} Session${dailyPnls.length !== 1 ? "s" : ""}`;
-  }
-
-  tbody.innerHTML = "";
-  let totGross = 0.0;
-  let totCharges = 0.0;
-  let totNet = 0.0;
-  let totTrades = 0;
-  let totWins = 0;
-  let startEq = dailyPnls[0].starting_equity || 0.0;
-  let endEq = dailyPnls[dailyPnls.length - 1].ending_equity || 0.0;
-
-  dailyPnls.forEach(d => {
-    const gross = d.gross_pnl !== undefined ? d.gross_pnl : (d.pnl || 0);
-    const charges = d.charges !== undefined ? d.charges : 0;
-    const net = d.net_pnl !== undefined ? d.net_pnl : (d.pnl || 0);
-    const trCount = d.trades !== undefined ? d.trades : (d.trades_count || 0);
-    const winRate = d.win_rate !== undefined ? d.win_rate : 0.0;
-    const retPct = d.return_pct !== undefined ? d.return_pct : (d.starting_equity ? ((net / d.starting_equity) * 100) : 0.0);
-
-    totGross += gross;
-    totCharges += charges;
-    totNet += net;
-    totTrades += trCount;
-    if (d.win_rate !== undefined) {
-      totWins += Math.round((winRate / 100) * trCount);
-    }
-
-    const tr = document.createElement("tr");
-    const isWin = net >= 0;
-    tr.innerHTML = `
-      <td style="font-weight: 700; color: #fff;">
-        <span style="display: inline-flex; align-items: center; gap: 6px;">
-          <span>📅</span>
-          <span>${d.date || "-"}</span>
-        </span>
-      </td>
-      <td>₹${(d.starting_equity || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
-      <td>₹${(d.ending_equity || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
-      <td style="color: ${gross >= 0 ? "var(--green)" : "var(--red)"};">
-        ${gross >= 0 ? "+" : ""}₹${gross.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
-      </td>
-      <td style="color: var(--text-muted);">₹${charges.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
-      <td style="font-weight: 700; color: ${isWin ? "var(--green)" : "var(--red)"};">
-        ${isWin ? "+" : ""}₹${net.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
-      </td>
-      <td style="font-weight: 600; color: ${retPct >= 0 ? "var(--green)" : "var(--red)"};">
-        ${retPct >= 0 ? "+" : ""}${retPct.toFixed(2)}%
-      </td>
-      <td>${trCount}</td>
-      <td>${winRate.toFixed(1)}%</td>
-    `;
-
-    // Click session row to filter trade log to this session date
-    tr.addEventListener("click", () => {
-      const dateFilter = document.getElementById("tradeDateFilter");
-      if (dateFilter && d.date) {
-        dateFilter.value = d.date;
-        filterAndRenderTrades();
-        switchTab("tabInspector");
-      }
-    });
-
-    tbody.appendChild(tr);
-  });
-
-  if (tfoot) {
-    const aggRetPct = startEq > 0 ? ((totNet / startEq) * 100) : 0.0;
-    const aggWinRate = totTrades > 0 ? ((totWins / totTrades) * 100) : 0.0;
-    const isTotProfit = totNet >= 0;
-    tfoot.innerHTML = `
-      <tr>
-        <td style="color: var(--accent-cyan);">SUMMARY TOTALS</td>
-        <td>₹${startEq.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
-        <td>₹${endEq.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
-        <td style="color: ${totGross >= 0 ? "var(--green)" : "var(--red)"};">
-          ${totGross >= 0 ? "+" : ""}₹${totGross.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
-        </td>
-        <td style="color: var(--text-muted);">₹${totCharges.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
-        <td style="font-weight: 800; color: ${isTotProfit ? "var(--green)" : "var(--red)"};">
-          ${isTotProfit ? "+" : ""}₹${totNet.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
-        </td>
-        <td style="font-weight: 800; color: ${aggRetPct >= 0 ? "var(--green)" : "var(--red)"};">
-          ${aggRetPct >= 0 ? "+" : ""}${aggRetPct.toFixed(2)}%
-        </td>
-        <td style="font-weight: 800;">${totTrades}</td>
-        <td style="font-weight: 800;">${aggWinRate.toFixed(1)}%</td>
-      </tr>
-    `;
-  }
-}
-
-// ── Update Trade Date Filter Options ─────────────────────────────────────────
-function updateDateFilterOptions() {
-  const dateFilter = document.getElementById("tradeDateFilter");
-  if (!dateFilter) return;
-
-  const currentVal = dateFilter.value;
-  dateFilter.innerHTML = '<option value="">All Dates</option>';
-
-  const dateCounts = {};
-  allTrades.forEach(t => {
-    const d = t.date || ((t.entry_time || "").includes(" ") ? t.entry_time.split(" ")[0] : "");
-    if (d) {
-      dateCounts[d] = (dateCounts[d] || 0) + 1;
-    }
-  });
-
-  const uniqueDates = Object.keys(dateCounts).sort();
-  if (uniqueDates.length > 1) {
-    dateFilter.style.display = "inline-block";
-  } else if (uniqueDates.length === 0) {
-    dateFilter.style.display = "none";
-    return;
-  } else {
-    dateFilter.style.display = "inline-block";
-  }
-
-  uniqueDates.forEach(d => {
-    const opt = document.createElement("option");
-    opt.value = d;
-    opt.innerText = `${d} (${dateCounts[d]} trade${dateCounts[d] > 1 ? "s" : ""})`;
-    if (d === currentVal) opt.selected = true;
-    dateFilter.appendChild(opt);
-  });
-}
-
-
 // ── Chart.js Renderers ───────────────────────────────────────────────────────
+let latestEquityCurveCache = [];
+
 function renderEquityChart(curve) {
+  latestEquityCurveCache = curve || [];
   const canvas = document.getElementById("equityChart");
   const placeholder = document.getElementById("equityPlaceholder");
   const returnBadge = document.getElementById("equityReturnBadge");
   if (!canvas) return;
   const ctx = canvas.getContext("2d");
-  if (equityChart) equityChart.destroy();
+  ChartRegistry.destroy("equityChart");
 
-  if (curve.length === 0) {
+  if (!curve || curve.length === 0) {
     if (placeholder) placeholder.style.display = "flex";
     return;
   }
@@ -1397,32 +1397,66 @@ function renderEquityChart(curve) {
     returnBadge.style.borderColor = isNetProfit ? "rgba(16, 185, 129, 0.3)" : "rgba(239, 68, 68, 0.3)";
   }
 
-  equityChart = new Chart(ctx, {
+  const datasets = [{
+    label: "Portfolio Equity (₹)",
+    data: values,
+    borderColor: lineColor,
+    backgroundColor: fillColor,
+    fill: true,
+    tension: 0.1,
+    pointRadius: 0,
+    borderWidth: 2
+  }];
+
+  const chkBench = document.getElementById("chkShowBenchmark");
+  let showLegend = false;
+  if (chkBench && chkBench.checked && values.length > 0) {
+    showLegend = true;
+    const startVal = values[0];
+    const benchmarkValues = values.map((_, idx) => {
+      const stepPct = (idx / Math.max(values.length - 1, 1)) * 0.006;
+      return Math.round(startVal * (1.0 + stepPct));
+    });
+    datasets.push({
+      label: "NIFTY 50 (B&H Benchmark)",
+      data: benchmarkValues,
+      borderColor: "rgba(255, 255, 255, 0.45)",
+      backgroundColor: "transparent",
+      borderDash: [5, 5],
+      fill: false,
+      tension: 0.1,
+      pointRadius: 0,
+      borderWidth: 1.5
+    });
+  }
+
+  if (chkBench && !chkBench.dataset.bound) {
+    chkBench.dataset.bound = "true";
+    chkBench.addEventListener("change", () => {
+      renderEquityChart(latestEquityCurveCache);
+    });
+  }
+
+  equityChart = ChartRegistry.register("equityChart", new Chart(ctx, {
     type: "line",
     data: {
       labels: labels,
-      datasets: [{
-        label: "Portfolio Equity (₹)",
-        data: values,
-        borderColor: lineColor,
-        backgroundColor: fillColor,
-        fill: true,
-        tension: 0.1,
-        pointRadius: 0,
-        borderWidth: 2
-      }]
+      datasets: datasets
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
-        legend: { display: false },
+        legend: {
+          display: showLegend,
+          labels: { color: "#94a3b8", font: { size: 11 } }
+        },
         tooltip: {
           backgroundColor: "rgba(10, 16, 28, 0.95)",
           borderColor: "rgba(255, 255, 255, 0.1)",
           borderWidth: 1,
           callbacks: {
-            label: (ctx) => `Equity: ₹${ctx.parsed.y.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`
+            label: (ctx) => `${ctx.dataset.label}: ₹${ctx.parsed.y.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`
           }
         }
       },
@@ -1441,7 +1475,7 @@ function renderEquityChart(curve) {
         }
       }
     }
-  });
+  }));
 }
 
 function renderDailyChart(daily) {
@@ -1855,35 +1889,24 @@ function filterAndRenderTrades() {
   const query = searchInput ? searchInput.value.trim().toLowerCase() : "";
   const symFilter = document.getElementById("tradeSymbolFilter");
   const selectedSym = symFilter ? symFilter.value : "";
-  const dateFilter = document.getElementById("tradeDateFilter");
-  const selectedDate = dateFilter ? dateFilter.value : "";
 
   filteredTrades = allTrades.filter(t => {
-    // 0. Dedicated Date Filter
-    if (selectedDate) {
-      const tradeDate = t.date || ((t.entry_time || "").includes(" ") ? t.entry_time.split(" ")[0] : "");
-      if (tradeDate && tradeDate !== selectedDate) {
-        return false;
-      }
-    }
-
-    // 1. Dedicated Symbol Filter
+    // 0. Dedicated Symbol Filter
     if (selectedSym && (t.symbol || "") !== selectedSym) {
       return false;
     }
 
-    // 2. Text Search Filter
+    // 1. Text Search Filter
     if (query) {
       const sym = (t.symbol || "").toLowerCase();
       const side = (t.side || "").toLowerCase();
       const reason = (t.exit_reason || "").toLowerCase();
       const time = (t.entry_time || "").toLowerCase();
-      const date = (t.date || "").toLowerCase();
-      const matchesSearch = sym.includes(query) || side.includes(query) || reason.includes(query) || time.includes(query) || date.includes(query);
+      const matchesSearch = sym.includes(query) || side.includes(query) || reason.includes(query) || time.includes(query);
       if (!matchesSearch) return false;
     }
 
-    // 3. Pill Category Filter
+    // 2. Pill Category Filter
     if (currentTradeFilter === "win") {
       return (t.net_pnl || 0) > 0;
     } else if (currentTradeFilter === "loss") {
@@ -1899,19 +1922,11 @@ function filterAndRenderTrades() {
     return true;
   });
 
+
   // Sort
   filteredTrades.sort((a, b) => {
-    let col = currentSortColumn;
-    let valA = a[col];
-    let valB = b[col];
-
-    if (col === "entry_date") {
-      valA = a.date || ((a.entry_time || "").includes(" ") ? a.entry_time.split(" ")[0] : "");
-      valB = b.date || ((b.entry_time || "").includes(" ") ? b.entry_time.split(" ")[0] : "");
-    } else if (col === "entry_time") {
-      valA = (a.entry_time || "").includes(" ") ? a.entry_time.split(" ")[1] : (a.entry_time || "");
-      valB = (b.entry_time || "").includes(" ") ? b.entry_time.split(" ")[1] : (b.entry_time || "");
-    }
+    let valA = a[currentSortColumn];
+    let valB = b[currentSortColumn];
 
     if (valA === undefined || valA === null) valA = "";
     if (valB === undefined || valB === null) valB = "";
@@ -1927,14 +1942,14 @@ function filterAndRenderTrades() {
   // Update count badge
   const countBadge = document.getElementById("tradesCountBadge");
   if (countBadge) {
-    countBadge.innerText = (query || selectedDate || selectedSym || currentTradeFilter !== "all")
+    countBadge.innerText = (query || currentTradeFilter !== "all")
       ? `${filteredTrades.length} of ${allTrades.length} trades`
       : `${allTrades.length} trades`;
   }
 
   const tbody = document.getElementById("tradesBody");
   if (filteredTrades.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="12" class="empty-state">No trades match the active filter or search query.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" class="empty-state">No trades match the active filter or search query.</td></tr>';
     return;
   }
 
@@ -1947,18 +1962,15 @@ function filterAndRenderTrades() {
     }
 
     const isWin = (t.net_pnl || 0) >= 0;
-    const entryRaw = String(t.entry_time || "");
-    const dateStr = t.date || (entryRaw.includes(" ") ? entryRaw.split(" ")[0] : "-");
-    const timeStr = entryRaw.includes(" ") ? entryRaw.split(" ")[1] : (entryRaw || "-");
+    const timeShort = (t.entry_time || "").split(" ").pop() || t.entry_time;
 
     tr.innerHTML = `
-      <td><span style="font-family:'JetBrains Mono',monospace; font-size:0.78rem; color:var(--text-muted);">${dateStr}</span></td>
-      <td><span style="font-family:'JetBrains Mono',monospace; font-size:0.78rem;">${timeStr}</span></td>
+      <td>${timeShort}</td>
       <td style="font-weight: 600; color: #fff;">${t.symbol}</td>
       <td style="color: ${t.side === "BUY" ? "var(--green)" : "var(--red)"}; font-weight: 600;">${t.side}</td>
       <td>${t.qty}</td>
       <td>₹${(t.entry_price || 0).toFixed(2)}</td>
-      <td>${t.exit_price ? "₹" + Number(t.exit_price).toFixed(2) : "-"}</td>
+      <td>${t.exit_price ? "₹" + t.exit_price.toFixed(2) : "-"}</td>
       <td style="color: ${(t.gross_pnl || 0) >= 0 ? "var(--green)" : "var(--red)"};">₹${(t.gross_pnl || 0).toFixed(2)}</td>
       <td style="color: var(--text-muted);">₹${(t.charges || 0).toFixed(2)}</td>
       <td style="font-weight: 700; color: ${isWin ? "var(--green)" : "var(--red)"};">
@@ -2093,14 +2105,41 @@ function renderDataExplorer(archives) {
             }).join("")}
           </div>
         </div>
-        <div style="margin-top: 10px; border-top: 1px solid var(--panel-border); padding-top: 10px; display: flex; justify-content: space-between; align-items: center;">
+        <div style="margin-top: 10px; border-top: 1px solid var(--panel-border); padding-top: 10px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px;">
           <span style="font-size: 0.72rem; color: var(--text-muted);">${extFiles.length} database assets</span>
-          <button class="btn-secondary btn-sm" onclick="selectAndTestSession('${arch.date}')">⚡ Test in Console</button>
+          <div class="flex-gap-6">
+            <button class="btn-secondary btn-sm" onclick="auditSessionQuality('${arch.date}')" title="Audit data quality">🛡️ Audit</button>
+            ${!isExtracted && arch.source_type !== "folder" ? `<button class="btn-secondary btn-sm" onclick="extractSessionArchive('${arch.date}')" title="Decompress archive">📦 Extract</button>` : ""}
+            <button class="btn-secondary btn-sm" onclick="selectAndTestSession('${arch.date}')">⚡ Test in Console</button>
+          </div>
         </div>
       </div>
     `;
   }).join("");
 }
+
+async function extractSessionArchive(dateStr) {
+  const dirInput = document.getElementById("dirInput");
+  const targetDir = dirInput ? dirInput.value.trim() : "";
+  showToast(`Extracting market archive for ${dateStr}...`, "info");
+  try {
+    const resp = await fetch("/api/extract", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dates: [dateStr], directory: targetDir })
+    });
+    const res = await resp.json();
+    if (res.status === "success") {
+      showToast(`Extracted archive ${dateStr} successfully!`, "success");
+      loadArchives(targetDir);
+    } else {
+      showToast(`Extraction failed: ${res.message || "Unknown error"}`, "error");
+    }
+  } catch (e) {
+    showToast(`Extraction request failed: ${e.message}`, "error");
+  }
+}
+window.extractSessionArchive = extractSessionArchive;
 
 function selectAndTestSession(dateStr) {
   // Check this session checkbox in console and switch tab
@@ -2334,116 +2373,36 @@ async function runWalkForward() {
   status.innerText = `Optimizing ${strat.toUpperCase()} over rolling windows across [${selectedDates.join(", ")}]...`;
   status.style.color = "var(--accent-cyan)";
 
-  const wfoProgressBox = document.getElementById("wfoProgressContainer");
-  const wfoProgressBar = document.getElementById("wfoProgressBar");
-  const wfoProgressLabel = document.getElementById("wfoProgressLabel");
-  const wfoProgressPct = document.getElementById("wfoProgressPct");
-  if (wfoProgressBox) {
-    wfoProgressBox.style.display = "block";
-    if (wfoProgressBar) wfoProgressBar.style.width = "0%";
-    if (wfoProgressPct) wfoProgressPct.innerText = "0%";
-    if (wfoProgressLabel) wfoProgressLabel.innerText = "Initializing rolling windows...";
-  }
-  setGlobalProgress(0, `Initializing Walk-Forward analysis for ${strat.toUpperCase()}...`, true);
-
-  const payload = {
-    directory: archiveDir,
-    dates: selectedDates,
-    strategy: strat,
-    in_sample: inSample,
-    out_of_sample: outSample,
-    rank_by: rankBy,
-    symbols: symbols
-  };
-
-  let streamSucceeded = false;
-
   try {
-    const res = await fetch("/api/walk_forward/stream", {
+    const res = await fetch("/api/walk_forward", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
+      body: JSON.stringify({
+        directory: archiveDir,
+        dates: selectedDates,
+        strategy: strat,
+        in_sample: inSample,
+        out_of_sample: outSample,
+        rank_by: rankBy,
+        symbols: symbols
+      })
     });
-
-    if (res.ok && res.body && window.ReadableStream) {
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder("utf-8");
-      let buffer = "";
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n\n");
-        buffer = lines.pop();
-
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed.startsWith("data:")) continue;
-          const jsonStr = trimmed.slice(5).trim();
-          try {
-            const event = JSON.parse(jsonStr);
-            if (event.type === "progress") {
-              const pct = Math.round((event.window / event.total) * 100);
-              const msg = `Window ${event.window}/${event.total} · IS: [${event.in_sample_dates.join(",")}] · OOS: [${event.out_of_sample_dates.join(",")}] · OOS P&L: ₹${event.oos_pnl}`;
-              setGlobalProgress(pct, `Walk-Forward Window ${event.window}/${event.total} (OOS P&L: ₹${event.oos_pnl})`, true);
-              if (wfoProgressBar) wfoProgressBar.style.width = `${pct}%`;
-              if (wfoProgressPct) wfoProgressPct.innerText = `${pct}%`;
-              if (wfoProgressLabel) wfoProgressLabel.innerText = msg;
-              status.innerText = msg;
-            } else if (event.type === "complete") {
-              streamSucceeded = true;
-              const wfoRes = event.result || event;
-              if (wfoProgressBar) wfoProgressBar.style.width = "100%";
-              if (wfoProgressPct) wfoProgressPct.innerText = "100%";
-              setGlobalProgress(100, `Walk-Forward analysis complete (${wfoRes.total_windows} windows)!`, false);
-              status.innerText = `Walk-Forward analysis completed for ${wfoRes.total_windows} rolling windows!`;
-              status.style.color = "var(--green)";
-              renderWalkForwardResults(wfoRes);
-            } else if (event.type === "error") {
-              status.innerText = `WFO stream error: ${event.message}`;
-              status.style.color = "var(--red)";
-              setGlobalProgress(0, "", false);
-            }
-          } catch (pe) {}
-        }
-      }
-    }
-  } catch (streamErr) {
-    console.warn("WFO stream fetch interrupted, falling back to /api/walk_forward:", streamErr);
-  }
-
-  // Fallback to standard /api/walk_forward
-  if (!streamSucceeded) {
-    try {
-      setGlobalProgress(50, `Running Walk-Forward analysis across ${selectedDates.length} sessions...`, true);
-      const fallbackRes = await fetch("/api/walk_forward", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-      const data = await fallbackRes.json();
-      if (data.status === "success") {
-        if (wfoProgressBar) wfoProgressBar.style.width = "100%";
-        if (wfoProgressPct) wfoProgressPct.innerText = "100%";
-        setGlobalProgress(100, `Walk-Forward analysis complete (${data.total_windows} windows)!`, false);
-        status.innerText = `Walk-Forward analysis completed for ${data.total_windows} rolling windows!`;
-        status.style.color = "var(--green)";
-        renderWalkForwardResults(data);
-      } else {
-        status.innerText = `WFO failed: ${data.message || "Unknown error"}`;
-        status.style.color = "var(--red)";
-        setGlobalProgress(0, "", false);
-      }
-    } catch (err) {
-      status.innerText = `WFO failed: ${err}`;
+    const data = await res.json();
+    if (data.status === "success") {
+      status.innerText = `Walk-Forward analysis completed for ${data.total_windows} rolling windows!`;
+      status.style.color = "var(--green)";
+      renderWalkForwardResults(data);
+    } else {
+      status.innerText = `WFO failed: ${data.message || "Unknown error"}`;
       status.style.color = "var(--red)";
-      setGlobalProgress(0, "", false);
     }
+  } catch (err) {
+    status.innerText = `WFO failed: ${err}`;
+    status.style.color = "var(--red)";
+  } finally {
+    btn.disabled = false;
+    btn.innerText = "🧪 RUN WALK-FORWARD ANALYSIS";
   }
-
-  btn.disabled = false;
-  btn.innerText = "🧪 RUN WALK-FORWARD ANALYSIS";
 }
 
 function renderWalkForwardResults(data) {
@@ -2455,6 +2414,7 @@ function renderWalkForwardResults(data) {
 
   const wfe = data.walk_forward_efficiency;
   const isRobust = data.is_robust;
+  updateWfoTrafficLight(wfe);
 
   if (badge) {
     badge.innerText = isRobust ? "ROBUST (WFE >= 0.50)" : "OVERFIT (WFE < 0.50)";
@@ -2644,116 +2604,36 @@ async function runParameterOptimization() {
   status.innerText = `Evaluating parameter grid for ${strat.toUpperCase()} across [${selectedDates.join(", ")}]...`;
   status.style.color = "var(--accent-cyan)";
 
-  const optProgressBox = document.getElementById("optProgressContainer");
-  const optProgressBar = document.getElementById("optProgressBar");
-  const optProgressLabel = document.getElementById("optProgressLabel");
-  const optProgressPct = document.getElementById("optProgressPct");
-  if (optProgressBox) {
-    optProgressBox.style.display = "block";
-    if (optProgressBar) optProgressBar.style.width = "0%";
-    if (optProgressPct) optProgressPct.innerText = "0%";
-    if (optProgressLabel) optProgressLabel.innerText = "Testing parameter combinations...";
-  }
-  setGlobalProgress(0, `Evaluating parameter grid for ${strat.toUpperCase()} across ${selectedDates.length} session(s)...`, true);
-
-  const payload = {
-    directory: archiveDir,
-    dates: selectedDates,
-    strategy: strat,
-    param_grid: paramGrid,
-    rank_by: rankBy,
-    symbols: symbols
-  };
-
-  let streamSucceeded = false;
-
   try {
-    const res = await fetch("/api/optimize/stream", {
+    const res = await fetch("/api/optimize", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
+      body: JSON.stringify({
+        directory: archiveDir,
+        dates: selectedDates,
+        strategy: strat,
+        param_grid: paramGrid,
+        rank_by: rankBy,
+        symbols: symbols
+      })
     });
-
-    if (res.ok && res.body && window.ReadableStream) {
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder("utf-8");
-      let buffer = "";
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n\n");
-        buffer = lines.pop();
-
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed.startsWith("data:")) continue;
-          const jsonStr = trimmed.slice(5).trim();
-          try {
-            const event = JSON.parse(jsonStr);
-            if (event.type === "progress") {
-              const pct = Math.round((event.current / event.total) * 100);
-              const msg = `Combo ${event.current}/${event.total} · Sharpe: ${event.sharpe_ratio} · P&L: ₹${event.net_pnl}`;
-              setGlobalProgress(pct, `Testing Combo ${event.current}/${event.total} · Sharpe: ${event.sharpe_ratio} · P&L: ₹${event.net_pnl}`, true);
-              if (optProgressBar) optProgressBar.style.width = `${pct}%`;
-              if (optProgressPct) optProgressPct.innerText = `${pct}%`;
-              if (optProgressLabel) optProgressLabel.innerText = msg;
-              status.innerText = msg;
-            } else if (event.type === "complete") {
-              streamSucceeded = true;
-              if (optProgressBar) optProgressBar.style.width = "100%";
-              if (optProgressPct) optProgressPct.innerText = "100%";
-              setGlobalProgress(100, `Optimization complete (${event.total_combinations} combinations evaluated)!`, false);
-              status.innerText = `Optimization finished! Evaluated ${event.total_combinations} combinations.`;
-              status.style.color = "var(--green)";
-              latestOptimizationResults = event.ranked_results || [];
-              renderOptimizationResults(strat, event);
-            } else if (event.type === "error") {
-              status.innerText = `Optimizer error: ${event.message}`;
-              status.style.color = "var(--red)";
-              setGlobalProgress(0, "", false);
-            }
-          } catch (pe) {}
-        }
-      }
-    }
-  } catch (streamErr) {
-    console.warn("Optimizer stream fetch interrupted, falling back to /api/optimize:", streamErr);
-  }
-
-  // Fallback to standard /api/optimize
-  if (!streamSucceeded) {
-    try {
-      setGlobalProgress(50, `Evaluating parameter combinations for ${strat.toUpperCase()}...`, true);
-      const fallbackRes = await fetch("/api/optimize", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-      const data = await fallbackRes.json();
-      if (data.status === "success") {
-        if (optProgressBar) optProgressBar.style.width = "100%";
-        if (optProgressPct) optProgressPct.innerText = "100%";
-        setGlobalProgress(100, `Optimization complete (${data.total_combinations} combinations evaluated)!`, false);
-        status.innerText = `Optimization finished! Evaluated ${data.total_combinations} combinations.`;
-        status.style.color = "var(--green)";
-        latestOptimizationResults = data.ranked_results || [];
-        renderOptimizationResults(strat, data);
-      } else {
-        status.innerText = `Optimization failed: ${data.message || "Unknown error"}`;
-        status.style.color = "var(--red)";
-        setGlobalProgress(0, "", false);
-      }
-    } catch (err) {
-      status.innerText = `Optimization failed: ${err}`;
+    const data = await res.json();
+    if (data.status === "success") {
+      status.innerText = `Optimization finished! Evaluated ${data.total_combinations} combinations.`;
+      status.style.color = "var(--green)";
+      latestOptimizationResults = data.ranked_results || [];
+      renderOptimizationResults(strat, data);
+    } else {
+      status.innerText = `Optimization failed: ${data.message || "Unknown error"}`;
       status.style.color = "var(--red)";
-      setGlobalProgress(0, "", false);
     }
+  } catch (err) {
+    status.innerText = `Optimization failed: ${err}`;
+    status.style.color = "var(--red)";
+  } finally {
+    btn.disabled = false;
+    btn.innerText = "🚀 RUN GRID OPTIMIZATION";
   }
-
-  btn.disabled = false;
-  btn.innerText = "🚀 RUN GRID OPTIMIZATION";
 }
 
 function renderOptimizationResults(strat, data) {
@@ -2897,2062 +2777,1481 @@ function applyParametersToConsole(strat, params) {
 window.applyParametersToConsole = applyParametersToConsole;
 
 
-// ── Trading Engine Deep Integration & Insights Cockpit ──────────────────────────
-function initTradingEngineInsights() {
-  const subBtns = document.querySelectorAll(".te-subtab-btn");
-  const subpanels = document.querySelectorAll(".te-subpanel");
+// ── TAB 7: MASS ITERATION LAB CONTROLLER ──────────────────────────────────────────
+let currentMassJobId = null;
+let massEventSource = null;
+let currentMassResults = null;
 
-  subBtns.forEach(btn => {
-    btn.addEventListener("click", () => {
-      subBtns.forEach(b => {
-        b.classList.remove("active");
-        b.style.borderColor = "transparent";
-      });
-      btn.classList.add("active");
-      btn.style.borderColor = "var(--accent-cyan)";
+function initMassIterationLab() {
+  const stratSel = document.getElementById("massStrategySelect");
+  const gridText = document.getElementById("massGridJson");
+  const btnReset = document.getElementById("btnMassResetGrid");
+  const btnLaunch = document.getElementById("btnLaunchMass");
+  const btnCancel = document.getElementById("btnCancelMass");
+  const btnSave = document.getElementById("btnSaveMassSession");
+  const btnRefresh = document.getElementById("btnRefreshSessions");
 
-      const subId = btn.getAttribute("data-sub");
-      subpanels.forEach(p => {
-        p.style.display = p.id === subId ? "block" : "none";
-      });
+  if (!stratSel) return;
 
-      if (subId === "subReconciliation") {
-        setTimeout(() => { if (teDriftChartInstance) teDriftChartInstance.resize(); }, 50);
-      } else if (subId === "subFactorAlpha" && !window._teFactorsLoaded) {
-        window._teFactorsLoaded = true;
-        fetchFactorAblation();
-      } else if (subId === "subConfigExport" && !window._teConfigLoaded) {
-        window._teConfigLoaded = true;
-        fetchConfigExport();
-      } else if (subId === "subAiAnalytics") {
-        setTimeout(() => { if (teCalibrationChartInstance) teCalibrationChartInstance.resize(); }, 50);
-        if (!window._latestAiAnalyticsData) fetchAiAnalytics();
-      } else if (subId === "subMonteCarlo") {
-        setTimeout(() => { if (teMonteCarloChartInstance) teMonteCarloChartInstance.resize(); }, 50);
-        if (!window._teMonteCarloLoaded) {
-          window._teMonteCarloLoaded = true;
-          fetchMonteCarlo();
-        }
-      } else if (subId === "subMultiLeg") {
-        setTimeout(() => { if (teGreeksChartInstance) teGreeksChartInstance.resize(); }, 50);
-        if (!window._teMultiLegLoaded) {
-          window._teMultiLegLoaded = true;
-          fetchMultiLegSimulation();
-        }
-      } else if (subId === "subOptionChain") {
-        setTimeout(() => {
-          if (teOptionChainChartInstance) teOptionChainChartInstance.resize();
-          if (tePcrChartInstance) tePcrChartInstance.resize();
-        }, 50);
-        if (!window._teOptionChainLoaded) {
-          window._teOptionChainLoaded = true;
-          fetchOptionChain();
-        }
-      } else if (subId === "subForensicReplay") {
-        setTimeout(() => { if (teReplayChartInstance) teReplayChartInstance.resize(); }, 50);
-        if (!window._teReplayLoaded) {
-          window._teReplayLoaded = true;
-          loadReplaySession();
-        }
-      } else if (subId === "subRobustness") {
-        if (!window._teRobustnessLoaded) {
-          window._teRobustnessLoaded = true;
-          fetchRobustnessAudit();
-        }
-      } else if (subId === "subPortfolioAllocation") {
-        setTimeout(() => { if (tePortfolioChartInstance) tePortfolioChartInstance.resize(); }, 50);
-        if (!window._tePortfolioLoaded) {
-          window._tePortfolioLoaded = true;
-          fetchPortfolioOptimization();
-        }
-      } else if (subId === "subAutoTune") {
-        if (!window._teAutoTuneLoaded) {
-          window._teAutoTuneLoaded = true;
-          fetchAutoTune();
+  async function updateDefaultGrid() {
+    const strat = stratSel.value;
+    try {
+      const resp = await fetch(`/api/strategy_params?strategy=${strat}`);
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.default_grid) {
+          gridText.value = JSON.stringify(data.default_grid, null, 2);
+          return;
         }
       }
+    } catch (e) {}
+    gridText.value = JSON.stringify({ "sl_pts": [10.0, 15.0, 20.0], "target_pts": [20.0, 30.0, 40.0] }, null, 2);
+  }
 
+  stratSel.addEventListener("change", updateDefaultGrid);
+  if (btnReset) btnReset.addEventListener("click", updateDefaultGrid);
+  updateDefaultGrid();
+
+  if (btnLaunch) btnLaunch.addEventListener("click", launchMassOptimization);
+  if (btnCancel) btnCancel.addEventListener("click", cancelMassOptimization);
+  if (btnSave) btnSave.addEventListener("click", saveCurrentMassSession);
+  if (btnRefresh) btnRefresh.addEventListener("click", loadSavedSessions);
+
+  const btnMatrix = document.getElementById("btnViewSessionMatrix");
+  const btnCloseMatrix = document.getElementById("btnCloseStabilityMatrix");
+  const selX = document.getElementById("matrixParamX");
+  const selY = document.getElementById("matrixParamY");
+
+  if (btnMatrix) {
+    btnMatrix.addEventListener("click", () => {
+      if (currentMassResults) {
+        renderMassStabilityMatrix(currentMassResults);
+      }
     });
+  }
+  if (btnCloseMatrix) {
+    btnCloseMatrix.addEventListener("click", () => {
+      const card = document.getElementById("massStabilityMatrixCard");
+      if (card) card.style.display = "none";
+    });
+  }
+  if (selX) selX.addEventListener("change", () => {
+    if (currentMassResults) renderMassStabilityMatrix(currentMassResults);
+  });
+  if (selY) selY.addEventListener("change", () => {
+    if (currentMassResults) renderMassStabilityMatrix(currentMassResults);
   });
 
-  // Slider event with real-time confusion matrix recalculation
-  const slider = document.getElementById("teConfSlider");
-  const sliderVal = document.getElementById("teConfSliderVal");
-  if (slider && sliderVal) {
-    slider.addEventListener("input", (e) => {
-      const val = parseFloat(e.target.value);
-      sliderVal.innerText = val.toFixed(2);
-      updateConfusionFromSweep(val);
-    });
-    slider.addEventListener("change", () => {
-      fetchAiAnalytics();
-    });
-  }
-
-  // Date select change listener
-  const dateSelect = document.getElementById("teDateSelect");
-  if (dateSelect) {
-    dateSelect.addEventListener("change", () => {
-      fetchReconciliation();
-      if (window._teFactorsLoaded) fetchFactorAblation();
-      if (window._teMonteCarloLoaded) fetchMonteCarlo();
-      if (window._teMultiLegLoaded) fetchMultiLegSimulation();
-    });
-  }
-
-  // Action Buttons
-  const btnRunAll = document.getElementById("btnRunAllEngineInsights");
-  if (btnRunAll) {
-    btnRunAll.addEventListener("click", async () => {
-      btnRunAll.disabled = true;
-      btnRunAll.innerText = "Analyzing...";
-      try {
-        await Promise.all([
-          fetchReconciliation(),
-          fetchAiAnalytics(),
-          fetchFactorAblation(),
-          fetchConfigExport(),
-          fetchMonteCarlo(),
-          fetchMultiLegSimulation()
-        ]);
-        window._teFactorsLoaded = true;
-        window._teConfigLoaded = true;
-        window._teMonteCarloLoaded = true;
-        window._teMultiLegLoaded = true;
-      } finally {
-        btnRunAll.disabled = false;
-        btnRunAll.innerText = "⚡ Run Full Analysis";
-      }
-    });
-  }
-
-  const btnRefreshRecon = document.getElementById("btnRefreshRecon");
-  if (btnRefreshRecon) {
-    btnRefreshRecon.addEventListener("click", fetchReconciliation);
-  }
-
-  const btnRecalculateAi = document.getElementById("btnRecalculateAi");
-  if (btnRecalculateAi) {
-    btnRecalculateAi.addEventListener("click", fetchAiAnalytics);
-  }
-
-  const btnRunFactors = document.getElementById("btnRunFactorAblation");
-  if (btnRunFactors) {
-    btnRunFactors.addEventListener("click", () => {
-      window._teFactorsLoaded = true;
-      fetchFactorAblation();
-    });
-  }
-
-  const btnRunMonteCarlo = document.getElementById("btnRunMonteCarlo");
-  if (btnRunMonteCarlo) {
-    btnRunMonteCarlo.addEventListener("click", fetchMonteCarlo);
-  }
-
-  const btnRunMultiLeg = document.getElementById("btnRunMultiLeg");
-  if (btnRunMultiLeg) {
-    btnRunMultiLeg.addEventListener("click", fetchMultiLegSimulation);
-  }
-
-  // Option Chain Handlers
-  const btnRefreshOptionChain = document.getElementById("btnRefreshOptionChain");
-  if (btnRefreshOptionChain) btnRefreshOptionChain.addEventListener("click", fetchOptionChain);
-  const ocTableSelect = document.getElementById("ocTableSelect");
-  if (ocTableSelect) ocTableSelect.addEventListener("change", fetchOptionChain);
-  const ocTimeSlider = document.getElementById("ocTimeSlider");
-  if (ocTimeSlider) {
-    ocTimeSlider.addEventListener("input", (e) => {
-      const label = document.getElementById("ocTimeLabel");
-      const val = parseInt(e.target.value);
-      if (label) {
-        if (val >= 75) label.innerText = "EOD";
-        else {
-          const totalMin = val * 5;
-          const h = 9 + Math.floor((15 + totalMin) / 60);
-          const m = (15 + totalMin) % 60;
-          label.innerText = `${h}:${String(m).padStart(2, '0')}`;
-        }
-      }
-    });
-    ocTimeSlider.addEventListener("change", fetchOptionChain);
-  }
-
-  // Forensic Replay Handlers
-  const btnLoadReplay = document.getElementById("btnLoadReplay");
-  if (btnLoadReplay) btnLoadReplay.addEventListener("click", loadReplaySession);
-  const btnReplayPlay = document.getElementById("btnReplayPlay");
-  if (btnReplayPlay) btnReplayPlay.addEventListener("click", toggleReplayPlay);
-  const btnReplayStepBack = document.getElementById("btnReplayStepBack");
-  if (btnReplayStepBack) btnReplayStepBack.addEventListener("click", () => stepReplay(-1));
-  const btnReplayStepForward = document.getElementById("btnReplayStepForward");
-  if (btnReplayStepForward) btnReplayStepForward.addEventListener("click", () => stepReplay(1));
-  const btnReplayReset = document.getElementById("btnReplayReset");
-  if (btnReplayReset) btnReplayReset.addEventListener("click", resetReplay);
-  const replayScrubber = document.getElementById("replayScrubber");
-  if (replayScrubber) {
-    replayScrubber.addEventListener("input", (e) => {
-      seekReplay(parseInt(e.target.value));
-    });
-  }
-  const chkReplaySt = document.getElementById("chkReplaySt");
-  const chkReplayVwap = document.getElementById("chkReplayVwap");
-  const chkReplayCpr = document.getElementById("chkReplayCpr");
-  [chkReplaySt, chkReplayVwap, chkReplayCpr].forEach(chk => {
-    if (chk) chk.addEventListener("change", () => renderReplayFrame(currentReplayFrameIndex));
-  });
-
-  // Robustness Handlers
-  const btnRunRobustness = document.getElementById("btnRunRobustness");
-  if (btnRunRobustness) btnRunRobustness.addEventListener("click", fetchRobustnessAudit);
-
-  // Portfolio Handlers
-  const btnRunPortfolio = document.getElementById("btnRunPortfolio");
-  if (btnRunPortfolio) btnRunPortfolio.addEventListener("click", () => {
-    const activePreset = document.querySelector(".port-preset-btn.active");
-    fetchPortfolioOptimization(activePreset ? activePreset.getAttribute("data-method") : "risk_parity");
-  });
-  document.querySelectorAll(".port-preset-btn").forEach(btn => {
-    btn.addEventListener("click", () => {
-      document.querySelectorAll(".port-preset-btn").forEach(b => b.classList.remove("active"));
-      btn.classList.add("active");
-      fetchPortfolioOptimization(btn.getAttribute("data-method"));
-    });
-  });
-
-  // Auto-Tune Handlers
-  const btnRunAutoTune = document.getElementById("btnRunAutoTune");
-  if (btnRunAutoTune) btnRunAutoTune.addEventListener("click", fetchAutoTune);
-  const btnApplyAutoTune = document.getElementById("btnApplyAutoTune");
-  if (btnApplyAutoTune) btnApplyAutoTune.addEventListener("click", applyAutoTune);
-
-
-  // Session Audit Modal Handlers
-  const btnOpenAuditModal = document.getElementById("btnOpenAuditModal");
-  const auditModal = document.getElementById("teAuditModal");
-  const closeAuditModal = document.getElementById("closeAuditModal");
-  if (btnOpenAuditModal && auditModal) {
-    btnOpenAuditModal.addEventListener("click", () => {
-      auditModal.style.display = "flex";
-      fetchSessionAudit();
-    });
-  }
-  if (closeAuditModal && auditModal) {
-    closeAuditModal.addEventListener("click", () => {
-      auditModal.style.display = "none";
-    });
-  }
-  const btnOpenHtmlReport = document.getElementById("btnOpenHtmlReport");
-  if (btnOpenHtmlReport) {
-    btnOpenHtmlReport.addEventListener("click", () => {
-      const select = document.getElementById("teDateSelect");
-      const d = select ? select.value : "2026_09_11";
-      window.open(`/api/trading_engine/audit?date=${encodeURIComponent(d)}&format=html`, "_blank");
-    });
-  }
-  const btnDownloadHtmlReport = document.getElementById("btnDownloadHtmlReport");
-  if (btnDownloadHtmlReport) {
-    btnDownloadHtmlReport.addEventListener("click", () => {
-      const select = document.getElementById("teDateSelect");
-      const d = select ? select.value : "2026_09_11";
-      window.location.href = `/api/trading_engine/audit?date=${encodeURIComponent(d)}&format=html&download=1`;
-    });
-  }
-
-  // Production Config Sync Buttons
-  const btnApplyTradingEngine = document.getElementById("btnApplyTradingEngine");
-  if (btnApplyTradingEngine) {
-    btnApplyTradingEngine.addEventListener("click", async () => {
-      const confirmSync = confirm("Apply optimized parameters directly to trading-engine/.env?\n\nAn automated timestamped backup (.env.bak.<timestamp>) will be safely created.");
-      if (!confirmSync) return;
-
-      btnApplyTradingEngine.disabled = true;
-      btnApplyTradingEngine.innerText = "Applying to trading-engine...";
-      const alertBox = document.getElementById("teSyncAlert");
-
-      try {
-        const res = await fetch("/api/trading_engine/apply_config", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({})
-        });
-        const json = await res.json();
-        if (json.status === "ok" && json.data) {
-          if (alertBox) {
-            alertBox.style.display = "block";
-            alertBox.style.background = "rgba(0, 245, 160, 0.12)";
-            alertBox.style.border = "1px solid rgba(0, 245, 160, 0.4)";
-            alertBox.style.color = "var(--green)";
-            alertBox.innerHTML = `<strong>✓ Successfully synchronized to trading-engine/.env!</strong><br>
-              <span style="font-size: 0.75rem; color: var(--text-muted);">Backup created: ${json.data.backup_file || "N/A"} | Updated keys: ${(json.data.updated_keys || []).join(", ")}</span>`;
-          }
-          btnApplyTradingEngine.innerText = "Applied Successfully! ✓";
-          setTimeout(() => {
-            btnApplyTradingEngine.disabled = false;
-            btnApplyTradingEngine.innerText = "⚡ Apply Directly to Trading Engine (.env)";
-          }, 3000);
-        } else {
-          throw new Error(json.message || "Failed to synchronize");
-        }
-      } catch (err) {
-        console.error("Error applying config:", err);
-        if (alertBox) {
-          alertBox.style.display = "block";
-          alertBox.style.background = "rgba(255, 77, 79, 0.12)";
-          alertBox.style.border = "1px solid rgba(255, 77, 79, 0.4)";
-          alertBox.style.color = "var(--red)";
-          alertBox.innerText = `Error applying config: ${err.message}`;
-        }
-        btnApplyTradingEngine.disabled = false;
-        btnApplyTradingEngine.innerText = "⚡ Apply Directly to Trading Engine (.env)";
-      }
-    });
-  }
-
-  const btnCopyEnv = document.getElementById("btnCopyEnv");
-  if (btnCopyEnv) {
-    btnCopyEnv.addEventListener("click", () => {
-      const preview = document.getElementById("teEnvPreview");
-      if (preview && preview.innerText) {
-        navigator.clipboard.writeText(preview.innerText);
-        btnCopyEnv.innerText = "Copied! ✓";
-        btnCopyEnv.style.color = "var(--green)";
-        setTimeout(() => {
-          btnCopyEnv.innerText = "📋 Copy .env";
-          btnCopyEnv.style.color = "";
-        }, 2000);
-      }
-    });
-  }
-
-  const btnDownloadEnv = document.getElementById("btnDownloadEnv");
-  if (btnDownloadEnv) {
-    btnDownloadEnv.addEventListener("click", () => {
-      window.location.href = "/api/trading_engine/export_config?format=env&download=true";
-    });
-  }
-
-  // Populate available dates in teDateSelect if empty
-  populateEngineDates();
+  loadSavedSessions();
 }
 
-function updateConfusionFromSweep(targetThreshold) {
-  if (!window._latestAiAnalyticsData || !Array.isArray(window._latestAiAnalyticsData.threshold_sweep)) return;
-  const sweep = window._latestAiAnalyticsData.threshold_sweep;
-  let best = sweep[0];
-  let minDiff = 999;
-  sweep.forEach(item => {
-    const diff = Math.abs(item.threshold - targetThreshold);
-    if (diff < minDiff) {
-      minDiff = diff;
-      best = item;
-    }
-  });
-  if (best) {
-    const mTP = document.getElementById("teMatrixTP");
-    if (mTP) mTP.innerText = best.true_positives || 0;
-    const mFP = document.getElementById("teMatrixFP");
-    if (mFP) mFP.innerText = best.false_positives || 0;
-    const mTN = document.getElementById("teMatrixTN");
-    if (mTN) mTN.innerText = best.true_negatives || 0;
-    const mFN = document.getElementById("teMatrixFN");
-    if (mFN) mFN.innerText = best.false_negatives || 0;
+async function launchMassOptimization() {
+  const strat = document.getElementById("massStrategySelect").value;
+  const sampling = document.getElementById("massSamplingMode").value;
+  const maxIter = parseInt(document.getElementById("massMaxIter").value) || 50;
+  const earlyPruning = document.getElementById("massEarlyPruning") ? document.getElementById("massEarlyPruning").checked : false;
+  const gridText = document.getElementById("massGridJson").value;
 
-    const kpiPrec = document.getElementById("teKpiAiPrecision");
-    if (kpiPrec) kpiPrec.innerText = (best.precision || 0).toFixed(1) + "%";
-    const kpiAcc = document.getElementById("teKpiAiAccuracy");
-    if (kpiAcc) kpiAcc.innerText = (best.accuracy || 0).toFixed(1) + "%";
-    const kpiFilt = document.getElementById("teKpiAiFilterRate");
-    const total = window._latestAiAnalyticsData.total_snapshots || 1;
-    if (kpiFilt) kpiFilt.innerText = `${best.signals_filtered || 0} (${(((best.signals_filtered || 0) / total) * 100).toFixed(0)}%)`;
-  }
-}
-
-async function populateEngineDates() {
-  const select = document.getElementById("teDateSelect");
-  if (!select) return;
+  let paramGrid = {};
   try {
-    const res = await fetch("/api/archives");
-    const json = await res.json();
-    if (json.status === "ok" && Array.isArray(json.archives)) {
-      const existing = Array.from(select.options).map(o => o.value);
-      json.archives.forEach(a => {
-        if (a.date && !existing.includes(a.date)) {
-          const opt = document.createElement("option");
-          opt.value = a.date;
-          opt.innerText = `${a.date}${a.date === "2026_09_11" ? " (Recorded Live Trades)" : ""}`;
-          select.appendChild(opt);
-        }
-      });
-    }
-  } catch (err) {
-    console.error("Error populating engine dates:", err);
-  }
-}
-
-async function fetchReconciliation() {
-  const select = document.getElementById("teDateSelect");
-  const dateVal = select ? select.value : "2026_09_11";
-  const dateToUse = dateVal === "all" ? "2026_09_11" : dateVal;
-
-  const tbody = document.getElementById("teMatchedBody");
-  if (tbody) {
-    tbody.innerHTML = '<tr><td colspan="12" class="empty-state">Reconciling live executions against theoretical simulation...</td></tr>';
-  }
-
-  try {
-    const res = await fetch(`/api/trading_engine/reconciliation?date=${encodeURIComponent(dateToUse)}`);
-    const json = await res.json();
-    if (json.status === "ok" && json.data) {
-      renderReconciliation(json.data);
-    } else {
-      if (tbody) tbody.innerHTML = `<tr><td colspan="12" class="empty-state" style="color: var(--red);">${json.message || "Reconciliation failed"}</td></tr>`;
-    }
-  } catch (err) {
-    console.error("Error fetching reconciliation:", err);
-    if (tbody) tbody.innerHTML = `<tr><td colspan="12" class="empty-state" style="color: var(--red);">Reconciliation request error: ${err.message}</td></tr>`;
-  }
-}
-
-function renderReconciliation(data) {
-  const sum = data.summary || {};
-
-  // KPIs
-  const kpiEff = document.getElementById("teKpiEfficiency");
-  if (kpiEff) kpiEff.innerText = (sum.overall_execution_efficiency || 0).toFixed(1) + "%";
-
-  const kpiSlip = document.getElementById("teKpiSlippage");
-  if (kpiSlip) {
-    const s = sum.avg_entry_slippage_rs || 0;
-    kpiSlip.innerText = (s >= 0 ? "+" : "") + "₹" + s.toFixed(2);
-    kpiSlip.style.color = s <= 0 ? "var(--green)" : "var(--red)";
-  }
-
-  const kpiSlipPct = document.getElementById("teKpiSlippagePct");
-  if (kpiSlipPct) kpiSlipPct.innerText = `${sum.avg_entry_slippage_pct || 0}% avg entry drift`;
-
-  const kpiLat = document.getElementById("teKpiLatency");
-  if (kpiLat) kpiLat.innerText = `${sum.avg_latency_seconds || 0}s`;
-
-  const kpiPnl = document.getElementById("teKpiPnlDrift");
-  if (kpiPnl) {
-    const d = sum.net_pnl_drift || 0;
-    kpiPnl.innerText = (d >= 0 ? "+" : "") + "₹" + d.toFixed(2);
-    kpiPnl.style.color = d >= 0 ? "var(--green)" : "var(--red)";
-  }
-
-  const kpiPnlSub = document.getElementById("teKpiPnlSub");
-  if (kpiPnlSub) kpiPnlSub.innerText = `Live ₹${sum.total_live_pnl || 0} vs Sim ₹${sum.total_sim_pnl || 0}`;
-
-  const kpiMatched = document.getElementById("teKpiMatchedCount");
-  if (kpiMatched) kpiMatched.innerText = `${sum.matched_count || 0} / ${sum.total_live_trades || 0}`;
-
-  const kpiUnprompted = document.getElementById("teKpiUnpromptedCount");
-  if (kpiUnprompted) kpiUnprompted.innerText = `${sum.unprompted_live_count || 0} unprompted live`;
-
-  // Matched Pairs Table
-  const tbody = document.getElementById("teMatchedBody");
-  if (tbody) {
-    const pairs = data.matched_pairs || [];
-    if (pairs.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="12" class="empty-state">No matching execution pairs found for this session.</td></tr>';
-    } else {
-      tbody.innerHTML = pairs.map(p => {
-        const live = p.live_trade || {};
-        const sim = p.sim_trade || {};
-        const slipColor = p.entry_slippage_rs <= 0 ? "var(--green)" : "var(--red)";
-        const pnlColor = (live.net_pnl || 0) >= 0 ? "var(--green)" : "var(--red)";
-        const effScore = p.execution_efficiency || 0;
-        const effBadge = effScore >= 70 ? "badge-long" : (effScore >= 40 ? "badge-neutral" : "badge-short");
-
-        return `
-          <tr>
-            <td style="font-weight: 700; color: #fff;">${live.symbol || sim.symbol || "--"}</td>
-            <td><span class="badge ${live.side === 'BUY' ? 'badge-long' : 'badge-short'}">${live.side || 'BUY'}</span></td>
-            <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.78rem;">${live.entry_time || "--"}</td>
-            <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; color: var(--text-muted);">${sim.entry_time || "--"}</td>
-            <td style="font-family: 'JetBrains Mono', monospace;">₹${(live.entry_price || 0).toFixed(2)}</td>
-            <td style="font-family: 'JetBrains Mono', monospace; color: var(--text-muted);">₹${(sim.entry_price || 0).toFixed(2)}</td>
-            <td style="font-family: 'JetBrains Mono', monospace; color: ${slipColor}; font-weight: 700;">
-              ${(p.entry_slippage_rs >= 0 ? "+" : "") + p.entry_slippage_rs.toFixed(2)} (${p.entry_slippage_pct.toFixed(1)}%)
-            </td>
-            <td style="font-family: 'JetBrains Mono', monospace;">${p.latency_seconds}s</td>
-            <td style="font-family: 'JetBrains Mono', monospace; color: ${pnlColor}; font-weight: 700;">₹${(live.net_pnl || 0).toFixed(2)}</td>
-            <td style="font-family: 'JetBrains Mono', monospace; color: var(--text-muted);">₹${(sim.net_pnl || 0).toFixed(2)}</td>
-            <td style="font-family: 'JetBrains Mono', monospace;">₹${(p.pnl_variance || 0).toFixed(2)}</td>
-            <td><span class="badge ${effBadge}" style="font-weight: 700;">${effScore.toFixed(0)} / 100</span></td>
-          </tr>
-        `;
-      }).join("");
-    }
-  }
-
-  // Unprompted Table
-  const unpBody = document.getElementById("teUnpromptedBody");
-  if (unpBody) {
-    const unprompted = data.unprompted_live || [];
-    if (unprompted.length === 0) {
-      unpBody.innerHTML = '<tr><td colspan="6" class="empty-state">None</td></tr>';
-    } else {
-      unpBody.innerHTML = unprompted.map(t => {
-        const pColor = (t.net_pnl || 0) >= 0 ? "var(--green)" : "var(--red)";
-        return `
-          <tr>
-            <td style="font-weight: 600;">${t.symbol}</td>
-            <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.76rem;">${t.entry_time.split(" ")[1] || t.entry_time}</td>
-            <td style="font-family: 'JetBrains Mono', monospace;">₹${(t.entry_price || 0).toFixed(2)}</td>
-            <td style="font-family: 'JetBrains Mono', monospace;">₹${(t.exit_price || 0).toFixed(2)}</td>
-            <td style="font-family: 'JetBrains Mono', monospace; color: ${pColor}; font-weight: 700;">₹${(t.net_pnl || 0).toFixed(2)}</td>
-            <td style="font-family: 'JetBrains Mono', monospace; color: var(--accent-cyan);">${t.gemini_confidence ? (t.gemini_confidence * 100).toFixed(0) + "%" : "--"}</td>
-          </tr>
-        `;
-      }).join("");
-    }
-  }
-
-  // Missed Table
-  const missedBody = document.getElementById("teMissedBody");
-  if (missedBody) {
-    const missed = data.missed_signals || [];
-    if (missed.length === 0) {
-      missedBody.innerHTML = '<tr><td colspan="6" class="empty-state">None</td></tr>';
-    } else {
-      missedBody.innerHTML = missed.map(t => {
-        const pColor = (t.net_pnl || 0) >= 0 ? "var(--green)" : "var(--red)";
-        return `
-          <tr>
-            <td style="font-weight: 600;">${t.symbol}</td>
-            <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.76rem;">${t.entry_time.split(" ")[1] || t.entry_time}</td>
-            <td style="font-family: 'JetBrains Mono', monospace;">₹${(t.entry_price || 0).toFixed(2)}</td>
-            <td style="font-family: 'JetBrains Mono', monospace;">₹${(t.exit_price || 0).toFixed(2)}</td>
-            <td style="font-family: 'JetBrains Mono', monospace; color: ${pColor};">₹${(t.net_pnl || 0).toFixed(2)}</td>
-            <td><span class="badge badge-neutral">${t.metadata?.score || "--"}</span></td>
-          </tr>
-        `;
-      }).join("");
-    }
-  }
-
-  // Render Intraday P&L Drift Chart
-  renderIntradayDriftChart(data);
-}
-
-async function fetchAiAnalytics() {
-  const select = document.getElementById("teDateSelect");
-  const dateVal = select ? select.value : "all";
-  const slider = document.getElementById("teConfSlider");
-  const confTh = slider ? slider.value : "0.70";
-
-  const calBody = document.getElementById("teCalibrationBody");
-  if (calBody) calBody.innerHTML = '<tr><td colspan="5" class="empty-state">Auditing Gemini AI snapshots & computing forward returns...</td></tr>';
-
-  try {
-    const res = await fetch(`/api/trading_engine/ai_analytics?date=${encodeURIComponent(dateVal)}&confidence_threshold=${encodeURIComponent(confTh)}`);
-    const json = await res.json();
-    if (json.status === "ok" && json.data) {
-      renderAiAnalytics(json.data);
-    }
-  } catch (err) {
-    console.error("Error fetching AI analytics:", err);
-  }
-}
-
-function renderAiAnalytics(data) {
-  window._latestAiAnalyticsData = data;
-  const sum = data.summary || {};
-  const mat = data.counterfactual_matrix || {};
-
-  // KPIs
-  const kpiDec = document.getElementById("teKpiAiDecisions");
-  if (kpiDec) kpiDec.innerText = (data.total_snapshots || 0).toLocaleString();
-
-  const kpiPrec = document.getElementById("teKpiAiPrecision");
-  if (kpiPrec) kpiPrec.innerText = (mat.precision || 0).toFixed(1) + "%";
-
-  const kpiAcc = document.getElementById("teKpiAiAccuracy");
-  if (kpiAcc) kpiAcc.innerText = (mat.accuracy || 0).toFixed(1) + "%";
-
-  const kpiFilt = document.getElementById("teKpiAiFilterRate");
-  if (kpiFilt) kpiFilt.innerText = `${mat.signals_filtered || 0} (${(((mat.signals_filtered || 0) / (data.total_snapshots || 1)) * 100).toFixed(0)}%)`;
-
-  const kpiOpt = document.getElementById("teKpiAiOptimalTh");
-  if (kpiOpt) kpiOpt.innerText = data.optimal_threshold != null ? Number(data.optimal_threshold).toFixed(2) : "--";
-
-  // Matrix
-  const mTP = document.getElementById("teMatrixTP");
-  if (mTP) mTP.innerText = mat.true_positives || 0;
-  const mFP = document.getElementById("teMatrixFP");
-  if (mFP) mFP.innerText = mat.false_positives || 0;
-  const mTN = document.getElementById("teMatrixTN");
-  if (mTN) mTN.innerText = mat.true_negatives || 0;
-  const mFN = document.getElementById("teMatrixFN");
-  if (mFN) mFN.innerText = mat.false_negatives || 0;
-
-  // Calibration Table
-  const calBody = document.getElementById("teCalibrationBody");
-  if (calBody) {
-    const cal = data.calibration || [];
-    if (cal.length === 0) {
-      calBody.innerHTML = '<tr><td colspan="5" class="empty-state">No calibration buckets available.</td></tr>';
-    } else {
-      calBody.innerHTML = cal.map(c => {
-        const wrColor = c.win_rate >= 50 ? "var(--green)" : (c.win_rate > 0 ? "var(--accent-yellow)" : "var(--text-muted)");
-        return `
-          <tr>
-            <td style="font-family: 'JetBrains Mono', monospace; font-weight: 700;">${c.bucket}</td>
-            <td style="font-family: 'JetBrains Mono', monospace;">${c.count}</td>
-            <td style="font-family: 'JetBrains Mono', monospace;">${c.pct_of_total}%</td>
-            <td style="font-family: 'JetBrains Mono', monospace; color: ${wrColor}; font-weight: 700;">${c.win_rate.toFixed(1)}%</td>
-            <td style="font-family: 'JetBrains Mono', monospace;">${c.avg_return_pct.toFixed(3)}%</td>
-          </tr>
-        `;
-      }).join("");
-    }
-  }
-
-  // Keywords Table
-  const kwBody = document.getElementById("teKeywordsBody");
-  if (kwBody) {
-    const kws = data.reasoning_insights || [];
-    if (kws.length === 0) {
-      kwBody.innerHTML = '<tr><td colspan="5" class="empty-state">No reasoning keywords found.</td></tr>';
-    } else {
-      kwBody.innerHTML = kws.map(k => {
-        const badge = k.alpha_rating === 'HIGH' ? 'badge-long' : (k.alpha_rating === 'NEUTRAL' ? 'badge-neutral' : 'badge-short');
-        return `
-          <tr>
-            <td style="font-weight: 700; color: #fff;">"${k.keyword}"</td>
-            <td style="font-family: 'JetBrains Mono', monospace;">${k.occurrences}</td>
-            <td style="font-family: 'JetBrains Mono', monospace; font-weight: 700;">${k.win_rate.toFixed(1)}%</td>
-            <td style="font-family: 'JetBrains Mono', monospace;">${k.avg_return_pct.toFixed(3)}%</td>
-            <td><span class="badge ${badge}" style="font-weight: 700;">${k.alpha_rating}</span></td>
-          </tr>
-        `;
-      }).join("");
-    }
-  }
-
-  // Render AI Calibration Reliability Diagram
-  renderAiCalibrationChart(data);
-}
-
-async function fetchFactorAblation() {
-  const select = document.getElementById("teDateSelect");
-  const dateVal = select ? select.value : "2026_09_11";
-  const dates = dateVal === "all" ? ["2026_09_11", "2026_09_08"] : [dateVal];
-
-  const tbody = document.getElementById("teFactorsBody");
-  if (tbody) tbody.innerHTML = '<tr><td colspan="9" class="empty-state">Executing factor ablation passes across market sessions...</td></tr>';
-
-  try {
-    const res = await fetch("/api/trading_engine/factor_attribution", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ dates: dates })
-    });
-    const json = await res.json();
-    if (json.status === "ok" && json.data) {
-      renderFactorAblation(json.data);
-    }
-  } catch (err) {
-    console.error("Error fetching factor ablation:", err);
-  }
-}
-
-function renderFactorAblation(data) {
-  const tbody = document.getElementById("teFactorsBody");
-  if (!tbody) return;
-  const factors = data.factors || [];
-  if (factors.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="9" class="empty-state">No factor ablation data returned.</td></tr>';
+    paramGrid = JSON.parse(gridText);
+  } catch (e) {
+    showToast("Invalid JSON format in Parameter Grid: " + e.message, "error");
     return;
   }
 
-  tbody.innerHTML = factors.map(f => {
-    const badge = f.status === 'VALUE_ADD' ? 'badge-long' : (f.status === 'DRAG' ? 'badge-short' : 'badge-neutral');
-    const sharpeColor = f.delta_sharpe >= 0 ? "var(--green)" : "var(--red)";
-    const wrColor = f.delta_win_rate >= 0 ? "var(--green)" : "var(--red)";
-    const pnlColor = f.delta_net_pnl >= 0 ? "var(--green)" : "var(--red)";
+  // Selected dates from archives
+  const selectedDates = (typeof getSelectedDates === "function") ? getSelectedDates() : [];
+  const dates = selectedDates.length > 0 ? selectedDates : ["2026_09_11"];
+
+  const payload = {
+    strategy_type: strat,
+    sampling_mode: sampling,
+    max_iterations: maxIter,
+    early_pruning: earlyPruning,
+    parameter_grid: paramGrid,
+    dates: dates,
+    instruments: [{ asset_type: "INDEX", symbol: "NIFTY" }]
+  };
+
+  const btnLaunch = document.getElementById("btnLaunchMass");
+  const btnCancel = document.getElementById("btnCancelMass");
+  const statusBadge = document.getElementById("massStatusBadge");
+
+  btnLaunch.disabled = true;
+  btnLaunch.innerText = "⏳ Running Mass Sweep...";
+  if (btnCancel) btnCancel.style.display = "block";
+  if (statusBadge) {
+    statusBadge.innerText = "Running";
+    statusBadge.style.color = "var(--accent-cyan)";
+  }
+
+  try {
+    const resp = await fetch("/api/mass_optimize", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const data = await resp.json();
+    if (!resp.ok || data.status !== "submitted") {
+      throw new Error(data.message || "Failed to submit mass job");
+    }
+
+    currentMassJobId = data.job_id;
+    startMassProgressStream(data.job_id);
+
+  } catch (err) {
+    showToast("Mass Iteration launch failed: " + err.message, "error");
+    btnLaunch.disabled = false;
+    btnLaunch.innerText = "⚡ LAUNCH MASS SWEEP";
+    if (btnCancel) btnCancel.style.display = "none";
+    if (statusBadge) {
+      statusBadge.innerText = "Error";
+      statusBadge.style.color = "#fc8181";
+    }
+  }
+}
+
+function startMassProgressStream(jobId) {
+  if (massEventSource) {
+    massEventSource.close();
+  }
+
+  const pBar = document.getElementById("massProgressBar");
+  const pText = document.getElementById("massProgressText");
+  const pPct = document.getElementById("massProgressPct");
+  const pEta = document.getElementById("massEta");
+
+  massEventSource = new EventSource(`/api/mass_optimize/stream/${jobId}`);
+
+  massEventSource.onmessage = (event) => {
+    try {
+      const msg = JSON.parse(event.data);
+      if (msg.type === "progress") {
+        const pct = msg.pct || 0;
+        if (pBar) pBar.style.width = pct + "%";
+        if (pPct) pPct.innerText = pct.toFixed(1) + "%";
+        if (pText) pText.innerText = msg.stage || `Run ${msg.completed} / ${msg.total}`;
+        if (pEta && msg.eta_sec) pEta.innerText = `ETA: ${msg.eta_sec}s`;
+
+        if (msg.last_run) {
+          const lr = msg.last_run;
+          const livePnl = document.getElementById("massLivePnl");
+          if (livePnl) {
+            livePnl.innerText = "₹" + (lr.pnl_net || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 });
+            livePnl.style.color = (lr.pnl_net || 0) >= 0 ? "var(--green)" : "var(--red)";
+          }
+          const liveWr = document.getElementById("massLiveWinRate");
+          if (liveWr) liveWr.innerText = (lr.win_rate_pct || 0).toFixed(1) + "%";
+          const liveSharpe = document.getElementById("massLiveSharpe");
+          if (liveSharpe) liveSharpe.innerText = (lr.sharpe_ratio || 0).toFixed(2);
+          const liveParams = document.getElementById("massLiveParams");
+          if (liveParams) liveParams.innerText = JSON.stringify(lr.parameters || {});
+        }
+      } else if (msg.type === "done" || msg.type === "error") {
+        massEventSource.close();
+        onMassJobFinished(jobId);
+      }
+    } catch (e) {}
+  };
+
+  massEventSource.onerror = () => {
+    massEventSource.close();
+    onMassJobFinished(jobId);
+  };
+}
+
+async function onMassJobFinished(jobId) {
+  const btnLaunch = document.getElementById("btnLaunchMass");
+  const btnCancel = document.getElementById("btnCancelMass");
+  const statusBadge = document.getElementById("massStatusBadge");
+  const btnSave = document.getElementById("btnSaveMassSession");
+
+  if (btnLaunch) {
+    btnLaunch.disabled = false;
+    btnLaunch.innerText = "⚡ LAUNCH MASS SWEEP";
+  }
+  if (btnCancel) btnCancel.style.display = "none";
+
+  try {
+    const resp = await fetch(`/api/mass_optimize/results/${jobId}`);
+    if (resp.ok) {
+      const data = await resp.json();
+      currentMassResults = data.results;
+      if (statusBadge) {
+        statusBadge.innerText = "Completed";
+        statusBadge.style.color = "var(--green)";
+      }
+      if (btnSave) btnSave.disabled = false;
+      renderMassRankedTable(currentMassResults);
+    }
+  } catch (e) {
+    if (statusBadge) statusBadge.innerText = "Done";
+  }
+}
+
+async function cancelMassOptimization() {
+  if (currentMassJobId) {
+    try {
+      const resp = await fetch(`/api/mass_optimize/cancel/${currentMassJobId}`, { method: "POST" });
+      const data = await resp.json();
+      if (data.cancelled) {
+        showToast("Mass Optimization cancelled by user", "warning");
+        if (massEventSource) massEventSource.close();
+        const btnLaunch = document.getElementById("btnLaunchMass");
+        const btnCancel = document.getElementById("btnCancelMass");
+        const statusBadge = document.getElementById("massStatusBadge");
+        if (btnLaunch) {
+          btnLaunch.disabled = false;
+          btnLaunch.innerText = "⚡ LAUNCH MASS SWEEP";
+        }
+        if (btnCancel) btnCancel.style.display = "none";
+        if (statusBadge) {
+          statusBadge.innerText = "Cancelled";
+          statusBadge.style.color = "var(--yellow)";
+        }
+      }
+    } catch (e) {
+      showToast("Cancel request failed: " + e.message, "error");
+    }
+  }
+}
+
+function renderMassRankedTable(results) {
+  const body = document.getElementById("massRankedBody");
+  const badge = document.getElementById("massTotalRunsBadge");
+  if (!body || !results) return;
+
+  const ranked = results.ranked_results || [];
+  if (badge) badge.innerText = `${ranked.length} valid runs`;
+
+  if (ranked.length === 0) {
+    body.innerHTML = `<tr><td colspan="11" class="empty-state">No valid runs generated.</td></tr>`;
+    return;
+  }
+
+  const strat = document.getElementById("massStrategySelect") ? document.getElementById("massStrategySelect").value : "orb";
+  let html = "";
+  ranked.forEach((r, idx) => {
+    const pnl = r.pnl_net || 0;
+    const pnlColor = pnl >= 0 ? "var(--green)" : "var(--red)";
+    const pnlSign = pnl >= 0 ? "+" : "";
+    const serializedParams = JSON.stringify(r.parameters || {}).replace(/"/g, '&quot;');
+    html += `
+      <tr>
+        <td><b>#${idx + 1}</b></td>
+        <td><span class="badge badge-accent">${r.instrument || r.symbol || "NIFTY"}</span></td>
+        <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.75rem;">${JSON.stringify(r.parameters || {})}</td>
+        <td style="color: ${pnlColor}; font-weight: 700;">${pnlSign}₹${pnl.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+        <td style="color: var(--text-muted);">₹${(r.charges || 0).toFixed(2)}</td>
+        <td><span class="badge ${r.win_rate_pct >= 50 ? 'badge-green' : 'badge-red'}">${(r.win_rate_pct || 0).toFixed(1)}%</span></td>
+        <td style="font-weight: 600;">${(r.sharpe_ratio || 0).toFixed(2)}</td>
+        <td>${(r.profit_factor || 0).toFixed(2)}</td>
+        <td style="color: #fc8181;">${(r.max_drawdown_pct || 0).toFixed(2)}%</td>
+        <td>${r.total_trades || 0}</td>
+        <td>
+          <button class="btn-secondary btn-xs btn-transfer" title="Load parameters to Console" onclick="transferParamsToConsole('${strat}', JSON.parse('${serializedParams}'))">
+            ↗ Console
+          </button>
+        </td>
+      </tr>
+    `;
+  });
+  body.innerHTML = html;
+}
+
+async function saveCurrentMassSession() {
+  if (!currentMassResults) return;
+  const strat = document.getElementById("massStrategySelect").value;
+  const defaultName = `${strat}_${currentMassResults.total_runs}runs`;
+  const name = await showPromptModal("Save Experiment Session", "Enter a name for this experiment session:", defaultName);
+  if (!name) return;
+
+  try {
+    const resp = await fetch("/api/sessions/save", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        results: currentMassResults,
+        name: name,
+        spec: { strategy_type: strat }
+      })
+    });
+    if (resp.ok) {
+      showToast("Session saved successfully!", "success");
+      loadSavedSessions();
+    }
+  } catch (e) {
+    showToast("Failed to save session: " + e.message, "error");
+  }
+}
+
+async function loadSavedSessions() {
+  const body = document.getElementById("sessionsBody");
+  if (!body) return;
+
+  try {
+    const resp = await fetch("/api/sessions");
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const sessions = data.sessions || [];
+
+    if (sessions.length === 0) {
+      body.innerHTML = `<tr><td colspan="9" class="empty-state">No saved experiment sessions yet.</td></tr>`;
+      return;
+    }
+
+    let html = "";
+    sessions.forEach(s => {
+      const sum = s.summary || {};
+      const pnl = sum.best_pnl_net || 0;
+      const pnlColor = pnl >= 0 ? "var(--green)" : "var(--red)";
+      html += `
+        <tr>
+          <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--accent-cyan);">${s.session_id}</td>
+          <td><b>${s.name}</b></td>
+          <td style="font-size: 0.75rem; color: var(--text-muted);">${s.saved_at_human || ""}</td>
+          <td><span class="badge badge-accent">${sum.strategy_type || "N/A"}</span></td>
+          <td>${sum.sampling_mode || "GRID"}</td>
+          <td>${sum.total_runs || 0}</td>
+          <td style="color: ${pnlColor}; font-weight: 700;">₹${pnl.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+          <td>${(sum.best_sharpe || 0).toFixed(2)}</td>
+          <td>
+            <button onclick="loadSessionData('${s.session_id}')" class="btn-secondary" style="padding: 2px 8px; font-size: 0.72rem;">Load</button>
+          </td>
+        </tr>
+      `;
+    });
+    body.innerHTML = html;
+  } catch (e) {}
+}
+
+async function loadSessionData(sessionId) {
+  try {
+    const resp = await fetch(`/api/sessions/${sessionId}`);
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data.session && data.session.results) {
+        currentMassResults = data.session.results;
+        renderMassRankedTable(currentMassResults);
+        const btnSave = document.getElementById("btnSaveMassSession");
+        if (btnSave) btnSave.disabled = false;
+        showToast(`Loaded session "${data.session.name}" with ${currentMassResults.total_runs} runs!`, "success");
+      }
+    }
+  } catch (e) {
+    showToast("Failed to load session: " + e.message, "error");
+  }
+}
+window.loadSessionData = loadSessionData;
+
+// ── Phase 3 & 4: API Integration, Robustness, History, and Workflow ───────────
+
+const STRATEGY_CATALOG_MAP = {
+  "equity": "equity_momentum_rsi_ema",
+  "supertrend": "supertrend_trend",
+  "ema-ribbon": "ema_ribbon",
+  "macd-accel": "macd_histogram_acceleration",
+  "rsi-momentum": "momentum_rsi",
+  "futures-trend": "futures_basis_momentum",
+  "orb": "orb_breakout",
+  "camarilla": "camarilla_breakout",
+  "banknifty-options": "banknifty_breakout_100pt",
+  "options": "options_flow",
+  "bollinger-b": "bollinger_percent_b_reversal",
+  "vwap-reversion": "vwap_reversion",
+  "pcr-reversion": "pcr_reversion",
+  "short-straddle": "short_straddle",
+  "max-pain": "max_pain_convergence",
+  "ai-replay": "ai_replay"
+};
+
+// 1. Dynamic Strategy Catalog (API-01)
+async function loadStrategyCatalog() {
+  try {
+    const resp = await fetch("/api/strategies/catalog");
+    if (!resp.ok) return;
+    const data = await resp.json();
+    if (data.status === "success" && Array.isArray(data.strategies)) {
+      window.strategyCatalog = data.strategies;
+      updateStrategyMetaCard();
+    }
+  } catch (err) {
+    console.warn("Could not load strategy catalog:", err);
+  }
+}
+window.loadStrategyCatalog = loadStrategyCatalog;
+
+function updateStrategyMetaCard() {
+  const stratSel = document.getElementById("strategySelect");
+  const metaCard = document.getElementById("strategyCatalogMeta");
+  const catBadge = document.getElementById("stratMetaCategory");
+  const paramsCount = document.getElementById("stratMetaParamsCount");
+  const descEl = document.getElementById("stratMetaDesc");
+
+  if (!stratSel || !metaCard || !window.strategyCatalog) return;
+
+  const currentVal = stratSel.value;
+  const mappedKey = STRATEGY_CATALOG_MAP[currentVal] || currentVal;
+  const item = window.strategyCatalog.find(s => s.key === mappedKey || s.key === currentVal);
+
+  if (item) {
+    metaCard.style.display = "block";
+    if (catBadge) catBadge.innerText = (item.category || "TECHNICAL").toUpperCase();
+    if (paramsCount) {
+      const count = Array.isArray(item.parameters) ? item.parameters.length : 0;
+      paramsCount.innerText = `${count} Parameter${count !== 1 ? "s" : ""}`;
+    }
+    if (descEl) descEl.innerText = item.description || "Institutional algorithmic trading model.";
+  } else {
+    metaCard.style.display = "none";
+  }
+}
+window.updateStrategyMetaCard = updateStrategyMetaCard;
+
+// 2. Data Health & Audit Integration (API-02)
+async function runDataQualityAudit(datesToAudit) {
+  const banner = document.getElementById("explorerAuditBanner");
+  const title = document.getElementById("auditStatusTitle");
+  const detail = document.getElementById("auditStatusDetail");
+  const badge = document.getElementById("auditScoreBadge");
+  const icon = document.getElementById("auditStatusIcon");
+  const dirInput = document.getElementById("dirInput");
+
+  let dates = datesToAudit;
+  if (!dates || dates.length === 0) {
+    const checked = (typeof getSelectedDates === "function") ? getSelectedDates() : [];
+    dates = checked.length > 0 ? checked : (lastRawArchives.length > 0 ? [lastRawArchives[0].date] : ["2026_09_11"]);
+  }
+
+  showToast("Running data quality audit...", "info");
+  try {
+    const resp = await fetch("/api/data_audit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        dates: dates,
+        symbols: ["NIFTY"],
+        directory: dirInput ? dirInput.value.trim() : ""
+      })
+    });
+    const res = await resp.json();
+    if (res.status === "success" && res.results && res.results.length > 0) {
+      const r = res.results[0];
+      if (banner) banner.style.display = "block";
+      const score = r.health_score !== undefined ? r.health_score : 100.0;
+      if (badge) badge.innerText = `Score: ${score.toFixed(0)}%`;
+      if (title) title.innerText = `Data Quality: ${r.status || "EXCELLENT"}`;
+      if (icon) icon.innerText = score >= 90 ? "🟢" : (score >= 70 ? "🟡" : "🔴");
+      if (detail) {
+        detail.innerText = `Audited ${dates.length} session(s) (${r.total_bars || 0} bars): ${r.missing_bars || 0} missing, ${r.anomalous_bars || 0} anomalies, ${r.stale_bars || 0} stale bars.`;
+      }
+      showToast(`Data Audit Complete: ${r.status || "EXCELLENT"} (${score.toFixed(0)}% Score)`, "success");
+    } else {
+      showToast("Data audit returned no records", "warning");
+    }
+  } catch (err) {
+    showToast("Data audit request failed: " + err.message, "error");
+  }
+}
+window.runDataQualityAudit = runDataQualityAudit;
+
+function auditSessionQuality(dateStr) {
+  runDataQualityAudit([dateStr]);
+}
+window.auditSessionQuality = auditSessionQuality;
+
+// 3. Post-Run Institutional Robustness & Overfitting Validation (API-03)
+async function runValidationAudit() {
+  const section = document.getElementById("validationSection");
+  const grid = document.getElementById("validationGrid");
+  const verdictBadge = document.getElementById("validationVerdictBadge");
+  const stratSel = document.getElementById("strategySelect");
+  const capitalInput = document.getElementById("capitalInput");
+  const riskInput = document.getElementById("riskPctInput");
+  const dirInput = document.getElementById("dirInput");
+
+  if (!section || !grid) return;
+
+  section.style.display = "block";
+  if (verdictBadge) {
+    verdictBadge.innerText = "EVALUATING...";
+    verdictBadge.style.color = "var(--accent-cyan)";
+  }
+
+  const selectedDates = (typeof getSelectedDates === "function") ? getSelectedDates() : [];
+  const dates = selectedDates.length > 0 ? selectedDates : ["2026_09_11"];
+  const strategy = stratSel ? stratSel.value : "orb";
+  const capital = parseFloat(capitalInput ? capitalInput.value : 100000) || 100000;
+  const risk = parseFloat(riskInput ? riskInput.value : 1.0) || 1.0;
+  const directory = dirInput ? dirInput.value.trim() : "";
+
+  try {
+    const resp = await fetch("/api/validate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        strategy: strategy,
+        dates: dates,
+        capital: capital,
+        risk_pct: risk,
+        directory: directory,
+        symbols: ["auto"]
+      })
+    });
+
+    const res = await resp.json();
+    if (!resp.ok || res.status !== "success") {
+      throw new Error(res.message || "Validation API returned an error");
+    }
+
+    const report = res.report || {};
+    const hurdles = report.hurdles || {};
+    const mc = report.monte_carlo || {};
+    const dsr = report.deflated_sharpe || {};
+    const score = report.overall_score !== undefined ? report.overall_score : (report.score_pct || 0);
+    const verdict = report.verdict || "PASS";
+
+    // Update Verdict Badge
+    if (verdictBadge) {
+      verdictBadge.innerText = `${verdict} (${score.toFixed(0)}%)`;
+      if (verdict === "PASS") {
+        verdictBadge.className = "badge badge-accent text-green";
+      } else if (verdict === "MARGINAL") {
+        verdictBadge.className = "badge badge-accent text-yellow";
+      } else {
+        verdictBadge.className = "badge badge-accent text-red";
+      }
+    }
+
+    grid.innerHTML = `
+      <!-- Card 1: Overfitting Hurdles -->
+      <div class="validation-card">
+        <h4><span>⚖️</span> Institutional Hurdles</h4>
+        <div class="hurdle-list">
+          <div class="hurdle-item">
+            <span>Minimum Trade Count (≥30):</span>
+            <span class="${hurdles.min_trades ? 'hurdle-pass' : 'hurdle-fail'} font-bold">${hurdles.min_trades ? '✓ PASS' : '✗ FAIL'}</span>
+          </div>
+          <div class="hurdle-item">
+            <span>Positive Net Expectancy (P&L > ₹0):</span>
+            <span class="${hurdles.positive_net_pnl ? 'hurdle-pass' : 'hurdle-fail'} font-bold">${hurdles.positive_net_pnl ? '✓ PASS' : '✗ FAIL'}</span>
+          </div>
+          <div class="hurdle-item">
+            <span>Max Drawdown Tolerance (≤20%):</span>
+            <span class="${hurdles.max_dd_acceptable ? 'hurdle-pass' : 'hurdle-fail'} font-bold">${hurdles.max_dd_acceptable ? '✓ PASS' : '✗ FAIL'}</span>
+          </div>
+          <div class="hurdle-item">
+            <span>Profit Factor Floor (≥1.20):</span>
+            <span class="${hurdles.profit_factor_ok ? 'hurdle-pass' : 'hurdle-fail'} font-bold">${hurdles.profit_factor_ok ? '✓ PASS' : '✗ FAIL'}</span>
+          </div>
+          <div class="hurdle-item">
+            <span>Monte Carlo Win Probability (≥50%):</span>
+            <span class="${hurdles.mc_win_probability ? 'hurdle-pass' : 'hurdle-fail'} font-bold">${hurdles.mc_win_probability ? '✓ PASS' : '✗ FAIL'}</span>
+          </div>
+          <div class="hurdle-item">
+            <span>MC Resampled Max DD (≤25%):</span>
+            <span class="${hurdles.mc_dd_acceptable ? 'hurdle-pass' : 'hurdle-fail'} font-bold">${hurdles.mc_dd_acceptable ? '✓ PASS' : '✗ FAIL'}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 2: Monte Carlo Resampling Stress -->
+      <div class="validation-card">
+        <h4><span>🎲</span> Monte Carlo 1,000-Resample</h4>
+        <div class="hurdle-list">
+          <div class="hurdle-item">
+            <span>Simulations Run:</span>
+            <span class="font-mono text-cyan">${(mc.simulations_run || 1000).toLocaleString()} runs</span>
+          </div>
+          <div class="hurdle-item">
+            <span>Probability of Profit:</span>
+            <span class="font-bold ${(mc.prob_profitable || (mc.win_probability ? mc.win_probability * 100 : 0)) >= 50 ? 'text-green' : 'text-red'}">
+              ${(mc.prob_profitable || (mc.win_probability ? (mc.win_probability * 100).toFixed(1) : 0))}%
+            </span>
+          </div>
+          <div class="hurdle-item">
+            <span>95% Worst Drawdown:</span>
+            <span class="font-mono ${(mc.max_drawdown_95_pct || 0) <= 20 ? 'text-green' : 'text-red'}">
+              ${(mc.max_drawdown_95_pct || 0).toFixed(2)}%
+            </span>
+          </div>
+          <div class="hurdle-item">
+            <span>Value-at-Risk (95% VaR):</span>
+            <span class="font-mono text-muted">₹${(mc.var_95_inr || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 3: Deflated Sharpe & Statistical Tests -->
+      <div class="validation-card">
+        <h4><span>🔬</span> Deflated Sharpe & PBO</h4>
+        <div class="hurdle-list">
+          <div class="hurdle-item">
+            <span>Deflated Sharpe Verdict:</span>
+            <span class="font-bold ${dsr.verdict === 'SIGNIFICANT' ? 'text-green' : 'text-yellow'}">
+              ${dsr.verdict || 'UNAUDITED'}
+            </span>
+          </div>
+          <div class="hurdle-item">
+            <span>DSR p-Value:</span>
+            <span class="font-mono">${dsr.p_value !== undefined ? dsr.p_value.toFixed(4) : '—'}</span>
+          </div>
+          <div class="hurdle-item">
+            <span>Overall Score:</span>
+            <span class="font-bold text-cyan text-lg">${score.toFixed(1)}%</span>
+          </div>
+        </div>
+      </div>
+    `;
+
+    showToast(`Validation Audit Complete: ${verdict} (${score.toFixed(0)}%)`, verdict === "PASS" ? "success" : "info");
+  } catch (err) {
+    if (verdictBadge) {
+      verdictBadge.innerText = "AUDIT FAILED";
+      verdictBadge.style.color = "var(--red)";
+    }
+    showToast("Validation failed: " + err.message, "error");
+  }
+}
+window.runValidationAudit = runValidationAudit;
+
+// 4. Trust & Risk Verdict Banner (TRUST-01)
+function updateTrustBanner(m, trades) {
+  const banner = document.getElementById("trustVerdictBanner");
+  const icon = document.getElementById("trustBannerIcon");
+  const title = document.getElementById("trustBannerTitle");
+  const msg = document.getElementById("trustBannerMsg");
+
+  if (!banner || !icon || !title || !msg) return;
+
+  const tradeCount = trades ? trades.length : 0;
+  const maxDD = m.max_drawdown_pct || 0;
+  const netPnl = m.net_pnl || 0;
+
+  banner.className = "trust-banner mb-14";
+
+  if (tradeCount < 15) {
+    banner.style.display = "flex";
+    banner.classList.add("trust-banner-warn");
+    icon.innerText = "⚠️";
+    title.innerText = "Sample Size Warning (Underpowered Sample)";
+    msg.innerText = `Only ${tradeCount} simulated trade(s) were executed. A sample size under 30 trades has low statistical confidence. Backtest over multiple historical sessions before production deployment.`;
+  } else if (maxDD > 20) {
+    banner.style.display = "flex";
+    banner.classList.add("trust-banner-danger");
+    icon.innerText = "🛑";
+    title.innerText = "High Drawdown Regime Alert";
+    msg.innerText = `Maximum peak-to-trough drawdown reached ${maxDD.toFixed(1)}%, breaching the standard 15% risk threshold. Adjust stop loss points or reduce position leverage.`;
+  } else if (netPnl > 0 && tradeCount >= 30 && maxDD <= 15) {
+    banner.style.display = "flex";
+    banner.classList.add("trust-banner-success");
+    icon.innerText = "🛡️";
+    title.innerText = "Institutional Grade Candidate";
+    msg.innerText = `Strategy demonstrated positive net expectancy across ${tradeCount} trades with controlled max drawdown (${maxDD.toFixed(1)}%). Candidate meets baseline robustness criteria.`;
+  } else {
+    banner.style.display = "none";
+  }
+}
+
+// 5. Run History Persistence & Quick-Switch (HIST-01)
+const RUN_HISTORY_KEY = "testing_engine_run_history";
+
+function saveRunToHistory(runData) {
+  try {
+    let history = JSON.parse(localStorage.getItem(RUN_HISTORY_KEY) || "[]");
+    const item = {
+      id: "run_" + Date.now(),
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      strategy: runData.strategy || "Strategy",
+      pnl: runData.metrics ? (runData.metrics.net_pnl || 0) : 0,
+      winRate: runData.metrics ? (runData.metrics.win_rate || 0) : 0,
+      trades: runData.metrics ? (runData.metrics.total_trades || 0) : 0,
+      raw: runData.raw
+    };
+    history.unshift(item);
+    if (history.length > 10) history = history.slice(0, 10);
+    localStorage.setItem(RUN_HISTORY_KEY, JSON.stringify(history));
+    renderRunHistory();
+  } catch (e) {
+    console.warn("Could not save run to history:", e);
+  }
+}
+
+function renderRunHistory() {
+  const bar = document.getElementById("runHistoryBar");
+  const list = document.getElementById("runHistoryList");
+  if (!bar || !list) return;
+
+  try {
+    const history = JSON.parse(localStorage.getItem(RUN_HISTORY_KEY) || "[]");
+    if (history.length === 0) {
+      bar.style.display = "none";
+      return;
+    }
+
+    bar.style.display = "flex";
+    list.innerHTML = history.map((item, idx) => {
+      const pnl = item.pnl || 0;
+      const isProf = pnl >= 0;
+      const pnlSign = isProf ? "+" : "";
+      const pnlColor = isProf ? "var(--green)" : "var(--red)";
+      return `
+        <span class="history-chip" onclick="loadRunFromHistory('${item.id}')" title="${item.strategy} · ${item.trades} trades">
+          <span>#${idx + 1}</span>
+          <span style="color: ${pnlColor}; font-weight: 700;">${pnlSign}₹${Math.round(pnl).toLocaleString("en-IN")}</span>
+          <span style="color: var(--text-muted); font-size: 0.68rem;">(${item.timestamp})</span>
+        </span>
+      `;
+    }).join("");
+  } catch (e) {}
+}
+
+function loadRunFromHistory(runId) {
+  try {
+    const history = JSON.parse(localStorage.getItem(RUN_HISTORY_KEY) || "[]");
+    const found = history.find(h => h.id === runId);
+    if (found && found.raw) {
+      renderResults(found.raw);
+      showToast(`Loaded Run ${found.timestamp}: ${found.strategy} (${found.pnl >= 0 ? '+' : ''}₹${found.pnl.toFixed(2)})`, "info");
+    }
+  } catch (e) {
+    showToast("Failed to load historical run: " + e.message, "error");
+  }
+}
+window.loadRunFromHistory = loadRunFromHistory;
+
+// 6. Form State Persistence (STORE-01)
+const FORM_STORAGE_KEY = "testing_engine_form_state";
+
+function saveFormState() {
+  const state = {
+    strategy: document.getElementById("strategySelect")?.value,
+    timeframe: document.getElementById("timeframeSelect")?.value,
+    symbols: document.getElementById("symbolsInput")?.value,
+    capital: document.getElementById("capitalInput")?.value,
+    risk: document.getElementById("riskPctInput")?.value,
+    dir: document.getElementById("dirInput")?.value
+  };
+  try {
+    localStorage.setItem(FORM_STORAGE_KEY, JSON.stringify(state));
+  } catch (e) {}
+}
+
+function restoreFormState() {
+  try {
+    const raw = localStorage.getItem(FORM_STORAGE_KEY);
+    if (!raw) return;
+    const s = JSON.parse(raw);
+    if (s.strategy) {
+      const sel = document.getElementById("strategySelect");
+      if (sel) {
+        sel.value = s.strategy;
+        sel.dispatchEvent(new Event("change"));
+      }
+    }
+    if (s.timeframe && document.getElementById("timeframeSelect")) {
+      document.getElementById("timeframeSelect").value = s.timeframe;
+    }
+    if (s.symbols && document.getElementById("symbolsInput")) {
+      document.getElementById("symbolsInput").value = s.symbols;
+    }
+    if (s.capital && document.getElementById("capitalInput")) {
+      document.getElementById("capitalInput").value = s.capital;
+    }
+    if (s.risk && document.getElementById("riskPctInput")) {
+      document.getElementById("riskPctInput").value = s.risk;
+    }
+    if (s.dir && document.getElementById("dirInput")) {
+      document.getElementById("dirInput").value = s.dir;
+    }
+  } catch (e) {}
+}
+
+// 7. Workflow Load to Console (XFER-01)
+function transferParamsToConsole(strategyName, params) {
+  const mappedKey = Object.keys(STRATEGY_CATALOG_MAP).find(k => STRATEGY_CATALOG_MAP[k] === strategyName) || strategyName;
+  applyParametersToConsole(mappedKey, params);
+  switchTab("tabConsole");
+  showToast(`Transferred ${strategyName} parameters to Backtest Console!`, "success");
+}
+window.transferParamsToConsole = transferParamsToConsole;
+
+// 8. Strategy Presets (PRESET-01)
+const PRESETS_STORAGE_KEY = "testing_engine_presets";
+
+function initPresets() {
+  const sel = document.getElementById("presetSelect");
+  const btnSave = document.getElementById("btnSavePreset");
+  if (!sel) return;
+
+  const loadPresets = () => {
+    try {
+      const presets = JSON.parse(localStorage.getItem(PRESETS_STORAGE_KEY) || "[]");
+      sel.innerHTML = '<option value="">⚙️ Presets (Default)</option>';
+      presets.forEach((p, idx) => {
+        const opt = document.createElement("option");
+        opt.value = idx;
+        opt.innerText = p.name;
+        sel.appendChild(opt);
+      });
+    } catch (e) {}
+  };
+
+  sel.addEventListener("change", () => {
+    const val = sel.value;
+    if (val === "") return;
+    try {
+      const presets = JSON.parse(localStorage.getItem(PRESETS_STORAGE_KEY) || "[]");
+      const p = presets[parseInt(val)];
+      if (p) {
+        if (p.strategy) {
+          const stratSel = document.getElementById("strategySelect");
+          if (stratSel) {
+            stratSel.value = p.strategy;
+            stratSel.dispatchEvent(new Event("change"));
+          }
+        }
+        if (p.params) {
+          applyParametersToConsole(p.strategy, p.params);
+        }
+        if (p.symbols && document.getElementById("symbolsInput")) {
+          document.getElementById("symbolsInput").value = p.symbols;
+        }
+        showToast(`Loaded preset "${p.name}"!`, "success");
+      }
+    } catch (e) {
+      showToast("Error loading preset: " + e.message, "error");
+    }
+  });
+
+  if (btnSave) {
+    btnSave.addEventListener("click", async () => {
+      const strat = document.getElementById("strategySelect") ? document.getElementById("strategySelect").value : "orb";
+      const defaultName = `${strat.toUpperCase()} Custom`;
+      const name = await showPromptModal("Save Strategy Preset", "Enter a name for this preset configuration:", defaultName);
+      if (!name) return;
+
+      const currentParams = {};
+      const fields = [
+        "orbMinutesInput", "orbRrInput", "orbAtrMultInput",
+        "stAtrPeriodInput", "stMultiplierInput", "stRrInput",
+        "minScoreInput", "atrSlInput", "atrTgtInput",
+        "camRrInput", "camBufferPtsInput",
+        "ribbonFastInput", "ribbonMedInput", "ribbonSlowInput",
+        "bbPeriodInput", "bbStdInput",
+        "macdFastInput", "macdSlowInput", "macdSignalInput",
+        "vwapBandMultInput", "vwapSlPtsInput", "vwapTgtPtsInput",
+        "rsiPeriodInput", "rsiOverboughtInput", "rsiOversoldInput",
+        "optionSlInput", "optionTgtInput"
+      ];
+      fields.forEach(f => {
+        const el = document.getElementById(f);
+        if (el && el.value !== undefined) {
+          currentParams[f] = el.value;
+        }
+      });
+
+      const preset = {
+        name: name,
+        strategy: strat,
+        symbols: document.getElementById("symbolsInput") ? document.getElementById("symbolsInput").value : "auto",
+        capital: document.getElementById("capitalInput") ? document.getElementById("capitalInput").value : "100000",
+        risk: document.getElementById("riskPctInput") ? document.getElementById("riskPctInput").value : "1.0",
+        params: currentParams,
+        savedAt: new Date().toISOString()
+      };
+
+      try {
+        const presets = JSON.parse(localStorage.getItem(PRESETS_STORAGE_KEY) || "[]");
+        presets.push(preset);
+        localStorage.setItem(PRESETS_STORAGE_KEY, JSON.stringify(presets));
+        loadPresets();
+        sel.value = presets.length - 1;
+        showToast(`Saved preset "${name}"!`, "success");
+      } catch (e) {
+        showToast("Error saving preset: " + e.message, "error");
+      }
+    });
+  }
+
+  loadPresets();
+}
+window.initPresets = initPresets;
+
+// 9. Export Center Dropdown & JSON Summary (EXP-01)
+function initExportCenter() {
+  const btnMenu = document.getElementById("btnExportMenu");
+  const dropdown = document.getElementById("exportMenuDropdown");
+  const btnJson = document.getElementById("btnExportJsonSummary");
+
+  if (!btnMenu || !dropdown) return;
+
+  btnMenu.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const isShown = dropdown.style.display === "block";
+    dropdown.style.display = isShown ? "none" : "block";
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!dropdown.contains(e.target) && e.target !== btnMenu) {
+      dropdown.style.display = "none";
+    }
+  });
+
+  if (btnJson) {
+    btnJson.addEventListener("click", () => {
+      dropdown.style.display = "none";
+      if (!latest_run_cache) {
+        showToast("No active backtest results available to export.", "warning");
+        return;
+      }
+      const blob = new Blob([JSON.stringify(latest_run_cache, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `backtest_summary_${Date.now()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast("Exported JSON Summary!", "success");
+    });
+  }
+}
+window.initExportCenter = initExportCenter;
+
+
+
+
+
+// ── Calendar P&L Matrix & Weekday Performance Breakdown (VIZ-01) ─────────────
+function renderCalendarHeatmap(dailyPnls, trades) {
+  const container = document.getElementById("calendarHeatmapGrid");
+  if (!container) return;
+
+  const dayMap = {};
+  if (Array.isArray(dailyPnls) && dailyPnls.length > 0) {
+    dailyPnls.forEach(d => {
+      const dateKey = (d.date || "").replace(/_/g, "-");
+      if (dateKey) {
+        dayMap[dateKey] = (dayMap[dateKey] || 0) + (d.net_pnl || 0);
+      }
+    });
+  }
+
+  if (Object.keys(dayMap).length <= 1 && Array.isArray(trades) && trades.length > 0) {
+    trades.forEach(t => {
+      if (t.exit_time) {
+        const dateKey = t.exit_time.split(" ")[0].replace(/_/g, "-");
+        dayMap[dateKey] = (dayMap[dateKey] || 0) + (t.net_pnl || 0);
+      }
+    });
+  }
+
+  const dateKeys = Object.keys(dayMap).sort();
+  if (dateKeys.length === 0) {
+    container.innerHTML = '<div class="empty-state text-xs">Execute backtest to view daily calendar heatmap.</div>';
+    return;
+  }
+
+  let maxAbsPnl = 0;
+  dateKeys.forEach(k => {
+    const abs = Math.abs(dayMap[k]);
+    if (abs > maxAbsPnl) maxAbsPnl = abs;
+  });
+  if (maxAbsPnl === 0) maxAbsPnl = 1;
+
+  container.innerHTML = dateKeys.map(date => {
+    const pnl = dayMap[date];
+    const isProfit = pnl > 0;
+    const isLoss = pnl < 0;
+    const ratio = Math.abs(pnl) / maxAbsPnl;
+
+    let heatClass = "heat-neutral";
+    if (isProfit) {
+      if (ratio > 0.6) heatClass = "heat-win-3";
+      else if (ratio > 0.25) heatClass = "heat-win-2";
+      else heatClass = "heat-win-1";
+    } else if (isLoss) {
+      if (ratio > 0.6) heatClass = "heat-loss-3";
+      else if (ratio > 0.25) heatClass = "heat-loss-2";
+      else heatClass = "heat-loss-1";
+    }
+
+    const sign = isProfit ? "+" : "";
+    const pnlDisplay = Math.abs(pnl) >= 1000
+      ? `${sign}₹${(pnl / 1000).toFixed(1)}k`
+      : `${sign}₹${Math.round(pnl)}`;
+
+    const parts = date.split("-");
+    const label = parts.length === 3 ? `${parts[1]}/${parts[2]}` : date;
 
     return `
-      <tr>
-        <td style="font-weight: 700; color: #fff;">${f.factor_name}</td>
-        <td style="color: var(--text-muted); font-size: 0.8rem;">${f.description}</td>
-        <td><span class="badge ${badge}" style="font-weight: 700;">${f.status}</span></td>
-        <td style="font-family: 'JetBrains Mono', monospace; color: ${sharpeColor}; font-weight: 700;">
-          ${(f.delta_sharpe >= 0 ? "+" : "") + f.delta_sharpe.toFixed(2)}
-        </td>
-        <td style="font-family: 'JetBrains Mono', monospace; color: ${wrColor};">
-          ${(f.delta_win_rate >= 0 ? "+" : "") + f.delta_win_rate.toFixed(1)}%
-        </td>
-        <td style="font-family: 'JetBrains Mono', monospace; color: ${pnlColor}; font-weight: 700;">
-          ₹${(f.delta_net_pnl >= 0 ? "+" : "") + f.delta_net_pnl.toFixed(2)}
-        </td>
-        <td style="font-family: 'JetBrains Mono', monospace;">+${f.drawdown_reduction_pct.toFixed(1)}%</td>
-        <td style="font-family: 'JetBrains Mono', monospace;">${f.trades_filtered}</td>
-        <td><span class="badge ${f.status === 'VALUE_ADD' ? 'badge-long' : 'badge-neutral'}">${f.action_recommendation}</span></td>
-      </tr>
+      <div class="calendar-day-cell ${heatClass}" title="Date: ${date} | Net P&L: ${sign}₹${pnl.toFixed(2)}">
+        <span class="day-label">${label}</span>
+        <span class="day-pnl">${pnlDisplay}</span>
+      </div>
     `;
   }).join("");
 }
+window.renderCalendarHeatmap = renderCalendarHeatmap;
 
-async function fetchConfigExport() {
-  try {
-    const res = await fetch("/api/trading_engine/export_config");
-    const json = await res.json();
-    if (json.status === "ok" && json.data) {
-      renderConfigExport(json.data);
-    }
-  } catch (err) {
-    console.error("Error fetching config export:", err);
-  }
-}
+function renderWeekdayBreakdown(trades, dailyPnls) {
+  const container = document.getElementById("weekdayBarsContainer");
+  if (!container) return;
 
-function renderConfigExport(data) {
-  const recList = document.getElementById("teRecommendationsList");
-  if (recList) {
-    const recs = data.recommendations || [];
-    if (recs.length === 0) {
-      recList.innerHTML = '<li>All strategy parameters verified against current quantitative standards.</li>';
-    } else {
-      recList.innerHTML = recs.map(r => `<li>${r}</li>`).join("");
-    }
-  }
-
-  const preview = document.getElementById("teEnvPreview");
-  if (preview) {
-    preview.innerText = data.env_content || "";
-  }
-}
-
-// ── Visual Chart: Intraday Execution Drift Timeline ─────────────────────────────
-function renderIntradayDriftChart(data) {
-  const canvas = document.getElementById("teDriftChart");
-  if (!canvas) return;
-  const ctx = canvas.getContext("2d");
-  if (teDriftChartInstance) {
-    teDriftChartInstance.destroy();
-    teDriftChartInstance = null;
-  }
-
-  const pairs = Array.isArray(data) ? data : (data?.matched_pairs || []);
-  const unprompted = Array.isArray(data?.unprompted_live) ? data.unprompted_live : [];
-  const missed = Array.isArray(data?.missed_signals) ? data.missed_signals : [];
-
-  const getTimeStr = (timeStr) => {
-    if (!timeStr || typeof timeStr !== "string") return "";
-    if (timeStr.includes(" ")) {
-      const parts = timeStr.split(" ");
-      return parts[1].substring(0, 5);
-    }
-    return timeStr.substring(0, 5);
+  const weekdayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const displayDays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+  const stats = {
+    Monday: { pnl: 0, trades: 0, wins: 0 },
+    Tuesday: { pnl: 0, trades: 0, wins: 0 },
+    Wednesday: { pnl: 0, trades: 0, wins: 0 },
+    Thursday: { pnl: 0, trades: 0, wins: 0 },
+    Friday: { pnl: 0, trades: 0, wins: 0 }
   };
 
-  const events = [];
-
-  // 1. Matched pairs
-  pairs.forEach(p => {
-    const liveTime = getTimeStr(p.live_trade?.exit_time || p.live_trade?.entry_time);
-    const simTime = getTimeStr((p.sim_trade || p.simulated_trade)?.exit_time || (p.sim_trade || p.simulated_trade)?.entry_time);
-    const t = liveTime || simTime || "10:15";
-    events.push({
-      time: t,
-      livePnl: Number(p.live_trade?.net_pnl || 0),
-      simPnl: Number((p.sim_trade || p.simulated_trade)?.net_pnl || 0)
-    });
-  });
-
-  // 2. Unprompted live trades
-  unprompted.forEach(t => {
-    const timeStr = getTimeStr(t.exit_time || t.entry_time) || "11:30";
-    events.push({
-      time: timeStr,
-      livePnl: Number(t.net_pnl || 0),
-      simPnl: 0
-    });
-  });
-
-  // 3. Missed simulated trades
-  missed.forEach(t => {
-    const timeStr = getTimeStr(t.exit_time || t.entry_time) || "12:00";
-    events.push({
-      time: timeStr,
-      livePnl: 0,
-      simPnl: Number(t.net_pnl || 0)
-    });
-  });
-
-  // If no trades found, show baseline flat curve
-  if (events.length === 0) {
-    events.push({ time: "09:30", livePnl: 0, simPnl: 0 });
-    events.push({ time: "12:00", livePnl: 0, simPnl: 0 });
-    events.push({ time: "15:15", livePnl: 0, simPnl: 0 });
-  }
-
-  events.sort((a, b) => a.time.localeCompare(b.time));
-
-  let cumLive = 0;
-  let cumSim = 0;
-  const labels = ["09:15"];
-  const liveSeries = [0];
-  const simSeries = [0];
-
-  events.forEach(pt => {
-    cumLive += pt.livePnl;
-    cumSim += pt.simPnl;
-    labels.push(pt.time);
-    liveSeries.push(roundTo(cumLive, 2));
-    simSeries.push(roundTo(cumSim, 2));
-  });
-
-  if (labels[labels.length - 1] < "15:15") {
-    labels.push("15:30");
-    liveSeries.push(roundTo(cumLive, 2));
-    simSeries.push(roundTo(cumSim, 2));
-  }
-
-  const badge = document.getElementById("teDriftBadge");
-  if (badge) {
-    const totalTrades = pairs.length + unprompted.length + missed.length;
-    badge.innerText = totalTrades > 0 ? `${totalTrades} Trades Tracked` : "Session Baseline";
-  }
-
-  teDriftChartInstance = new Chart(ctx, {
-    type: "line",
-    data: {
-      labels: labels,
-      datasets: [
-        {
-          label: "Theoretical Strategy v4 P&L (₹)",
-          data: simSeries,
-          borderColor: "#00f2fe",
-          backgroundColor: "rgba(0, 242, 254, 0.08)",
-          fill: true,
-          tension: 0.2,
-          borderWidth: 2,
-          pointRadius: 4,
-          pointHoverRadius: 6
-        },
-        {
-          label: "Realized Live Paper P&L (₹)",
-          data: liveSeries,
-          borderColor: cumLive >= 0 ? "#00f5a0" : "#ff4d4f",
-          backgroundColor: cumLive >= 0 ? "rgba(0, 245, 160, 0.08)" : "rgba(255, 77, 79, 0.08)",
-          fill: true,
-          tension: 0.2,
-          borderWidth: 2,
-          pointRadius: 4,
-          pointHoverRadius: 6
-        }
-      ]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: { mode: "index", intersect: false },
-      plugins: {
-        legend: { display: true, labels: { color: "#8b949e", font: { size: 11 } } },
-        tooltip: {
-          backgroundColor: "rgba(10, 16, 28, 0.95)",
-          borderColor: "rgba(255, 255, 255, 0.1)",
-          borderWidth: 1,
-          callbacks: {
-            label: (c) => `${c.dataset.label}: ₹${Number(c.parsed.y).toLocaleString()}`
-          }
-        }
-      },
-      scales: {
-        x: {
-          grid: { color: "rgba(255, 255, 255, 0.05)" },
-          ticks: { color: "#8b949e", font: { size: 10 } }
-        },
-        y: {
-          grid: { color: "rgba(255, 255, 255, 0.05)" },
-          ticks: {
-            color: "#8b949e",
-            font: { size: 10 },
-            callback: (v) => `₹${Number(v).toLocaleString()}`
-          }
+  if (Array.isArray(trades) && trades.length > 0) {
+    trades.forEach(t => {
+      if (t.exit_time) {
+        const dateStr = t.exit_time.split(" ")[0].replace(/_/g, "-");
+        const dayIdx = new Date(dateStr).getDay();
+        const dayName = weekdayNames[dayIdx];
+        if (stats[dayName]) {
+          stats[dayName].pnl += (t.net_pnl || 0);
+          stats[dayName].trades += 1;
+          if ((t.net_pnl || 0) > 0) stats[dayName].wins += 1;
         }
       }
-    }
-  });
-}
-
-// ── Visual Chart: AI Decile Calibration Reliability Curve ────────────────────────
-function renderAiCalibrationChart(data) {
-  const canvas = document.getElementById("teCalibrationChart");
-  if (!canvas) return;
-  const ctx = canvas.getContext("2d");
-  if (teCalibrationChartInstance) {
-    teCalibrationChartInstance.destroy();
-    teCalibrationChartInstance = null;
-  }
-
-  const cal = data.calibration || [];
-  if (cal.length === 0) return;
-
-  const labels = cal.map(c => c.bucket);
-  const winRates = cal.map(c => c.win_rate);
-  const counts = cal.map(c => c.count);
-  const benchmarkLine = labels.map(l => {
-    if (l === "0.0-0.3") return 15;
-    if (l === "0.3-0.5") return 40;
-    if (l === "0.5-0.6") return 55;
-    if (l === "0.6-0.7") return 65;
-    if (l === "0.7-0.8") return 75;
-    if (l === "0.8-1.0") return 90;
-    return 50;
-  });
-
-  teCalibrationChartInstance = new Chart(ctx, {
-    type: "bar",
-    data: {
-      labels: labels,
-      datasets: [
-        {
-          type: "line",
-          label: "Realized Win Rate %",
-          data: winRates,
-          borderColor: "#00f2fe",
-          backgroundColor: "transparent",
-          borderWidth: 2.5,
-          pointRadius: 4,
-          pointBackgroundColor: "#00f2fe",
-          yAxisID: "y"
-        },
-        {
-          type: "line",
-          label: "Perfect Calibration Diagonal %",
-          data: benchmarkLine,
-          borderColor: "rgba(255, 255, 255, 0.3)",
-          borderDash: [5, 5],
-          backgroundColor: "transparent",
-          borderWidth: 1.5,
-          pointRadius: 0,
-          yAxisID: "y"
-        },
-        {
-          type: "bar",
-          label: "Snapshot Sample Count",
-          data: counts,
-          backgroundColor: "rgba(168, 85, 247, 0.25)",
-          borderColor: "rgba(168, 85, 247, 0.6)",
-          borderWidth: 1,
-          yAxisID: "y1"
-        }
-      ]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: true, labels: { color: "#8b949e", font: { size: 11 } } },
-        tooltip: {
-          backgroundColor: "rgba(10, 16, 28, 0.95)",
-          borderColor: "rgba(255, 255, 255, 0.1)",
-          borderWidth: 1
-        }
-      },
-      scales: {
-        x: { grid: { color: "rgba(255, 255, 255, 0.05)" }, ticks: { color: "#8b949e" } },
-        y: {
-          type: "linear",
-          position: "left",
-          min: 0,
-          max: 100,
-          grid: { color: "rgba(255, 255, 255, 0.05)" },
-          ticks: { color: "#8b949e", callback: v => `${v}%` }
-        },
-        y1: {
-          type: "linear",
-          position: "right",
-          grid: { drawOnChartArea: false },
-          ticks: { color: "#a855f7" }
-        }
-      }
-    }
-  });
-}
-
-// ── Monte Carlo & Stress Test Engine ─────────────────────────────────────────────
-async function fetchMonteCarlo() {
-  const simSelect = document.getElementById("mcSimCount");
-  const capInput = document.getElementById("mcCapital");
-  const ruinSelect = document.getElementById("mcSoftRuin");
-  const dateSelect = document.getElementById("teDateSelect");
-
-  const numSims = simSelect ? parseInt(simSelect.value, 10) : 2500;
-  const capital = capInput ? parseFloat(capInput.value) : 100000;
-  const softRuin = ruinSelect ? parseFloat(ruinSelect.value) : 0.20;
-  const targetDate = dateSelect ? dateSelect.value : "2026_09_11";
-
-  const btn = document.getElementById("btnRunMonteCarlo");
-  if (btn) {
-    btn.disabled = true;
-    btn.innerText = "Simulating Paths...";
-  }
-
-  try {
-    const res = await fetch("/api/trading_engine/monte_carlo", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        date: targetDate === "all" ? "2026_09_11" : targetDate,
-        num_simulations: numSims,
-        capital: capital,
-        soft_ruin: softRuin,
-        hard_ruin: 0.50
-      })
     });
-    const json = await res.json();
-    if (json.status === "ok" && json.data) {
-      renderMonteCarlo(json.data);
-    }
-  } catch (err) {
-    console.error("Error in monte carlo:", err);
-  } finally {
-    if (btn) {
-      btn.disabled = false;
-      btn.innerText = "🎲 Run Stress Test";
-    }
-  }
-}
-
-function renderMonteCarlo(data) {
-  const v = data.var || {};
-  const dd = data.drawdown || {};
-  const r = data.ruin_probability || {};
-  const perf = data.performance || {};
-  const ch = data.chart_data || {};
-
-  const kVaR95 = document.getElementById("mcKpiVaR95");
-  if (kVaR95) kVaR95.innerText = `₹${Math.abs(v.var_95_rs || 0).toLocaleString()} (${v.var_95_pct || 0}%)`;
-
-  const kVaR99 = document.getElementById("mcKpiVaR99");
-  if (kVaR99) kVaR99.innerText = `₹${Math.abs(v.var_99_rs || 0).toLocaleString()} (${v.var_99_pct || 0}%)`;
-
-  const kCVaR = document.getElementById("mcKpiCVaR");
-  if (kCVaR) kCVaR.innerText = `₹${Math.abs(v.cvar_95_rs || 0).toLocaleString()} (${v.cvar_95_pct || 0}%)`;
-
-  const kDD = document.getElementById("mcKpiMaxDD");
-  if (kDD) kDD.innerText = `${dd.p95_dd_pct || 0}%`;
-  const kDDSub = document.getElementById("mcKpiMaxDDSub");
-  if (kDDSub) kDDSub.innerText = `Median: ${dd.median_dd_pct || 0}% | Worst: ${dd.worst_dd_pct || 0}%`;
-
-  const kRuin = document.getElementById("mcKpiRuin");
-  if (kRuin) {
-    const sRuin = r.soft_ruin_pct || 0;
-    kRuin.innerText = `${sRuin.toFixed(1)}%`;
-    kRuin.style.color = sRuin < 5 ? "var(--green)" : (sRuin < 15 ? "var(--accent-yellow)" : "var(--red)");
-  }
-  const kRuinSub = document.getElementById("mcKpiRuinSub");
-  if (kRuinSub) kRuinSub.innerText = `50% Ruin: ${r.hard_ruin_pct || 0}% | Win Prob: ${perf.profit_probability || 0}%`;
-
-  // Render chart
-  const canvas = document.getElementById("teMonteCarloChart");
-  if (!canvas) return;
-  const ctx = canvas.getContext("2d");
-  if (teMonteCarloChartInstance) {
-    teMonteCarloChartInstance.destroy();
-    teMonteCarloChartInstance = null;
-  }
-
-  const steps = ch.steps || [];
-  const datasets = [
-    {
-      label: "95th Percentile (Optimistic)",
-      data: ch.p95_envelope || [],
-      borderColor: "rgba(0, 245, 160, 0.7)",
-      backgroundColor: "transparent",
-      borderWidth: 1.5,
-      pointRadius: 0
-    },
-    {
-      label: "Median Path (50th Percentile)",
-      data: ch.median_envelope || [],
-      borderColor: "#00f2fe",
-      backgroundColor: "transparent",
-      borderWidth: 2.5,
-      pointRadius: 0
-    },
-    {
-      label: "5th Percentile (Stress Boundary)",
-      data: ch.p5_envelope || [],
-      borderColor: "rgba(255, 77, 79, 0.8)",
-      backgroundColor: "rgba(255, 77, 79, 0.05)",
-      fill: "-1",
-      borderWidth: 1.5,
-      pointRadius: 0
-    }
-  ];
-
-  (ch.sample_paths || []).slice(0, 5).forEach((p, idx) => {
-    datasets.push({
-      label: `Path ${idx + 1}`,
-      data: p,
-      borderColor: "rgba(255, 255, 255, 0.12)",
-      backgroundColor: "transparent",
-      borderWidth: 1,
-      pointRadius: 0
-    });
-  });
-
-  teMonteCarloChartInstance = new Chart(ctx, {
-    type: "line",
-    data: { labels: steps.map(s => `Trade ${s}`), datasets: datasets },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: true, labels: { color: "#8b949e", filter: item => !item.text.startsWith("Path") } },
-        tooltip: {
-          backgroundColor: "rgba(10, 16, 28, 0.95)",
-          borderColor: "rgba(255, 255, 255, 0.1)",
-          borderWidth: 1,
-          callbacks: { label: c => `${c.dataset.label}: ₹${c.parsed.y.toLocaleString()}` }
-        }
-      },
-      scales: {
-        x: { grid: { color: "rgba(255, 255, 255, 0.05)" }, ticks: { color: "#8b949e", maxTicksLimit: 10 } },
-        y: {
-          grid: { color: "rgba(255, 255, 255, 0.05)" },
-          ticks: { color: "#8b949e", callback: v => `₹${(v / 1000).toFixed(0)}k` }
-        }
-      }
-    }
-  });
-}
-
-// ── Multi-Leg Options & Greeks Simulation Engine ──────────────────────────────────
-async function fetchMultiLegSimulation() {
-  const stratSel = document.getElementById("mlStrategySelect");
-  const slSel = document.getElementById("mlSlSelect");
-  const tgtSel = document.getElementById("mlTargetSelect");
-  const dateSelect = document.getElementById("teDateSelect");
-
-  const strat = stratSel ? stratSel.value : "short_straddle";
-  const sl = slSel ? parseFloat(slSel.value) : 0.25;
-  const tgt = tgtSel ? parseFloat(tgtSel.value) : 0.60;
-  const dVal = dateSelect ? dateSelect.value : "2026_09_11";
-  const targetDate = dVal === "all" ? "2026_09_11" : dVal;
-
-  const btn = document.getElementById("btnRunMultiLeg");
-  if (btn) {
-    btn.disabled = true;
-    btn.innerText = "Simulating Greeks...";
-  }
-
-  const tbody = document.getElementById("mlLegsBody");
-  if (tbody) tbody.innerHTML = '<tr><td colspan="10" class="empty-state">Simulating multi-leg option progression and Greeks...</td></tr>';
-
-  try {
-    const res = await fetch("/api/trading_engine/multi_leg_simulation", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        date: targetDate,
-        strategy: strat,
-        underlying: "NIFTY",
-        sl_pct: sl,
-        target_pct: tgt
-      })
-    });
-    const json = await res.json();
-    if (json.status === "ok" && json.data) {
-      renderMultiLegSimulation(json.data);
-    } else {
-      if (tbody) tbody.innerHTML = `<tr><td colspan="10" class="empty-state" style="color: var(--red);">${json.message || "Simulation failed"}</td></tr>`;
-    }
-  } catch (err) {
-    console.error("Error in multi-leg simulation:", err);
-    if (tbody) tbody.innerHTML = `<tr><td colspan="10" class="empty-state" style="color: var(--red);">Error: ${err.message}</td></tr>`;
-  } finally {
-    if (btn) {
-      btn.disabled = false;
-      btn.innerText = "⚡ Simulate Multi-Leg";
-    }
-  }
-}
-
-function renderMultiLegSimulation(data) {
-  const pnl = data.total_net_pnl || 0;
-  const theta = data.total_theta_harvested || 0;
-  const tl = data.timeline || [];
-
-  const kPnl = document.getElementById("mlKpiPnl");
-  if (kPnl) {
-    kPnl.innerText = `${pnl >= 0 ? "+" : ""}₹${pnl.toFixed(2)}`;
-    kPnl.style.color = pnl >= 0 ? "var(--green)" : "var(--red)";
-  }
-
-  const kTheta = document.getElementById("mlKpiTheta");
-  if (kTheta) kTheta.innerText = `₹${theta.toFixed(2)}`;
-
-  let peakDelta = 0;
-  let peakGamma = 0;
-  tl.forEach(pt => {
-    if (Math.abs(pt.net_delta || 0) > Math.abs(peakDelta)) peakDelta = pt.net_delta;
-    if (Math.abs(pt.net_gamma || 0) > Math.abs(peakGamma)) peakGamma = pt.net_gamma;
-  });
-
-  const kDelta = document.getElementById("mlKpiDelta");
-  if (kDelta) kDelta.innerText = `${peakDelta >= 0 ? "+" : ""}${peakDelta.toFixed(2)} Δ`;
-
-  const kGamma = document.getElementById("mlKpiGamma");
-  if (kGamma) kGamma.innerText = `${peakGamma.toFixed(5)} Γ`;
-
-  // Legs Table
-  const tbody = document.getElementById("mlLegsBody");
-  if (tbody) {
-    const legs = data.legs || [];
-    if (legs.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="10" class="empty-state">No executed legs.</td></tr>';
-    } else {
-      tbody.innerHTML = legs.map(l => {
-        const pColor = (l.pnl || 0) >= 0 ? "var(--green)" : "var(--red)";
-        const badge = l.type === "CE" ? "badge-long" : "badge-short";
-        return `
-          <tr>
-            <td><span class="badge ${badge}">${l.type}</span></td>
-            <td style="font-weight: 700;">${l.strike}</td>
-            <td><span class="badge badge-neutral">${l.side}</span></td>
-            <td style="font-family: 'JetBrains Mono', monospace;">${l.qty}</td>
-            <td style="font-family: 'JetBrains Mono', monospace;">${l.entry_time}</td>
-            <td style="font-family: 'JetBrains Mono', monospace;">₹${(l.entry_premium || 0).toFixed(2)}</td>
-            <td style="font-family: 'JetBrains Mono', monospace;">${l.exit_time || "--"}</td>
-            <td style="font-family: 'JetBrains Mono', monospace;">₹${(l.exit_premium || 0).toFixed(2)}</td>
-            <td><span class="badge ${l.exit_reason === 'STOP_LOSS' ? 'badge-short' : (l.exit_reason === 'TARGET_DECAY' ? 'badge-long' : 'badge-neutral')}">${l.exit_reason || "OPEN"}</span></td>
-            <td style="font-family: 'JetBrains Mono', monospace; font-weight: 700; color: ${pColor};">
-              ${(l.pnl >= 0 ? "+" : "")}₹${(l.pnl || 0).toFixed(2)}
-            </td>
-          </tr>
-        `;
-      }).join("");
-    }
-  }
-
-  // Chart
-  const canvas = document.getElementById("teGreeksChart");
-  if (!canvas) return;
-  const ctx = canvas.getContext("2d");
-  if (teGreeksChartInstance) {
-    teGreeksChartInstance.destroy();
-    teGreeksChartInstance = null;
-  }
-
-  const times = tl.map(t => t.time);
-  const pnlSeries = tl.map(t => t.cumulative_pnl);
-  const deltaSeries = tl.map(t => t.net_delta);
-
-  teGreeksChartInstance = new Chart(ctx, {
-    type: "line",
-    data: {
-      labels: times,
-      datasets: [
-        {
-          label: "Intraday Cumulative P&L (₹)",
-          data: pnlSeries,
-          borderColor: pnl >= 0 ? "#00f5a0" : "#ff4d4f",
-          backgroundColor: pnl >= 0 ? "rgba(0, 245, 160, 0.08)" : "rgba(255, 77, 79, 0.08)",
-          fill: true,
-          tension: 0.2,
-          borderWidth: 2,
-          yAxisID: "y"
-        },
-        {
-          label: "Net Portfolio Delta (Δ)",
-          data: deltaSeries,
-          borderColor: "#00f2fe",
-          backgroundColor: "transparent",
-          borderWidth: 1.5,
-          borderDash: [4, 4],
-          pointRadius: 0,
-          yAxisID: "y1"
-        }
-      ]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: true, labels: { color: "#8b949e", font: { size: 11 } } },
-        tooltip: {
-          backgroundColor: "rgba(10, 16, 28, 0.95)",
-          borderColor: "rgba(255, 255, 255, 0.1)",
-          borderWidth: 1
-        }
-      },
-      scales: {
-        x: { grid: { color: "rgba(255, 255, 255, 0.05)" }, ticks: { color: "#8b949e", maxTicksLimit: 10 } },
-        y: {
-          grid: { color: "rgba(255, 255, 255, 0.05)" },
-          ticks: { color: "#8b949e", callback: v => `₹${v}` }
-        },
-        y1: {
-          position: "right",
-          grid: { drawOnChartArea: false },
-          ticks: { color: "#00f2fe" }
-        }
-      }
-    }
-  });
-}
-
-// ── Daily Session Audit Tearsheet Modal ───────────────────────────────────────────
-async function fetchSessionAudit() {
-  const select = document.getElementById("teDateSelect");
-  const targetDate = select ? select.value : "2026_09_11";
-  const content = document.getElementById("teAuditModalContent");
-  const modalTitle = document.getElementById("teAuditModalTitle");
-  if (modalTitle) modalTitle.innerText = `Session Audit Report: ${targetDate}`;
-  if (content) content.innerHTML = '<div class="empty-state">Running comprehensive session audit & synthesizing scorecard...</div>';
-
-  try {
-    const res = await fetch(`/api/trading_engine/audit?date=${encodeURIComponent(targetDate)}`);
-    const json = await res.json();
-    if (json.status === "ok" && json.data) {
-      const d = json.data;
-      const recon = d.reconciliation?.summary || {};
-      const ai = d.ai_analytics?.counterfactual_matrix || {};
-      const flags = d.flags || [];
-
-      const flagsHtml = flags.map(f => {
-        const col = f.severity === 'WARNING' ? 'var(--red)' : (f.severity === 'SUCCESS' ? 'var(--green)' : 'var(--accent-cyan)');
-        const bg = f.severity === 'WARNING' ? 'rgba(255,77,79,0.1)' : (f.severity === 'SUCCESS' ? 'rgba(0,245,160,0.1)' : 'rgba(0,242,254,0.1)');
-        return `
-          <div style="padding: 10px 14px; margin-bottom: 8px; border-radius: 6px; background: ${bg}; border-left: 4px solid ${col}; font-size: 0.84rem;">
-            <strong style="color: #fff;">[${f.severity}] ${f.code}:</strong> <span style="color: #c9d1d9;">${f.message}</span>
-          </div>
-        `;
-      }).join("") || '<div class="empty-state">No execution anomalies detected.</div>';
-
-      if (content) {
-        content.innerHTML = `
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 12px;">
-            <div>
-              <span style="font-size: 1.3rem; font-weight: 800; color: #fff;">Health Grade: </span>
-              <span style="font-size: 1.3rem; font-weight: 800; color: ${d.status_color};">${d.grade}</span>
-            </div>
-            <span style="font-size: 0.85rem; color: var(--text-muted);">Generated: ${d.generated_at}</span>
-          </div>
-
-          <div class="kpi-grid" style="margin-bottom: 20px;">
-            <div class="kpi-card">
-              <span class="kpi-label">Health Score</span>
-              <span class="kpi-value" style="color: ${d.status_color};">${d.health_score} / 100</span>
-              <span class="kpi-sub">Overall execution fidelity</span>
-            </div>
-            <div class="kpi-card">
-              <span class="kpi-label">Execution Efficiency</span>
-              <span class="kpi-value" style="color: var(--accent-cyan);">${(recon.execution_efficiency_score || 0).toFixed(1)}%</span>
-              <span class="kpi-sub">Latency & slippage rating</span>
-            </div>
-            <div class="kpi-card">
-              <span class="kpi-label">Avg Entry Slippage</span>
-              <span class="kpi-value">₹${(recon.avg_entry_slippage_rs || 0).toFixed(2)}</span>
-              <span class="kpi-sub">${(recon.avg_entry_slippage_pct || 0).toFixed(2)}% premium drag</span>
-            </div>
-            <div class="kpi-card">
-              <span class="kpi-label">AI Precision</span>
-              <span class="kpi-value" style="color: var(--green);">${(ai.precision || 0).toFixed(1)}%</span>
-              <span class="kpi-sub">Filtered ${ai.signals_filtered || 0} chop signals</span>
-            </div>
-          </div>
-
-          <div class="card" style="margin-bottom: 16px;">
-            <h4 style="margin: 0 0 10px; color: #fff;">Diagnostic Flags & Observations</h4>
-            ${flagsHtml}
-          </div>
-        `;
-      }
-    } else {
-      if (content) content.innerHTML = `<div class="empty-state" style="color: var(--red);">${json.message || "Failed to load audit"}</div>`;
-    }
-  } catch (err) {
-    console.error("Error fetching audit:", err);
-    if (content) content.innerHTML = `<div class="empty-state" style="color: var(--red);">Error: ${err.message}</div>`;
-  }
-}
-
-// ── 7. Option Chain & OI Profile ─────────────────────────────────────────────
-async function fetchOptionChain() {
-  const select = document.getElementById("teDateSelect");
-  const dateStr = select ? select.value : "2026_09_11";
-  const tblSelect = document.getElementById("ocTableSelect");
-  const table = tblSelect && tblSelect.value ? tblSelect.value : "";
-  const slider = document.getElementById("ocTimeSlider");
-  const sliderVal = slider ? parseInt(slider.value) : 75;
-
-  let timeParam = "";
-  if (sliderVal < 75) {
-    const totalMin = sliderVal * 5;
-    const h = 9 + Math.floor((15 + totalMin) / 60);
-    const m = (15 + totalMin) % 60;
-    timeParam = `${h}:${String(m).padStart(2, '0')}`;
-  }
-
-  try {
-    const url = `/api/trading_engine/option_chain?date=${encodeURIComponent(dateStr)}&table=${encodeURIComponent(table)}&time=${encodeURIComponent(timeParam)}`;
-    const res = await fetch(url);
-    const json = await res.json();
-    if (json.status !== "ok") return;
-
-    const d = json.data;
-
-    // Populate tables dropdown if needed
-    if (tblSelect && d.available_tables && d.available_tables.length > 0) {
-      if (tblSelect.options.length <= 1 || !tblSelect.querySelector(`option[value="${d.table}"]`)) {
-        tblSelect.innerHTML = d.available_tables.map(t => `<option value="${t}" ${t === d.table ? 'selected' : ''}>${t}</option>`).join("");
-      }
-    }
-
-    // Update KPI Cards
-    const kpiSpot = document.getElementById("ocKpiSpot");
-    if (kpiSpot) kpiSpot.innerText = d.underlying_ltp ? `₹${d.underlying_ltp.toLocaleString()}` : "--";
-    const kpiAtm = document.getElementById("ocKpiAtm");
-    if (kpiAtm) kpiAtm.innerText = `ATM Strike: ${d.atm_strike || '--'}`;
-    const kpiMaxPain = document.getElementById("ocKpiMaxPain");
-    if (kpiMaxPain) kpiMaxPain.innerText = d.max_pain_strike ? `${d.max_pain_strike}` : "--";
-    const kpiGammaFlip = document.getElementById("ocKpiGammaFlip");
-    if (kpiGammaFlip) kpiGammaFlip.innerText = d.gamma_flip_strike ? `${d.gamma_flip_strike}` : "--";
-    const kpiPcr = document.getElementById("ocKpiPcr");
-    if (kpiPcr) {
-      kpiPcr.innerText = d.pcr !== undefined ? d.pcr.toFixed(2) : "--";
-      kpiPcr.style.color = d.pcr >= 1.0 ? 'var(--accent-green)' : 'var(--accent-red)';
-    }
-    const kpiOiTotal = document.getElementById("ocKpiOiTotal");
-    if (kpiOiTotal) kpiOiTotal.innerText = `CE: ${(d.total_ce_oi || 0).toLocaleString()} | PE: ${(d.total_pe_oi || 0).toLocaleString()}`;
-
-    // Render Charts
-    renderOptionChainCharts(d);
-
-    // Populate Table
-    const tbody = document.getElementById("ocStrikesBody");
-    if (tbody && d.strikes) {
-      tbody.innerHTML = d.strikes.map(s => {
-        const isAtm = Math.abs(s.strike_price - (d.atm_strike || 0)) < 25;
-        const bg = isAtm ? 'rgba(0, 242, 254, 0.08)' : '';
-        return `
-          <tr style="background: ${bg};">
-            <td style="color: var(--accent-cyan); font-size: 0.8rem;">${s.ce_iv || '--'}%</td>
-            <td style="color: #fff; font-weight: 600;">₹${s.ce_ltp}</td>
-            <td style="color: var(--text-muted); font-size: 0.8rem;">${s.ce_delta}</td>
-            <td style="color: var(--accent-cyan); font-weight: 700;">${(s.ce_oi || 0).toLocaleString()}</td>
-            <td style="font-weight: 800; color: #fff; background: rgba(255,255,255,0.04); text-align: center;">${s.strike_price}</td>
-            <td style="color: var(--accent-red); font-weight: 700;">${(s.pe_oi || 0).toLocaleString()}</td>
-            <td style="color: var(--text-muted); font-size: 0.8rem;">${s.pe_delta}</td>
-            <td style="color: #fff; font-weight: 600;">₹${s.pe_ltp}</td>
-            <td style="color: var(--accent-red); font-size: 0.8rem;">${s.pe_iv || '--'}%</td>
-          </tr>
-        `;
-      }).join("");
-    }
-  } catch (err) {
-    console.error("Error fetching option chain:", err);
-  }
-}
-
-function renderOptionChainCharts(data) {
-  // 1. Strike OI Distribution Chart
-  const ctxOi = document.getElementById("teOptionChainChart");
-  if (ctxOi && data.strikes) {
-    if (teOptionChainChartInstance) teOptionChainChartInstance.destroy();
-
-    const strikes = data.strikes.map(s => s.strike_price);
-    const ceOi = data.strikes.map(s => s.ce_oi);
-    const peOi = data.strikes.map(s => s.pe_oi);
-
-    teOptionChainChartInstance = new Chart(ctxOi, {
-      type: "bar",
-      data: {
-        labels: strikes,
-        datasets: [
-          {
-            label: "Call OI (Resistance)",
-            data: ceOi,
-            backgroundColor: "rgba(0, 242, 254, 0.7)",
-            borderColor: "var(--accent-cyan)",
-            borderWidth: 1
-          },
-          {
-            label: "Put OI (Support)",
-            data: peOi,
-            backgroundColor: "rgba(255, 77, 79, 0.7)",
-            borderColor: "var(--accent-red)",
-            borderWidth: 1
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        scales: {
-          x: { grid: { color: "rgba(255,255,255,0.05)" }, ticks: { color: "#8b949e", font: { size: 10 } } },
-          y: { grid: { color: "rgba(255,255,255,0.05)" }, ticks: { color: "#8b949e", font: { size: 10 } } }
-        },
-        plugins: {
-          legend: { labels: { color: "#c9d1d9", font: { size: 11 } } },
-          tooltip: {
-            backgroundColor: "rgba(10, 16, 28, 0.95)",
-            callbacks: {
-              label: (c) => `${c.dataset.label}: ${Number(c.parsed.y).toLocaleString()} OI`
-            }
-          }
-        }
+  } else if (Array.isArray(dailyPnls) && dailyPnls.length > 0) {
+    dailyPnls.forEach(d => {
+      const dateStr = (d.date || "").replace(/_/g, "-");
+      const dayIdx = new Date(dateStr).getDay();
+      const dayName = weekdayNames[dayIdx];
+      if (stats[dayName]) {
+        stats[dayName].pnl += (d.net_pnl || 0);
+        stats[dayName].trades += 1;
+        if ((d.net_pnl || 0) > 0) stats[dayName].wins += 1;
       }
     });
   }
 
-  // 2. PCR Timeline Chart
-  const ctxPcr = document.getElementById("tePcrTimelineChart");
-  if (ctxPcr && data.pcr_timeline) {
-    if (tePcrChartInstance) tePcrChartInstance.destroy();
+  let maxAbsPnl = 0;
+  displayDays.forEach(day => {
+    const abs = Math.abs(stats[day].pnl);
+    if (abs > maxAbsPnl) maxAbsPnl = abs;
+  });
+  if (maxAbsPnl === 0) maxAbsPnl = 1;
 
-    const labels = data.pcr_timeline.map(p => p.time);
-    const pcrs = data.pcr_timeline.map(p => p.pcr);
-    const spots = data.pcr_timeline.map(p => p.spot);
+  container.innerHTML = displayDays.map(day => {
+    const s = stats[day];
+    const isProfit = s.pnl >= 0;
+    const sign = isProfit ? "+" : "";
+    const winRate = s.trades > 0 ? ((s.wins / s.trades) * 100).toFixed(0) : "0";
+    const barWidth = Math.max(Math.round((Math.abs(s.pnl) / maxAbsPnl) * 100), 2);
+    const barColorClass = isProfit ? "pos" : "neg";
+    const shortDay = day.slice(0, 3);
 
-    tePcrChartInstance = new Chart(ctxPcr, {
-      type: "line",
-      data: {
-        labels: labels,
-        datasets: [
-          {
-            label: "PCR (Put-Call Ratio)",
-            data: pcrs,
-            borderColor: "var(--accent-gold)",
-            backgroundColor: "rgba(250, 204, 21, 0.1)",
-            fill: true,
-            tension: 0.2,
-            borderWidth: 2,
-            yAxisID: "yPcr"
-          },
-          {
-            label: "Underlying Spot",
-            data: spots,
-            borderColor: "var(--accent-cyan)",
-            borderWidth: 1.5,
-            borderDash: [4, 4],
-            pointRadius: 0,
-            yAxisID: "ySpot"
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        scales: {
-          x: { grid: { color: "rgba(255,255,255,0.05)" }, ticks: { color: "#8b949e", font: { size: 10 } } },
-          yPcr: {
-            position: "left",
-            grid: { color: "rgba(255,255,255,0.05)" },
-            ticks: { color: "var(--accent-gold)", font: { size: 10 } }
-          },
-          ySpot: {
-            position: "right",
-            grid: { drawOnChartArea: false },
-            ticks: { color: "var(--accent-cyan)", font: { size: 10 } }
-          }
-        },
-        plugins: {
-          legend: { labels: { color: "#c9d1d9", font: { size: 11 } } }
-        }
-      }
-    });
-  }
+    return `
+      <div class="weekday-row">
+        <span class="weekday-label">${shortDay}</span>
+        <div class="weekday-bar-track">
+          <div class="weekday-bar-fill ${barColorClass}" style="width: ${s.trades > 0 ? barWidth : 0}%;"></div>
+        </div>
+        <span class="weekday-stats ${isProfit ? 'text-green' : 'text-red'}">
+          ${sign}₹${Math.round(s.pnl).toLocaleString("en-IN")} (${s.trades}T · ${winRate}%W)
+        </span>
+      </div>
+    `;
+  }).join("");
 }
+window.renderWeekdayBreakdown = renderWeekdayBreakdown;
 
-// ── 8. Forensic Market Tape Replay ───────────────────────────────────────────
-async function loadReplaySession() {
-  const select = document.getElementById("teDateSelect");
-  const dateStr = select ? select.value : "2026_09_11";
-  const symInput = document.getElementById("replaySymbolInput");
-  const sym = symInput ? symInput.value.toUpperCase() : "NIFTY";
+// ── Walk-Forward Robustness Traffic Light Gauge (VIZ-03) ───────────────────────
+function updateWfoTrafficLight(wfe) {
+  const lightRobust = document.getElementById("wfoLightRobust");
+  const lightModerate = document.getElementById("wfoLightModerate");
+  const lightDegraded = document.getElementById("wfoLightDegraded");
 
-  try {
-    const res = await fetch(`/api/trading_engine/replay_data?date=${encodeURIComponent(dateStr)}&symbol=${encodeURIComponent(sym)}`);
-    const json = await res.json();
-    if (json.status !== "ok") return;
+  if (!lightRobust || !lightModerate || !lightDegraded) return;
 
-    currentReplaySession = json.data;
-    currentReplayFrameIndex = 0;
+  lightRobust.classList.remove("active");
+  lightModerate.classList.remove("active");
+  lightDegraded.classList.remove("active");
 
-    const scrubber = document.getElementById("replayScrubber");
-    if (scrubber && currentReplaySession.frames) {
-      scrubber.max = Math.max(0, currentReplaySession.frames.length - 1);
-      scrubber.value = 0;
-    }
-
-    renderReplayFrame(0);
-  } catch (err) {
-    console.error("Error loading replay session:", err);
-  }
-}
-
-function renderReplayFrame(frameIdx) {
-  if (!currentReplaySession || !currentReplaySession.frames || currentReplaySession.frames.length === 0) return;
-  const frames = currentReplaySession.frames;
-  const idx = Math.max(0, Math.min(frames.length - 1, frameIdx));
-  currentReplayFrameIndex = idx;
-  const f = frames[idx];
-
-  // Update Scrubber & Time Readout
-  const scrubber = document.getElementById("replayScrubber");
-  if (scrubber) scrubber.value = idx;
-  const readout = document.getElementById("replayTimeReadout");
-  if (readout) readout.innerText = f.time || "--";
-
-  // Update KPI Cards
-  const kpiPrice = document.getElementById("replayKpiPrice");
-  if (kpiPrice) kpiPrice.innerText = `₹${f.close.toLocaleString()}`;
-  const kpiTime = document.getElementById("replayKpiTime");
-  if (kpiTime) kpiTime.innerText = `Bar: ${idx + 1} / ${frames.length} (${f.time})`;
-  const kpiPnl = document.getElementById("replayKpiPnl");
-  if (kpiPnl) {
-    kpiPnl.innerText = `₹${f.cumulative_pnl.toLocaleString()}`;
-    kpiPnl.style.color = f.cumulative_pnl >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
-  }
-  const kpiInd = document.getElementById("replayKpiIndicators");
-  if (kpiInd) {
-    const isBull = f.supertrend_dir === 1;
-    kpiInd.innerText = isBull ? "ST: Bullish ▲" : "ST: Bearish ▼";
-    kpiInd.style.color = isBull ? 'var(--accent-green)' : 'var(--accent-red)';
-  }
-
-  // Draw Replay Chart: Window of past 40 bars up to idx
-  const startIdx = Math.max(0, idx - 40);
-  const windowFrames = frames.slice(startIdx, idx + 1);
-
-  const ctx = document.getElementById("teReplayChart");
-  if (ctx) {
-    if (teReplayChartInstance) teReplayChartInstance.destroy();
-
-    const labels = windowFrames.map(w => w.time);
-    const closes = windowFrames.map(w => w.close);
-    const supertrend = windowFrames.map(w => w.supertrend);
-    const vwap = windowFrames.map(w => w.vwap);
-
-    const datasets = [
-      {
-        label: "Price",
-        data: closes,
-        borderColor: "rgba(255, 255, 255, 0.9)",
-        backgroundColor: "rgba(255, 255, 255, 0.05)",
-        fill: true,
-        borderWidth: 2,
-        pointRadius: 2,
-        pointHoverRadius: 5
-      }
-    ];
-
-    const chkSt = document.getElementById("chkReplaySt");
-    if (chkSt && chkSt.checked) {
-      datasets.push({
-        label: "Supertrend",
-        data: supertrend,
-        borderColor: "var(--accent-cyan)",
-        borderWidth: 1.5,
-        pointRadius: 0
-      });
-    }
-
-    const chkVwap = document.getElementById("chkReplayVwap");
-    if (chkVwap && chkVwap.checked) {
-      datasets.push({
-        label: "VWAP",
-        data: vwap,
-        borderColor: "var(--accent-gold)",
-        borderDash: [3, 3],
-        borderWidth: 1.5,
-        pointRadius: 0
-      });
-    }
-
-    teReplayChartInstance = new Chart(ctx, {
-      type: "line",
-      data: { labels, datasets },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        animation: false,
-        scales: {
-          x: { grid: { color: "rgba(255,255,255,0.05)" }, ticks: { color: "#8b949e", font: { size: 10 } } },
-          y: { grid: { color: "rgba(255,255,255,0.05)" }, ticks: { color: "#8b949e", font: { size: 10 } } }
-        },
-        plugins: {
-          legend: { labels: { color: "#c9d1d9", font: { size: 10 } } }
-        }
-      }
-    });
-  }
-
-  // Populate Events Stream
-  const eventsCount = document.getElementById("replayKpiEventsCount");
-  const pastEvents = [];
-  for (let i = 0; i <= idx; i++) {
-    if (frames[i].events && frames[i].events.length > 0) {
-      pastEvents.push(...frames[i].events);
-    }
-  }
-  if (eventsCount) eventsCount.innerText = pastEvents.length;
-
-  const tbody = document.getElementById("replayEventsBody");
-  if (tbody) {
-    if (pastEvents.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="6" class="empty-state">No events triggered up to ${f.time}.</td></tr>`;
-    } else {
-      tbody.innerHTML = pastEvents.slice(-12).reverse().map(ev => {
-        const isAi = ev.type === "AI_EVALUATION";
-        const actionCol = (ev.action === "BUY" || ev.action === "APPROVE") ? 'var(--accent-green)' : 'var(--accent-red)';
-        return `
-          <tr>
-            <td style="color: var(--text-muted); font-weight: 600;">${ev.time || f.time}</td>
-            <td><span class="card-badge" style="background: ${isAi ? 'rgba(0,242,254,0.15)' : 'rgba(250,204,21,0.15)'}; color: ${isAi ? 'var(--accent-cyan)' : 'var(--accent-gold)'};">${ev.type}</span></td>
-            <td style="color: ${actionCol}; font-weight: 700;">${ev.action || ev.side || '--'}</td>
-            <td>${ev.confidence ? `${Math.round(ev.confidence * 100)}%` : '--'}</td>
-            <td style="font-size: 0.8rem; color: #c9d1d9; max-width: 320px;">${ev.reasoning || ev.title || '--'}</td>
-            <td style="font-weight: 700; color: ${(ev.pnl || 0) >= 0 ? 'var(--accent-green)' : 'var(--accent-red)'};">${ev.pnl !== undefined ? `₹${ev.pnl}` : '--'}</td>
-          </tr>
-        `;
-      }).join("");
-    }
-  }
-}
-
-function toggleReplayPlay() {
-  const btn = document.getElementById("btnReplayPlay");
-  if (replayIsPlaying) {
-    clearInterval(replayIntervalTimer);
-    replayIsPlaying = false;
-    if (btn) btn.innerText = "▶ Play";
+  if (wfe >= 0.70) {
+    lightRobust.classList.add("active");
+  } else if (wfe >= 0.50) {
+    lightModerate.classList.add("active");
   } else {
-    if (!currentReplaySession) {
-      loadReplaySession();
-      return;
-    }
-    const speedSelect = document.getElementById("replaySpeedSelect");
-    const speed = speedSelect ? parseInt(speedSelect.value) : 5;
-    const intervalMs = Math.max(50, 1000 / speed);
-
-    replayIntervalTimer = setInterval(() => {
-      if (currentReplayFrameIndex < currentReplaySession.frames.length - 1) {
-        renderReplayFrame(currentReplayFrameIndex + 1);
-      } else {
-        clearInterval(replayIntervalTimer);
-        replayIsPlaying = false;
-        if (btn) btn.innerText = "▶ Play";
-      }
-    }, intervalMs);
-
-    replayIsPlaying = true;
-    if (btn) btn.innerText = "⏸ Pause";
+    lightDegraded.classList.add("active");
   }
 }
+window.updateWfoTrafficLight = updateWfoTrafficLight;
 
-function stepReplay(delta) {
-  if (!currentReplaySession) return;
-  renderReplayFrame(currentReplayFrameIndex + delta);
-}
+// ── 2D Parameter Stability Landscape Matrix (VIZ-04) ──────────────────────────
+function renderMassStabilityMatrix(results) {
+  const matrixCard = document.getElementById("massStabilityMatrixCard");
+  const container = document.getElementById("stabilityMatrixContainer");
+  const selX = document.getElementById("matrixParamX");
+  const selY = document.getElementById("matrixParamY");
 
-function seekReplay(idx) {
-  if (!currentReplaySession) return;
-  renderReplayFrame(idx);
-}
+  if (!matrixCard || !container || !results) return;
 
-function resetReplay() {
-  if (replayIsPlaying) toggleReplayPlay();
-  renderReplayFrame(0);
-}
+  const runs = results.runs || results.ranked || [];
+  if (runs.length === 0) {
+    container.innerHTML = '<div class="empty-state text-xs">No simulation runs available to construct stability matrix.</div>';
+    matrixCard.style.display = "block";
+    return;
+  }
 
-// ── 9. Robustness & Overfitting Defense ───────────────────────────────────────
-async function fetchRobustnessAudit() {
-  const select = document.getElementById("teDateSelect");
-  const dateStr = select ? select.value : "2026_09_11";
-  const stratSelect = document.getElementById("robStrategySelect");
-  const strat = stratSelect ? stratSelect.value : "trading-engine-v4";
-  const trialsInput = document.getElementById("robTrialsInput");
-  const numTrials = trialsInput ? parseInt(trialsInput.value) : 25;
+  const paramKeysSet = new Set();
+  runs.forEach(r => {
+    if (r.params) {
+      Object.keys(r.params).forEach(k => paramKeysSet.add(k));
+    }
+  });
+  const paramKeys = Array.from(paramKeysSet);
 
-  try {
-    const res = await fetch("/api/trading_engine/robustness_audit", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ date: dateStr, strategy: strat, num_trials: numTrials })
+  if (paramKeys.length === 0) {
+    container.innerHTML = '<div class="empty-state text-xs">Simulation runs did not include multi-parameter dimensions.</div>';
+    matrixCard.style.display = "block";
+    return;
+  }
+
+  if (selX && selY && (selX.options.length === 0 || selX.dataset.loadedKeys !== paramKeys.join(","))) {
+    selX.innerHTML = "";
+    selY.innerHTML = "";
+    paramKeys.forEach((k) => {
+      const optX = document.createElement("option");
+      optX.value = k;
+      optX.innerText = k;
+      selX.appendChild(optX);
+
+      const optY = document.createElement("option");
+      optY.value = k;
+      optY.innerText = k;
+      selY.appendChild(optY);
     });
-    const json = await res.json();
-    if (json.status !== "ok") return;
-
-    const d = json.data;
-    const m = d.statistical_metrics;
-    const surf = d.parameter_surface;
-
-    // Update KPIs
-    const kpiDsr = document.getElementById("robKpiDsr");
-    if (kpiDsr) kpiDsr.innerText = `${m.dsr}%`;
-    const kpiPsr = document.getElementById("robKpiPsr");
-    if (kpiPsr) kpiPsr.innerText = `${m.psr}%`;
-    const kpiGrade = document.getElementById("robKpiGrade");
-    if (kpiGrade) {
-      kpiGrade.innerText = m.grade.split(" ")[0];
-      kpiGrade.style.color = m.dsr >= 85 ? 'var(--accent-green)' : (m.dsr >= 70 ? 'var(--accent-cyan)' : 'var(--accent-red)');
-    }
-    const kpiHaircut = document.getElementById("robKpiHaircut");
-    if (kpiHaircut) kpiHaircut.innerText = `-${m.haircut_pct}%`;
-    const kpiPlateau = document.getElementById("robKpiPlateau");
-    if (kpiPlateau) kpiPlateau.innerText = `${surf.plateau_score} / 100`;
-    const kpiCliff = document.getElementById("robKpiCliffRisk");
-    if (kpiCliff) kpiCliff.innerText = surf.cliff_risk;
-
-    // Render Heatmap Matrix
-    renderRobustnessGrid(surf);
-  } catch (err) {
-    console.error("Error fetching robustness audit:", err);
+    selX.dataset.loadedKeys = paramKeys.join(",");
+    selX.selectedIndex = 0;
+    selY.selectedIndex = Math.min(1, paramKeys.length - 1);
   }
-}
 
-function renderRobustnessGrid(surf) {
-  const container = document.getElementById("robGridContainer");
-  if (!container || !surf.grid) return;
+  const pX = selX ? selX.value : paramKeys[0];
+  const pY = selY ? selY.value : (paramKeys[1] || paramKeys[0]);
 
-  const xVals = surf.x_values;
-  const yVals = surf.y_values;
+  const xValues = Array.from(new Set(runs.map(r => r.params ? r.params[pX] : null).filter(v => v !== null && v !== undefined))).sort((a, b) => a - b);
+  const yValues = Array.from(new Set(runs.map(r => r.params ? r.params[pY] : null).filter(v => v !== null && v !== undefined))).sort((a, b) => a - b);
 
-  let html = `
-    <table style="width: 100%; text-align: center; border-collapse: collapse; font-size: 0.82rem;">
-      <thead>
-        <tr>
-          <th style="padding: 8px; color: var(--text-muted);">${surf.param_y} \\ ${surf.param_x}</th>
-          ${xVals.map(x => `<th style="padding: 8px; color: var(--accent-cyan);">${x}</th>`).join("")}
-        </tr>
-      </thead>
-      <tbody>
-  `;
+  const gridMap = {};
+  let minSharpe = Infinity;
+  let maxSharpe = -Infinity;
 
-  yVals.forEach(y => {
-    html += `<tr><td style="font-weight: 700; color: var(--accent-gold); padding: 8px;">${y}</td>`;
-    xVals.forEach(x => {
-      const node = surf.grid.find(g => Math.abs(g.x - x) < 0.01 && Math.abs(g.y - y) < 0.01);
-      if (node) {
-        const isCur = node.is_current;
-        const color = node.sharpe >= 2.0 ? 'rgba(0, 245, 160, 0.3)' : (node.sharpe >= 1.2 ? 'rgba(0, 242, 254, 0.2)' : 'rgba(255, 77, 79, 0.2)');
-        const border = isCur ? '2px solid var(--accent-cyan)' : '1px solid rgba(255,255,255,0.06)';
+  runs.forEach(r => {
+    if (!r.params) return;
+    const x = r.params[pX];
+    const y = r.params[pY];
+    const sharpe = (r.metrics ? r.metrics.sharpe_ratio : r.sharpe) || 0;
+    const pnl = (r.metrics ? r.metrics.net_pnl : r.net_pnl) || 0;
+    const cellKey = `${x}|${y}`;
+
+    if (!gridMap[cellKey] || sharpe > gridMap[cellKey].sharpe) {
+      gridMap[cellKey] = { sharpe, pnl, run: r };
+    }
+    if (sharpe < minSharpe) minSharpe = sharpe;
+    if (sharpe > maxSharpe) maxSharpe = sharpe;
+  });
+
+  if (minSharpe === Infinity) { minSharpe = 0; maxSharpe = 1; }
+  const range = maxSharpe - minSharpe || 1;
+
+  let html = `<table class="stability-grid-table"><thead><tr><th style="color: var(--accent-cyan); font-weight: 700;">${pY} \\ ${pX}</th>`;
+  xValues.forEach(x => {
+    html += `<th>${x}</th>`;
+  });
+  html += '</tr></thead><tbody>';
+
+  yValues.forEach(y => {
+    html += `<tr><th style="color: var(--accent-cyan); text-align: right; padding-right: 10px;">${y}</th>`;
+    xValues.forEach(x => {
+      const item = gridMap[`${x}|${y}`];
+      if (item) {
+        const norm = (item.sharpe - minSharpe) / range;
+        let bgStyle = norm >= 0.6
+          ? `background: rgba(16, 185, 129, ${0.15 + norm * 0.45}); color: #10b981;`
+          : norm >= 0.3
+            ? `background: rgba(0, 242, 254, ${0.1 + norm * 0.35}); color: var(--accent-cyan);`
+            : `background: rgba(239, 68, 68, ${0.1 + (1 - norm) * 0.2}); color: #ef4444;`;
+
         html += `
-          <td style="background: ${color}; border: ${border}; padding: 10px; border-radius: 4px;">
-            <div style="font-weight: 800; color: #fff;">${node.sharpe} SR</div>
-            <div style="font-size: 0.72rem; color: #c9d1d9;">${node.win_rate}% Win</div>
-            ${isCur ? '<span style="font-size: 0.65rem; color: var(--accent-cyan); font-weight: bold;">[ACTIVE]</span>' : ''}
+          <td class="stability-cell" style="${bgStyle}" title="${pX}=${x}, ${pY}=${y} | Sharpe: ${item.sharpe.toFixed(2)} | Net P&L: ₹${item.pnl.toFixed(2)}">
+            <span class="stability-val">${item.sharpe.toFixed(2)}</span>
           </td>
         `;
       } else {
-        html += `<td>--</td>`;
+        html += '<td class="stability-cell empty" style="color: var(--text-muted); opacity: 0.3;">—</td>';
       }
     });
-    html += `</tr>`;
+    html += '</tr>';
   });
+  html += '</tbody></table>';
 
-  html += `</tbody></table>`;
   container.innerHTML = html;
+  matrixCard.style.display = "block";
 }
+window.renderMassStabilityMatrix = renderMassStabilityMatrix;
 
-// ── 10. Multi-Strategy Portfolio Allocation ──────────────────────────────────
-async function fetchPortfolioOptimization(method = "risk_parity") {
+// ── Dynamic Strategy Parameter Forms (DYN-01) ─────────────────────────────────
+async function renderDynamicParams(strategyKey) {
+  const container = document.getElementById("dynamicParamsGrid");
+  const block = document.getElementById("dynamicParamsBlock");
+  if (!container || !block) return;
+
+  container.innerHTML = `<div class="empty-state text-xs">Loading parameter metadata for ${strategyKey}...</div>`;
+  block.style.display = "block";
+
   try {
-    const res = await fetch("/api/trading_engine/portfolio_optimize", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ method, days: 30, initial_capital: 500000.0 })
-    });
-    const json = await res.json();
-    if (json.status !== "ok") return;
-
-    const d = json.data;
-    const m = d.portfolio_metrics;
-
-    // Update KPIs
-    const kpiRet = document.getElementById("portKpiReturn");
-    if (kpiRet) kpiRet.innerText = `+${m.annual_return_pct}%`;
-    const kpiVol = document.getElementById("portKpiVol");
-    if (kpiVol) kpiVol.innerText = `${m.annual_volatility_pct}%`;
-    const kpiSharpe = document.getElementById("portKpiSharpe");
-    if (kpiSharpe) kpiSharpe.innerText = `${m.sharpe_ratio}`;
-    const kpiDiv = document.getElementById("portKpiDiv");
-    if (kpiDiv) kpiDiv.innerText = `${m.diversification_ratio}x`;
-
-    // Render Correlation Matrix
-    const corrBody = document.getElementById("portCorrBody");
-    if (corrBody && d.correlation_matrix) {
-      corrBody.innerHTML = d.correlation_matrix.map(row => `
-        <tr>
-          <td style="font-weight: 700; color: #fff;">${row.strategy}</td>
-          <td style="color: ${row.strat_v4 > 0.3 ? 'var(--accent-red)' : 'var(--accent-cyan)'};">${row.strat_v4}</td>
-          <td style="color: ${row.strat_straddle > 0.3 ? 'var(--accent-red)' : 'var(--accent-cyan)'};">${row.strat_straddle}</td>
-          <td style="color: ${row.strat_iron_condor > 0.3 ? 'var(--accent-red)' : 'var(--accent-cyan)'};">${row.strat_iron_condor}</td>
-          <td style="color: ${row.strat_camarilla > 0.3 ? 'var(--accent-red)' : 'var(--accent-cyan)'};">${row.strat_camarilla}</td>
-        </tr>
-      `).join("");
+    let params = null;
+    if (window.strategyCatalog) {
+      const found = window.strategyCatalog.find(s => s.key === strategyKey);
+      if (found && Array.isArray(found.parameters) && found.parameters.length > 0) {
+        params = found.parameters;
+      }
     }
 
-    // Render Blended Equity Chart
-    renderPortfolioChart(d.equity_timeline, d.strategies);
+    if (!params) {
+      const resp = await fetch(`/api/strategy_params?strategy=${encodeURIComponent(strategyKey)}`);
+      if (resp.ok) {
+        const data = await resp.json();
+        if (Array.isArray(data.parameters)) {
+          params = data.parameters;
+        } else if (data.default_grid) {
+          params = Object.keys(data.default_grid).map(k => ({
+            name: k,
+            label: k.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase()),
+            default: Array.isArray(data.default_grid[k]) ? data.default_grid[k][0] : data.default_grid[k],
+            type: typeof (Array.isArray(data.default_grid[k]) ? data.default_grid[k][0] : data.default_grid[k]) === "number" ? "number" : "text"
+          }));
+        }
+      }
+    }
+
+    if (!params || params.length === 0) {
+      container.innerHTML = '<div class="text-xs text-muted" style="padding: 6px;">Strategy utilizes default institutional execution parameters.</div>';
+      return;
+    }
+
+    container.innerHTML = params.map(p => {
+      const key = p.name || p.key || p.id;
+      const label = p.label || key.replace(/_/g, " ").toUpperCase();
+      const val = p.default !== undefined ? p.default : (p.value !== undefined ? p.value : "");
+      const isNum = typeof val === "number" || p.type === "number";
+      const step = (p.step || (isNum ? (String(val).includes(".") ? "0.1" : "1") : undefined));
+
+      return `
+        <div class="dynamic-param-field form-group">
+          <label for="dynParam_${key}">${label}:</label>
+          <input type="${isNum ? 'number' : 'text'}"
+                 id="dynParam_${key}"
+                 data-param-key="${key}"
+                 value="${val}"
+                 ${step ? `step="${step}"` : ''}
+                 class="form-control">
+        </div>
+      `;
+    }).join("");
   } catch (err) {
-    console.error("Error optimizing portfolio:", err);
+    container.innerHTML = '<div class="text-xs text-muted">Parameters loaded using standard baseline.</div>';
   }
 }
+window.renderDynamicParams = renderDynamicParams;
 
-function renderPortfolioChart(timeline, strategies) {
-  const ctx = document.getElementById("tePortfolioChart");
-  if (!ctx || !timeline) return;
+// ── Command Palette (Ctrl+K / Cmd+K) (CMD-01) ─────────────────────────────────
+function initCommandPalette() {
+  const backdrop = document.getElementById("commandPaletteBackdrop");
+  const input = document.getElementById("commandPaletteInput");
+  const resultsContainer = document.getElementById("commandPaletteResults");
+  const btnTrigger = document.getElementById("btnCommandPalette");
 
-  if (tePortfolioChartInstance) tePortfolioChartInstance.destroy();
+  if (!backdrop || !input || !resultsContainer) return;
 
-  const labels = timeline.map(t => t.date);
-  const blended = timeline.map(t => t.blended_equity);
+  let activeIndex = 0;
+  let filteredCommands = [];
 
-  const colors = ["#00f2fe", "#00f5a0", "#facc15", "#a78bfa"];
-  const datasets = [
-    {
-      label: "Blended Optimized Portfolio (₹)",
-      data: blended,
-      borderColor: "#ffffff",
-      backgroundColor: "rgba(255, 255, 255, 0.1)",
-      borderWidth: 3,
-      fill: true,
-      tension: 0.2
-    }
+  const commands = [
+    // Workflow Navigation
+    { id: "nav-console", title: "Go to Backtest Console", category: "Navigation", icon: "⚙️", action: () => switchTab("tabConsole") },
+    { id: "nav-analytics", title: "Go to Results & Analytics", category: "Navigation", icon: "📊", action: () => switchTab("tabAnalytics") },
+    { id: "nav-inspector", title: "Go to Trade Inspector & Log", category: "Navigation", icon: "🔍", action: () => switchTab("tabInspector") },
+    { id: "nav-explorer", title: "Go to Market Data Explorer", category: "Navigation", icon: "🗄️", action: () => switchTab("tabExplorer") },
+    { id: "nav-wfo", title: "Go to Walk-Forward Lab", category: "Navigation", icon: "🧪", action: () => switchTab("tabWalkForward") },
+    { id: "nav-optimizer", title: "Go to Parameter Optimizer", category: "Navigation", icon: "🎛️", action: () => switchTab("tabOptimizer") },
+    { id: "nav-mass", title: "Go to Mass Iteration Lab", category: "Navigation", icon: "🚀", action: () => switchTab("tabMassIteration") },
+
+    // Core Backtest Execution
+    { id: "act-run", title: "⚡ Run Backtest Simulation", category: "Execution", icon: "⚡", shortcut: "Ctrl+Enter", action: () => runBacktest() },
+    { id: "act-tearsheet", title: "📄 Open Institutional HTML Tearsheet", category: "Reporting", icon: "📄", action: () => openTearsheet() },
+    { id: "act-export-csv", title: "📊 Export Trade Log to CSV", category: "Reporting", icon: "📥", action: () => { window.location.href = "/api/export_csv"; } },
+    { id: "act-validation", title: "🛡️ Run Institutional Robustness Audit", category: "Validation", icon: "🛡️", action: () => runValidationAudit() },
+    { id: "act-browse", title: "📁 Browse Market Data Files", category: "Data Layer", icon: "📁", action: () => openFileBrowser() },
+    { id: "act-save-preset", title: "💾 Save Current Configuration as Preset", category: "Preset", icon: "💾", action: () => {
+      const btn = document.getElementById("btnSavePreset");
+      if (btn) btn.click();
+    }},
+
+    // Quick Strategy Switching
+    { id: "strat-equity", title: "Switch Strategy: Equity Momentum (v4/v5)", category: "Strategies", icon: "📈", action: () => setStrategy("equity") },
+    { id: "strat-supertrend", title: "Switch Strategy: Supertrend Follower", category: "Strategies", icon: "📈", action: () => setStrategy("supertrend") },
+    { id: "strat-orb", title: "Switch Strategy: Opening Range Breakout (ORB)", category: "Strategies", icon: "⚡", action: () => setStrategy("orb") },
+    { id: "strat-options", title: "Switch Strategy: NIFTY Options Breakout", category: "Strategies", icon: "🎯", action: () => setStrategy("options") },
+    { id: "strat-straddle", title: "Switch Strategy: 09:20 Short Straddle", category: "Strategies", icon: "⏳", action: () => setStrategy("short-straddle") },
+    { id: "strat-camarilla", title: "Switch Strategy: Camarilla Floor Pivot Breakout", category: "Strategies", icon: "📐", action: () => setStrategy("camarilla") },
+    { id: "strat-ribbon", title: "Switch Strategy: EMA Ribbon Alignment", category: "Strategies", icon: "🌊", action: () => setStrategy("ema-ribbon") },
+    { id: "strat-ai", title: "Switch Strategy: AI Decision Replay", category: "Strategies", icon: "🧠", action: () => setStrategy("ai-replay") }
   ];
 
-  strategies.forEach((s, idx) => {
-    datasets.push({
-      label: `${s.name} (${s.weight_pct}%)`,
-      data: timeline.map(t => t[s.id]),
-      borderColor: colors[idx % colors.length],
-      borderWidth: 1.5,
-      borderDash: [3, 3],
-      pointRadius: 0,
-      tension: 0.2
+  function setStrategy(stratKey) {
+    const sel = document.getElementById("strategySelect");
+    if (sel) {
+      sel.value = stratKey;
+      sel.dispatchEvent(new Event("change"));
+      switchTab("tabConsole");
+      showToast(`Switched strategy to ${stratKey.toUpperCase()}`, "info");
+    }
+  }
+
+  function openPalette() {
+    backdrop.style.display = "flex";
+    backdrop.setAttribute("aria-hidden", "false");
+    input.value = "";
+    activeIndex = 0;
+    renderPaletteItems(commands);
+    setTimeout(() => input.focus(), 30);
+  }
+
+  function closePalette() {
+    backdrop.style.display = "none";
+    backdrop.setAttribute("aria-hidden", "true");
+  }
+
+  function renderPaletteItems(list) {
+    filteredCommands = list;
+    if (list.length === 0) {
+      resultsContainer.innerHTML = '<div class="empty-state text-xs">No matching commands or actions found.</div>';
+      return;
+    }
+
+    resultsContainer.innerHTML = list.map((item, idx) => `
+      <div class="command-palette-item ${idx === activeIndex ? 'active' : ''}" data-index="${idx}">
+        <span class="cmd-item-icon">${item.icon}</span>
+        <div class="cmd-item-info">
+          <span class="cmd-item-title">${item.title}</span>
+          <span class="cmd-item-category">${item.category}</span>
+        </div>
+        ${item.shortcut ? `<span class="cmd-item-shortcut">${item.shortcut}</span>` : ''}
+      </div>
+    `).join("");
+
+    resultsContainer.querySelectorAll(".command-palette-item").forEach(el => {
+      el.addEventListener("click", () => {
+        const idx = parseInt(el.getAttribute("data-index"));
+        executeCommand(idx);
+      });
+      el.addEventListener("mouseenter", () => {
+        const idx = parseInt(el.getAttribute("data-index"));
+        setActiveItem(idx);
+      });
     });
+  }
+
+  function setActiveItem(idx) {
+    activeIndex = Math.max(0, Math.min(idx, filteredCommands.length - 1));
+    const items = resultsContainer.querySelectorAll(".command-palette-item");
+    items.forEach((it, i) => {
+      if (i === activeIndex) {
+        it.classList.add("active");
+        it.scrollIntoView({ block: "nearest" });
+      } else {
+        it.classList.remove("active");
+      }
+    });
+  }
+
+  function executeCommand(idx) {
+    if (filteredCommands[idx] && typeof filteredCommands[idx].action === "function") {
+      closePalette();
+      filteredCommands[idx].action();
+    }
+  }
+
+  input.addEventListener("input", () => {
+    const q = input.value.trim().toLowerCase();
+    activeIndex = 0;
+    if (!q) {
+      renderPaletteItems(commands);
+      return;
+    }
+    const matched = commands.filter(c =>
+      c.title.toLowerCase().includes(q) ||
+      c.category.toLowerCase().includes(q) ||
+      c.id.toLowerCase().includes(q)
+    );
+    renderPaletteItems(matched);
   });
 
-  tePortfolioChartInstance = new Chart(ctx, {
-    type: "line",
-    data: { labels, datasets },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      scales: {
-        x: { grid: { color: "rgba(255,255,255,0.05)" }, ticks: { color: "#8b949e", font: { size: 10 } } },
-        y: {
-          grid: { color: "rgba(255,255,255,0.05)" },
-          ticks: { color: "#8b949e", font: { size: 10 }, callback: v => `₹${Number(v).toLocaleString()}` }
-        }
-      },
-      plugins: {
-        legend: { labels: { color: "#c9d1d9", font: { size: 10 } } }
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActiveItem(activeIndex + 1);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActiveItem(activeIndex - 1);
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      executeCommand(activeIndex);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      closePalette();
+    }
+  });
+
+  window.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && (e.key === "k" || e.key === "K")) {
+      e.preventDefault();
+      if (backdrop.style.display === "flex") {
+        closePalette();
+      } else {
+        openPalette();
       }
     }
   });
-}
 
-// ── 11. Adaptive Regime Auto-Tuner ───────────────────────────────────────────
-async function fetchAutoTune() {
-  const select = document.getElementById("teDateSelect");
-  const dateStr = select ? select.value : "2026_09_11";
-
-  try {
-    const res = await fetch("/api/trading_engine/auto_tune", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ date: dateStr, apply: false })
-    });
-    const json = await res.json();
-    if (json.status !== "ok") return;
-
-    const d = json.data;
-    const r = d.regime;
-    const m = d.market_indicators;
-
-    // Update Regime Card
-    const nameEl = document.getElementById("atRegimeName");
-    if (nameEl) nameEl.innerText = r.name;
-    const badgeEl = document.getElementById("atRegimeBadge");
-    if (badgeEl) {
-      badgeEl.innerText = r.code;
-      badgeEl.style.color = r.badge_color;
-    }
-    const descEl = document.getElementById("atRegimeDesc");
-    if (descEl) descEl.innerText = r.description;
-
-    // Update Market KPIs
-    const kpiMove = document.getElementById("atKpiMove");
-    if (kpiMove) kpiMove.innerText = `${m.nifty_change_pct > 0 ? '+' : ''}${m.nifty_change_pct}%`;
-    const kpiRange = document.getElementById("atKpiRange");
-    if (kpiRange) kpiRange.innerText = `${m.nifty_range_pct}%`;
-    const kpiVix = document.getElementById("atKpiVix");
-    if (kpiVix) kpiVix.innerText = `${m.vix_level}`;
-    const kpiEff = document.getElementById("atKpiEff");
-    if (kpiEff) kpiEff.innerText = `${m.execution_efficiency}%`;
-    const kpiPrec = document.getElementById("atKpiPrec");
-    if (kpiPrec) kpiPrec.innerText = `${m.ai_precision}%`;
-
-    // Populate Recommendations Table
-    const tbody = document.getElementById("atRecsBody");
-    if (tbody && d.recommendations) {
-      tbody.innerHTML = d.recommendations.map(rec => `
-        <tr>
-          <td style="font-family: monospace; font-weight: 700; color: var(--accent-cyan);">${rec.key}</td>
-          <td style="font-family: monospace; color: var(--text-muted);">${rec.current}</td>
-          <td style="font-family: monospace; font-weight: 800; color: var(--accent-green);">${rec.recommended}</td>
-          <td style="font-size: 0.82rem; color: #c9d1d9;">${rec.rationale}</td>
-        </tr>
-      `).join("");
-    }
-  } catch (err) {
-    console.error("Error fetching auto-tune diagnosis:", err);
-  }
-}
-
-async function applyAutoTune() {
-  const btn = document.getElementById("btnApplyAutoTune");
-  const banner = document.getElementById("atSyncBanner");
-  const select = document.getElementById("teDateSelect");
-  const dateStr = select ? select.value : "2026_09_11";
-
-  if (btn) {
-    btn.disabled = true;
-    btn.innerText = "Applying Updates...";
+  if (btnTrigger) {
+    btnTrigger.addEventListener("click", openPalette);
   }
 
-  try {
-    const res = await fetch("/api/trading_engine/auto_tune", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ date: dateStr, apply: true })
-    });
-    const json = await res.json();
-    if (json.status === "ok" && json.sync_result) {
-      if (banner) {
-        banner.style.display = "block";
-        banner.innerHTML = `
-          <strong>✓ Tuned Parameters Successfully Synced to Production (.env):</strong><br>
-          Updated Keys: <code>${Object.keys(json.sync_result.updated_keys || {}).join(", ")}</code><br>
-          <span style="font-size: 0.75rem; color: #8b949e;">Safety Backup: ${json.sync_result.backup_file || 'created'}</span>
-        `;
-      }
+  backdrop.addEventListener("click", (e) => {
+    if (e.target === backdrop) {
+      closePalette();
     }
-  } catch (err) {
-    console.error("Error applying auto-tune updates:", err);
-    if (banner) {
-      banner.style.display = "block";
-      banner.style.background = "rgba(255,77,79,0.15)";
-      banner.style.borderColor = "var(--accent-red)";
-      banner.innerHTML = `Failed to apply tuning updates: ${err.message}`;
-    }
-  } finally {
-    if (btn) {
-      btn.disabled = false;
-      btn.innerText = "⚡ Apply Tuned Parameters to Trading Engine (.env)";
-    }
-  }
+  });
 }
+window.initCommandPalette = initCommandPalette;
 
-
+// ── Master Clean Namespacing & Modular Architecture (MOD-01) ──────────────────
+window.Dashboard = {
+  ChartRegistry: window.ChartRegistry,
+  switchTab: window.switchTab,
+  runBacktest: window.runBacktest,
+  openTearsheet: window.openTearsheet,
+  showToast: window.showToast,
+  showPromptModal: window.showPromptModal,
+  renderCalendarHeatmap: window.renderCalendarHeatmap,
+  renderWeekdayBreakdown: window.renderWeekdayBreakdown,
+  updateWfoTrafficLight: window.updateWfoTrafficLight,
+  renderMassStabilityMatrix: window.renderMassStabilityMatrix,
+  renderDynamicParams: window.renderDynamicParams,
+  initCommandPalette: window.initCommandPalette
+};

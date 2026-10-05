@@ -5,7 +5,7 @@ Provides default parameter grids and presets for grid search optimization
 and Walk-Forward Optimization across all 16 trading strategies.
 """
 
-from typing import Dict, List, Any, Type
+from typing import Dict, List, Any, Type, Optional
 from strategies.base_strategy import BaseStrategy
 from strategies.equity_momentum import EquityMomentumStrategy
 from strategies.orb_breakout import OrbBreakoutStrategy
@@ -25,7 +25,7 @@ from strategies.futures_trend import FuturesTrendStrategy
 from strategies.max_pain import MaxPainConvergenceStrategy
 from strategies.trading_engine_v4 import TradingEngineV4Strategy
 
-# Strategy class mapping (17 strategies)
+# Strategy class mapping (16 original strategies + 56 catalog strategies + trading-engine-v4)
 STRATEGY_REGISTRY: Dict[str, Type[BaseStrategy]] = {
     "equity": EquityMomentumStrategy,
     "orb": OrbBreakoutStrategy,
@@ -46,6 +46,16 @@ STRATEGY_REGISTRY: Dict[str, Type[BaseStrategy]] = {
     "trading-engine-v4": TradingEngineV4Strategy,
     "trading_engine_v4": TradingEngineV4Strategy,
 }
+
+
+# Auto-register all 56 builtin strategies from catalog
+try:
+    from strategies.builtin import BUILTIN_STRATEGIES
+    for _key, _cls in BUILTIN_STRATEGIES.items():
+        if _key not in STRATEGY_REGISTRY:
+            STRATEGY_REGISTRY[_key] = _cls
+except ImportError:
+    pass
 
 # Sensible default parameter grids for grid search & walk-forward analysis
 DEFAULT_PARAM_GRIDS: Dict[str, Dict[str, List[Any]]] = {
@@ -150,6 +160,7 @@ DEFAULT_PARAM_GRIDS: Dict[str, Dict[str, List[Any]]] = {
 }
 
 
+
 def get_strategy_class(strategy_name: str) -> Type[BaseStrategy]:
     """Returns the strategy class for a given strategy key."""
     if strategy_name not in STRATEGY_REGISTRY:
@@ -159,6 +170,38 @@ def get_strategy_class(strategy_name: str) -> Type[BaseStrategy]:
 
 def get_default_param_grid(strategy_name: str) -> Dict[str, List[Any]]:
     """Returns the default parameter grid for a strategy."""
-    if strategy_name not in DEFAULT_PARAM_GRIDS:
-        raise ValueError(f"No default parameter grid registered for '{strategy_name}'")
-    return {k: list(v) for k, v in DEFAULT_PARAM_GRIDS[strategy_name].items()}
+    if strategy_name in DEFAULT_PARAM_GRIDS:
+        return {k: list(v) for k, v in DEFAULT_PARAM_GRIDS[strategy_name].items()}
+
+    # Dynamic fallback: introspect strategy ParameterSpace if available
+    if strategy_name in STRATEGY_REGISTRY:
+        cls = STRATEGY_REGISTRY[strategy_name]
+        try:
+            instance = cls()
+            if hasattr(instance, "parameters") and hasattr(instance.parameters, "parameters") and instance.parameters.parameters:
+                grid = {}
+                for name, p in instance.parameters.parameters.items():
+                    if p.param_type == "choice" and p.choices:
+                        grid[name] = p.choices[:3]
+                    elif p.param_type == "bool":
+                        grid[name] = [False, True]
+                    elif p.param_type in ("int", "float") and p.min_val is not None and p.max_val is not None:
+                        vals = sorted(list(set([p.min_val, p.default, p.max_val])))
+                        grid[name] = vals
+                    else:
+                        grid[name] = [p.default]
+                return grid
+        except Exception:
+            pass
+
+    raise ValueError(f"No default parameter grid registered for '{strategy_name}'")
+
+
+def estimate_grid_size(strategy_name: str, custom_grid: Optional[Dict[str, List[Any]]] = None) -> int:
+    """Calculates total parameter combinations for a strategy grid."""
+    grid = custom_grid or get_default_param_grid(strategy_name)
+    total = 1
+    for vals in grid.values():
+        total *= max(1, len(vals))
+    return total
+

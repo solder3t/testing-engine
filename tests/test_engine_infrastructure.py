@@ -1,5 +1,5 @@
 """
-tests/test_sprint4.py — Unit and integration tests for Sprint 4 infrastructure improvements:
+tests/test_engine_infrastructure.py — Unit and integration tests for core engine infrastructure:
 1. SQLite connection pooling in DataLoader
 2. TradeExporter safety against None metadata
 3. Configuration validation bounds checking

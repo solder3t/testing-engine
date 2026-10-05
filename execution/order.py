@@ -31,6 +31,7 @@ class InstrumentType(str, Enum):
     EQUITY = "EQUITY"
     OPTION_CE = "CE"
     OPTION_PE = "PE"
+    OPTIONS = "OPTIONS"
     FUTURES = "FUT"
 
 
@@ -70,15 +71,26 @@ class Trade:
     charges: float = 0.0
     net_pnl: float = 0.0
     pnl_pct: float = 0.0
+    mfe_pts: float = 0.0   # Maximum Favorable Excursion — peak unrealized gain in price points
+    mfe_pct: float = 0.0   # MFE as percentage of entry price
+    mae_pts: float = 0.0   # Maximum Adverse Excursion — deepest intra-trade drawdown in points
+    mae_pct: float = 0.0   # MAE as percentage of entry price
     holding_bars: int = 0
     trade_id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
     metadata: Dict[str, Any] = field(default_factory=dict)
 
-    def close(self, exit_time: str, exit_price: float, reason: str, charges: float = 0.0):
+    def close(
+        self,
+        exit_time: str,
+        exit_price: float,
+        reason: Optional[str] = None,
+        charges: float = 0.0,
+        **kwargs
+    ):
         """Close this open trade and compute P&L."""
         self.exit_time = exit_time
         self.exit_price = exit_price
-        self.exit_reason = reason
+        self.exit_reason = reason or kwargs.get("exit_reason", "CLOSED")
         self.status = "CLOSED"
 
         if self.side == OrderSide.BUY:
@@ -86,7 +98,8 @@ class Trade:
         else:
             self.gross_pnl = round((self.entry_price - exit_price) * self.qty, 2)
 
-        self.charges = round(charges, 2)
+        tot_charges = charges if charges > 0 else kwargs.get("total_charges", 0.0)
+        self.charges = round(tot_charges, 2)
         self.net_pnl = round(self.gross_pnl - self.charges, 2)
         invested = self.entry_price * self.qty
         self.pnl_pct = round((self.net_pnl / invested) * 100, 2) if invested > 0 else 0.0
@@ -118,6 +131,11 @@ class Trade:
             "charges": self.charges,
             "net_pnl": self.net_pnl,
             "pnl_pct": self.pnl_pct,
+            "mfe_pts": self.mfe_pts,
+            "mfe_pct": self.mfe_pct,
+            "mae_pts": self.mae_pts,
+            "mae_pct": self.mae_pct,
             "holding_bars": self.holding_bars,
             "metadata": meta
         }
+

@@ -1,0 +1,48 @@
+# Example Declarative Composable Strategy Definition
+name: "EMA_RSI_TrendFollower"
+description: "EMA 9/21 cross with RSI momentum filter"
+category: "COMPOSABLE"
+direction: "AUTO"
+timeframe: "1min"
+symbols:
+  - "NIFTY"
+  - "BANKNIFTY"
+
+risk_params:
+  sl_points: 25.0
+  target_points: 50.0
+  sl_pct: 1.5
+  tp_pct: 3.0
+  time_exit: "15:15"
+  confidence: 0.85
+
+entry_rules:
+  combinator: "AND"
+  conditions:
+    - indicator: "rsi"
+      params:
+        period: 14
+      operator: "in_range"
+      threshold_min: 35.0
+      threshold_max: 65.0
+    - indicator: "ema"
+      params:
+        period: 9
+      operator: "cross_above"
+      compare_indicator: "ema"
+      compare_params:
+        period: 21
+    - operator: "time_between"
+      start: "09:20"
+      end: "14:45"
+
+exit_rules:
+  combinator: "OR"
+  conditions:
+    - indicator: "rsi"
+      params:
+        period: 14
+      operator: "greater_than"
+      threshold: 75.0
+    - operator: "time_exit"
+      time: "15:15"

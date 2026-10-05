@@ -21,6 +21,12 @@ from strategies.futures_trend import FuturesTrendStrategy
 from strategies.max_pain import MaxPainConvergenceStrategy
 from strategies.trading_engine_v4 import TradingEngineV4Strategy
 
+# 56-strategy institutional catalog & Composable rule-tree
+from strategies.builtin import BUILTIN_STRATEGIES
+from strategies.composable import ComposableStrategy, RuleCondition, RuleAction, RuleNode
+from strategies.signal import Signal
+from strategies.parameter_space import Parameter, ParameterSpace
+
 __all__ = [
     "BaseStrategy",
     "EquityMomentumStrategy",
@@ -40,4 +46,13 @@ __all__ = [
     "FuturesTrendStrategy",
     "MaxPainConvergenceStrategy",
     "TradingEngineV4Strategy",
+    "BUILTIN_STRATEGIES",
+    "ComposableStrategy",
+    "RuleCondition",
+    "RuleAction",
+    "RuleNode",
+    "Signal",
+    "Parameter",
+    "ParameterSpace",
 ]
+

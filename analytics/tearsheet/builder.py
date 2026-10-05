@@ -1,17 +1,18 @@
 """
-analytics/tearsheet.py — Institutional Performance Tearsheet Generator.
-
-Generates standalone, printable, publication-grade HTML performance tearsheets
-with executive summaries, risk ratios, session breakdown matrices, underwater
-drawdowns, and embedded responsive charts.
+analytics/tearsheet/builder.py — Core HTML Tearsheet Assembly Engine.
 """
 
-from typing import Dict, Any, List
 import datetime
-import json
+from typing import Any, Dict, List, Optional
+
+from .chart_generators import extract_chart_data, render_chart_scripts
+from .validation_card import render_validation_card
 
 
-def generate_html_tearsheet(result: Dict[str, Any]) -> str:
+def generate_html_tearsheet(
+    result: Dict[str, Any],
+    validation_result: Optional[Dict[str, Any]] = None
+) -> str:
     """
     Builds a standalone HTML document representing an institutional quantitative tearsheet.
     """
@@ -23,8 +24,23 @@ def generate_html_tearsheet(result: Dict[str, Any]) -> str:
     final_eq = result.get("final_equity", init_cap)
     metrics = result.get("metrics", {})
     daily = result.get("daily_breakdown", [])
-    equity_curve = result.get("equity_curve", [])
     drawdown_curve = result.get("drawdown_curve", metrics.get("drawdown_curve", []))
+
+    # Evaluate validation hurdles if not provided
+    if validation_result is None:
+        validation_result = result.get("validation_result")
+        if validation_result is None:
+            try:
+                from analytics.validation import CandidateValidator
+                validation_result = CandidateValidator.evaluate_candidate(
+                    trades=result.get("trades", []),
+                    metrics=metrics,
+                    initial_capital=init_cap
+                )
+            except Exception:
+                validation_result = None
+
+    val_card_html = render_validation_card(validation_result) if validation_result else ""
 
     net_pnl = metrics.get("net_pnl", 0.0)
     return_pct = metrics.get("return_pct", 0.0)
@@ -51,20 +67,13 @@ def generate_html_tearsheet(result: Dict[str, Any]) -> str:
 
     now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # Format JSON data for charts
-    ec_labels = [pt.get("timestamp", "") for pt in equity_curve]
-    ec_values = [pt.get("equity", init_cap) for pt in equity_curve]
-
-    dd_labels = [pt.get("timestamp", "") for pt in drawdown_curve]
-    dd_values = [-abs(pt.get("drawdown_pct", 0.0)) for pt in drawdown_curve]
-
-    daily_labels = [d.get("date", "") for d in daily]
-    daily_pnls = [d.get("net_pnl", d.get("pnl", 0.0)) for d in daily]
+    chart_data = extract_chart_data(result)
+    chart_scripts = render_chart_scripts(chart_data)
+    validation_card_html = render_validation_card(result.get("validation"))
 
     # Calculate Top Drawdown Periods
     dd_periods = []
     if drawdown_curve:
-        # Sort points by max drawdown depth
         sorted_dd = sorted(drawdown_curve, key=lambda x: x.get("drawdown_pct", 0.0), reverse=True)
         top_dd = sorted_dd[:5]
         for idx, item in enumerate(top_dd):
@@ -82,22 +91,17 @@ def generate_html_tearsheet(result: Dict[str, Any]) -> str:
     # Build Session Rows
     session_rows_html = ""
     for d in daily:
-        d_pnl = d.get("net_pnl", d.get("pnl", 0.0))
+        d_pnl = d.get("pnl", 0.0)
         d_sign = "+" if d_pnl >= 0 else ""
         d_cls = "pos" if d_pnl >= 0 else "neg"
-        d_trades = d.get("trades_count", d.get("trades", 0))
-        start_eq = d.get("starting_equity", 0.0)
-        end_eq = d.get("ending_equity", 0.0)
-        ret_pct = d.get("return_pct", 0.0)
-        if ret_pct == 0.0 and start_eq > 0 and d_pnl != 0.0:
-            ret_pct = round((d_pnl / start_eq) * 100, 2)
+        d_trades = d.get("trades", 0)
         session_rows_html += f"""
         <tr>
             <td><strong>{d.get('date', '')}</strong></td>
-            <td>₹{start_eq:,.2f}</td>
-            <td>₹{end_eq:,.2f}</td>
+            <td>₹{d.get('starting_equity', 0.0):,.2f}</td>
+            <td>₹{d.get('ending_equity', 0.0):,.2f}</td>
             <td class="{d_cls}">{d_sign}₹{d_pnl:,.2f}</td>
-            <td class="{d_cls}">{d_sign}{ret_pct:.2f}%</td>
+            <td class="{d_cls}">{d_sign}{d.get('return_pct', 0.0):.2f}%</td>
             <td>{d_trades}</td>
         </tr>
         """
@@ -398,6 +402,8 @@ def generate_html_tearsheet(result: Dict[str, Any]) -> str:
         </div>
     </div>
 
+    {validation_card_html}
+
     <!-- 2 Column Tables: Key Performance & Risk Stats -->
     <div class="grid-2">
         <div class="table-card">
@@ -474,89 +480,20 @@ def generate_html_tearsheet(result: Dict[str, Any]) -> str:
         </table>
     </div>
 
+    {val_card_html}
+
     <div class="footer-note">
         ⚡ TESTING ENGINE • Quantitative Research & Strategy Backtesting Engine • Generated automatically from live market recordings.
     </div>
 
-    <script>
-        const ecLabels = {json.dumps(ec_labels)};
-        const ecValues = {json.dumps(ec_values)};
-        const ddLabels = {json.dumps(dd_labels)};
-        const ddValues = {json.dumps(dd_values)};
-
-        // Render Equity Chart
-        const ctxEc = document.getElementById('equityChartCanvas').getContext('2d');
-        new Chart(ctxEc, {{
-            type: 'line',
-            data: {{
-                labels: ecLabels,
-                datasets: [{{
-                    label: 'Portfolio Equity (₹)',
-                    data: ecValues,
-                    borderColor: '#00f2fe',
-                    backgroundColor: 'rgba(0, 242, 254, 0.08)',
-                    borderWidth: 2,
-                    fill: true,
-                    tension: 0.1,
-                    pointRadius: 0
-                }}]
-            }},
-            options: {{
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {{
-                    legend: {{ display: false }}
-                }},
-                scales: {{
-                    x: {{ display: false }},
-                    y: {{
-                        grid: {{ color: 'rgba(255,255,255,0.06)' }},
-                        ticks: {{
-                            color: '#8b949e',
-                            callback: v => '₹' + v.toLocaleString()
-                        }}
-                    }}
-                }}
-            }}
-        }});
-
-        // Render Drawdown Chart
-        const ctxDd = document.getElementById('drawdownChartCanvas').getContext('2d');
-        new Chart(ctxDd, {{
-            type: 'line',
-            data: {{
-                labels: ddLabels,
-                datasets: [{{
-                    label: 'Underwater Drawdown (%)',
-                    data: ddValues,
-                    borderColor: '#f85149',
-                    backgroundColor: 'rgba(248, 81, 73, 0.15)',
-                    borderWidth: 1.5,
-                    fill: true,
-                    tension: 0.1,
-                    pointRadius: 0
-                }}]
-            }},
-            options: {{
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {{
-                    legend: {{ display: false }}
-                }},
-                scales: {{
-                    x: {{ display: false }},
-                    y: {{
-                        grid: {{ color: 'rgba(255,255,255,0.06)' }},
-                        ticks: {{
-                            color: '#8b949e',
-                            callback: v => v.toFixed(1) + '%'
-                        }}
-                    }}
-                }}
-            }}
-        }});
-    </script>
+    {chart_scripts}
 </body>
 </html>
 """
     return html
+
+
+# Alias
+render_tearsheet = generate_html_tearsheet
+
+__all__ = ["generate_html_tearsheet", "render_tearsheet"]

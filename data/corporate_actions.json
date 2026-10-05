@@ -1,0 +1,96 @@
+{
+  "RELIANCE": [
+    {
+      "date": "2024_10_28",
+      "type": "BONUS",
+      "ratio": "1:1",
+      "description": "Bonus 1:1"
+    },
+    {
+      "date": "2017_09_07",
+      "type": "BONUS",
+      "ratio": "1:1",
+      "description": "Bonus 1:1"
+    }
+  ],
+  "TCS": [
+    {
+      "date": "2018_05_31",
+      "type": "BONUS",
+      "ratio": "1:1",
+      "description": "Bonus 1:1"
+    }
+  ],
+  "INFY": [
+    {
+      "date": "2018_09_04",
+      "type": "BONUS",
+      "ratio": "1:1",
+      "description": "Bonus 1:1"
+    },
+    {
+      "date": "2015_06_15",
+      "type": "BONUS",
+      "ratio": "1:1",
+      "description": "Bonus 1:1"
+    },
+    {
+      "date": "2014_12_02",
+      "type": "BONUS",
+      "ratio": "1:1",
+      "description": "Bonus 1:1"
+    }
+  ],
+  "WIPRO": [
+    {
+      "date": "2019_03_06",
+      "type": "BONUS",
+      "ratio": "1:1",
+      "description": "Bonus 1:1"
+    },
+    {
+      "date": "2017_06_13",
+      "type": "BONUS",
+      "ratio": "1:3",
+      "description": "Bonus 1:3"
+    }
+  ],
+  "HDFCBANK": [
+    {
+      "date": "2019_09_19",
+      "type": "SPLIT",
+      "ratio": "1:2",
+      "description": "Stock Split from 2 to 1 (1:2)"
+    },
+    {
+      "date": "2011_07_14",
+      "type": "SPLIT",
+      "ratio": "1:5",
+      "description": "Stock Split from 10 to 2 (1:5)"
+    }
+  ],
+  "EICHERMOT": [
+    {
+      "date": "2020_08_24",
+      "type": "SPLIT",
+      "ratio": "1:10",
+      "description": "Stock Split from 10 to 1 (1:10)"
+    }
+  ],
+  "IRCTC": [
+    {
+      "date": "2021_10_28",
+      "type": "SPLIT",
+      "ratio": "1:5",
+      "description": "Stock Split from 10 to 2 (1:5)"
+    }
+  ],
+  "TATAMOTORS": [
+    {
+      "date": "2011_09_12",
+      "type": "SPLIT",
+      "ratio": "1:5",
+      "description": "Stock Split from 10 to 2 (1:5)"
+    }
+  ]
+}

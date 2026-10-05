@@ -1,0 +1,60 @@
+{
+  "session_id": "ca080d29-cae2-44",
+  "name": "Integration Test Session",
+  "saved_at": 1791049041.7246177,
+  "spec": {
+    "dates": [
+      "2026_09_11"
+    ],
+    "max_iterations": 2,
+    "parameter_grid": {
+      "atr_period": [
+        7,
+        14
+      ]
+    },
+    "sampling_mode": "GRID",
+    "strategy_type": "supertrend"
+  },
+  "summary": {
+    "total_runs": 2,
+    "valid_runs": 2,
+    "errored_runs": 0,
+    "execution_time_ms": 0,
+    "strategy_type": "supertrend",
+    "sampling_mode": "GRID",
+    "best_pnl_net": 5000.0,
+    "best_sharpe": 2.1,
+    "best_win_rate": 60.0,
+    "best_params": {}
+  },
+  "results": {
+    "best_run": {
+      "pnl_net": 5000.0,
+      "sharpe_ratio": 2.1,
+      "win_rate_pct": 60.0
+    },
+    "errored_runs": 0,
+    "ranked_results": [
+      {
+        "instrument": "NIFTY",
+        "parameters": {
+          "atr_period": 7
+        },
+        "per_date_breakdown": {
+          "2026_09_11": {
+            "pnl_net": 5000.0,
+            "win_rate_pct": 60.0
+          }
+        },
+        "pnl_net": 5000.0,
+        "run_id": 0,
+        "sharpe_ratio": 2.1,
+        "win_rate_pct": 60.0
+      }
+    ],
+    "strategy_type": "supertrend",
+    "total_runs": 2,
+    "valid_runs": 2
+  }
+}

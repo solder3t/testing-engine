@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/css/dashboard.css?v=2.6">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="stylesheet" href="/static/css/dashboard.css?v={{ css_v or '2.6' }}">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6"></script>
 </head>
 <body>
 
@@ -18,70 +18,76 @@
       <h1>⚡ TESTING ENGINE</h1>
     </div>
     <div class="topbar-status">
-      <div class="status-pill">
-        <span class="dot"></span>
+      <div class="status-pill" id="statusPillEngine">
+        <span class="dot pulse-dot"></span>
         <span id="headerStatusText">ENGINE READY</span>
       </div>
       <div class="status-pill">
-        <span style="color: var(--accent-cyan)">PORT: 5690</span>
+        <span class="text-cyan font-mono">PORT: 5690</span>
       </div>
-      <div class="status-pill">
+      <div id="btnLaunchChromeProfile" class="status-pill status-clickable" title="Shared with NSE Scraper, TradingView Scraper & Bot Dashboard (Click to launch tab)">
+        <span class="text-green">🌐 PROFILE: ChromeProfile (9222)</span>
+      </div>
+      <div class="status-pill" id="statusPillDir">
         <span id="currentScannedDir">DIR: ~/Downloads</span>
       </div>
+      <div class="status-pill status-clock" id="topbarClockPill" title="Local System Time">
+        <span id="topbarClock" class="font-mono">--:--:--</span>
+      </div>
+      <button class="status-pill status-clickable" id="btnCommandPalette" title="Open Command Palette (Ctrl+K / Cmd+K)">
+        <span class="text-cyan font-mono">⌘K PALETTE</span>
+      </button>
     </div>
   </header>
 
-  <!-- Top Navigation Tabs (Inspired by BOT 2.0) -->
-  <nav class="nav-bar">
-    <button class="nav-tab active" data-tab="tabConsole" id="btnTabConsole">
-      <span class="tab-icon">⚙️</span>
-      <span>Backtest Console</span>
-    </button>
-    <button class="nav-tab" data-tab="tabAnalytics" id="btnTabAnalytics">
-      <span class="tab-icon">📊</span>
-      <span>Results & Analytics</span>
-    </button>
-    <button class="nav-tab" data-tab="tabInspector" id="btnTabInspector">
-      <span class="tab-icon">🔍</span>
-      <span>Trade Inspector & Log</span>
-    </button>
-    <button class="nav-tab" data-tab="tabWalkForward" id="btnTabWalkForward">
-      <span class="tab-icon">🧪</span>
-      <span>Walk-Forward</span>
-    </button>
-    <button class="nav-tab" data-tab="tabOptimizer" id="btnTabOptimizer">
-      <span class="tab-icon">🎛️</span>
-      <span>Parameter Optimizer</span>
-    </button>
-    <button class="nav-tab" data-tab="tabExplorer" id="btnTabExplorer">
-      <span class="tab-icon">🗄️</span>
-      <span>Data Explorer</span>
-    </button>
-    <button class="nav-tab" data-tab="tabTradingEngine" id="btnTabTradingEngine" style="border-left: 1px solid rgba(255,255,255,0.1); color: var(--accent-cyan);">
-      <span class="tab-icon">⚡</span>
-      <span>Trading Engine Insights</span>
-    </button>
-  </nav>
-
-  <!-- Global Live Progress Bar (Sticky during all running simulations) -->
-  <div id="globalProgressContainer" class="global-progress-container" style="display: none;">
-    <div class="global-progress-content">
-      <div class="global-progress-info">
-        <span class="global-pulse-dot"></span>
-        <span id="globalProgressLabel" class="global-progress-label">Executing Simulation...</span>
-        <span id="globalProgressPct" class="global-progress-pct">0%</span>
-      </div>
-      <div class="global-progress-bar-bg">
-        <div id="globalProgressBarFill" class="global-progress-bar-fill" style="width: 0%;"></div>
-      </div>
+  <!-- Top Navigation Tabs (Workflow Grouped: Core vs Labs) -->
+  <nav class="nav-bar" role="tablist" aria-label="Workflow Navigation">
+    <div class="nav-group nav-group-core" role="presentation">
+      <button class="nav-tab" data-tab="tabExplorer" id="btnTabExplorer" role="tab" aria-selected="false" aria-controls="tabExplorer" title="Step 1: Inspect recorded market sessions & databases">
+        <span class="tab-icon">🗄️</span>
+        <span>Data Explorer</span>
+      </button>
+      <button class="nav-tab active" data-tab="tabConsole" id="btnTabConsole" role="tab" aria-selected="true" aria-controls="tabConsole" title="Step 2: Configure & execute strategy backtest">
+        <span class="tab-icon">⚙️</span>
+        <span>Backtest Console</span>
+      </button>
+      <button class="nav-tab" data-tab="tabAnalytics" id="btnTabAnalytics" role="tab" aria-selected="false" aria-controls="tabAnalytics" title="Step 3: Review tearsheets & performance analytics">
+        <span class="tab-icon">📊</span>
+        <span>Results & Analytics</span>
+      </button>
+      <button class="nav-tab" data-tab="tabInspector" id="btnTabInspector" role="tab" aria-selected="false" aria-controls="tabInspector" title="Step 4: Drill down into individual trade logs">
+        <span class="tab-icon">🔍</span>
+        <span>Trade Inspector & Log</span>
+      </button>
     </div>
-  </div>
+
+    <div class="nav-divider" title="Research & Optimization Labs" role="separator"></div>
+
+    <div class="nav-group nav-group-labs" role="presentation">
+      <button class="nav-tab" data-tab="tabWalkForward" id="btnTabWalkForward" role="tab" aria-selected="false" aria-controls="tabWalkForward" title="Walk-forward rolling window robustness analysis">
+        <span class="tab-icon">🧪</span>
+        <span>Walk-Forward</span>
+      </button>
+      <button class="nav-tab" data-tab="tabOptimizer" id="btnTabOptimizer" role="tab" aria-selected="false" aria-controls="tabOptimizer" title="Exhaustive & Random search parameter tuning">
+        <span class="tab-icon">🎛️</span>
+        <span>Parameter Optimizer</span>
+      </button>
+      <button class="nav-tab" data-tab="tabMassIteration" id="btnTabMassIteration" role="tab" aria-selected="false" aria-controls="tabMassIteration" title="Mass iteration matrix & genetic exploration">
+        <span class="tab-icon">🚀</span>
+        <span>Mass Iteration Lab</span>
+      </button>
+      <button class="nav-tab" data-tab="tabTradingEngine" id="btnTabTradingEngine" role="tab" aria-selected="false" aria-controls="tabTradingEngine" title="Live Trading Engine Reconciliation & Insights Cockpit">
+        <span class="tab-icon">⚡</span>
+        <span>Trading Engine Insights</span>
+      </button>
+    </div>
+  </nav>
 
   <!-- Main Container with Tab Panes -->
   <div class="container">
 
     <!-- ── TAB 1: BACKTEST CONSOLE ─────────────────────────────────────────── -->
-    <div class="tab-pane active" id="tabConsole">
+    <div class="tab-pane active" id="tabConsole" role="tabpanel" aria-labelledby="btnTabConsole" aria-hidden="false">
       <div class="console-grid">
 
         <!-- Left Column: Data Source & Discovery -->
@@ -93,9 +99,9 @@
 
           <div class="form-group">
             <label for="dirInput">Market Archive or Directory Path:</label>
-            <div style="display: flex; gap: 6px;">
-              <input type="text" id="dirInput" value="~/Downloads" placeholder="Folder, .rar archive, or .db path" style="flex: 1;">
-              <button id="btnBrowseDir" onclick="openFileBrowser()" class="btn-secondary" title="Open interactive file & folder selector" style="white-space: nowrap;">📁 Browse</button>
+            <div class="flex-gap-6">
+              <input type="text" id="dirInput" value="~/Downloads" placeholder="Folder, .rar archive, or .db path" class="flex-1">
+              <button id="btnBrowseDir" class="btn-secondary" title="Open interactive file & folder selector" class="nowrap">📁 Browse</button>
               <button id="btnScanDir" class="btn-secondary" title="Scan directory for RARs or folders">Scan</button>
             </div>
             <div class="quick-chips">
@@ -105,67 +111,105 @@
             </div>
           </div>
 
-          <div class="form-group" style="margin-top: 14px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-              <label style="margin-bottom: 0;">Discovered Historical Sessions:</label>
+          <div class="form-group form-group mt-14">
+            <div class="flex-between mb-6">
+              <label class="mb-0">Discovered Historical Sessions:</label>
               <span id="selectAllBtn" class="link-btn">Select All</span>
             </div>
-            <div class="archive-list" id="archiveList" style="max-height: 280px;">
-              <div class="empty-state" style="padding: 10px;">Scanning directory for market archives...</div>
+            <div class="archive-list" id="archiveList">
+              <div class="empty-state">Scanning directory for market archives...</div>
             </div>
-            <p class="form-help" style="margin-top: 6px; font-size: 0.72rem; color: var(--text-muted);">
+            <p class="form-help form-hint">
               Supports both compressed RAR/ZIP archives and pre-extracted SQLite session directories.
             </p>
           </div>
         </div>
 
-        <!-- Right Column: Strategy, Timeframe & Risk -->
-        <div class="card console-card">
-          <div class="card-header">
-            <h3>2. Strategy Model & Parameters</h3>
-            <span class="card-badge">Execution</span>
-          </div>
+        <!-- Right Column: Strategy, Timeframe, Risk & Execution (CONSOLE-01) -->
+        <div class="console-right-column">
 
-          <div class="form-row" style="margin-bottom: 8px;">
-            <div class="form-group">
-              <label for="strategySelect">Strategy Model:</label>
-              <select id="strategySelect">
-                <option value="equity">Equity Momentum (v4/v5)</option>
-                <option value="orb">Opening Range Breakout (ORB 15-Min)</option>
-                <option value="supertrend">Supertrend Trend Follower (10, 3 + 50 EMA)</option>
-                <option value="camarilla">Camarilla Floor Pivot Breakout (H4/L4)</option>
-                <option value="ema-ribbon">Triple EMA Ribbon Alignment (9/21/50)</option>
-                <option value="bollinger-b">Bollinger %B Mean Reversion</option>
-                <option value="macd-accel">MACD Momentum Acceleration</option>
-                <option value="vwap-reversion">VWAP Mean Reversion (Bollinger/VWAP)</option>
-                <option value="rsi-momentum">Dual EMA + RSI Momentum Filter</option>
-                <option value="options">NIFTY Index Options Breakout</option>
-                <option value="ai-replay">AI Decision Replay (Gemini Snapshots)</option>
-                <option value="short-straddle">09:20 Short Straddle / Strangle (F&O Theta)</option>
-                <option value="pcr-reversion">PCR Sentiment Reversion (F&O Contrarian)</option>
-                <option value="banknifty-options">BankNifty High-Beta Breakout (F&O 100-pt)</option>
-                <option value="futures-trend">Nifty Index Futures Trend (VWAP+ATR)</option>
-                <option value="max-pain">Expiry Max Pain Convergence (F&O Pinning)</option>
-              </select>
+          <!-- Card 1: Strategy Model & Universe -->
+          <div class="card console-card">
+            <div class="card-header">
+              <h3>2. Strategy Model & Universe</h3>
+              <span class="card-badge">Setup</span>
             </div>
 
-            <div class="form-group">
-              <label for="timeframeSelect">Bar Timeframe:</label>
-              <select id="timeframeSelect">
-                <option value="1min">1 Minute (Primary)</option>
-                <option value="5min">5 Minutes</option>
-                <option value="15min">15 Minutes</option>
-              </select>
-            </div>
-          </div>
+            <div class="form-row mb-8">
+              <div class="form-group flex-2">
+                <div class="flex-between mb-4">
+                  <label for="strategySelect" class="mb-0">Strategy Model:</label>
+                  <div class="flex-align flex-gap-6">
+                    <select id="presetSelect" class="input-select-sm" style="height: 26px; font-size: 0.72rem; padding: 0 6px;">
+                      <option value="">⚙️ Presets (Default)</option>
+                    </select>
+                    <button id="btnSavePreset" type="button" class="link-btn" title="Save current strategy parameters as a named preset" style="font-size: 0.72rem;">+ Save</button>
+                  </div>
+                </div>
+                <select id="strategySelect">
+                  <optgroup label="Trend Following & Momentum">
+                    <option value="equity">Equity Momentum (v4/v5)</option>
+                    <option value="supertrend">Supertrend Trend Follower (10, 3 + 50 EMA)</option>
+                    <option value="ema-ribbon">Triple EMA Ribbon Alignment (9/21/50)</option>
+                    <option value="macd-accel">MACD Momentum Acceleration</option>
+                    <option value="rsi-momentum">Dual EMA + RSI Momentum Filter</option>
+                    <option value="futures-trend">Nifty Index Futures Trend (VWAP+ATR)</option>
+                  </optgroup>
+                  <optgroup label="Breakout & Volatility">
+                    <option value="orb">Opening Range Breakout (ORB 15-Min)</option>
+                    <option value="camarilla">Camarilla Floor Pivot Breakout (H4/L4)</option>
+                    <option value="banknifty-options">BankNifty High-Beta Breakout (F&O 100-pt)</option>
+                    <option value="options">NIFTY Index Options Breakout</option>
+                  </optgroup>
+                  <optgroup label="Mean Reversion & Extremes">
+                    <option value="bollinger-b">Bollinger %B Mean Reversion</option>
+                    <option value="vwap-reversion">VWAP Mean Reversion (Bollinger/VWAP)</option>
+                    <option value="pcr-reversion">PCR Sentiment Reversion (F&O Contrarian)</option>
+                  </optgroup>
+                  <optgroup label="Options Premium & Non-Directional">
+                    <option value="short-straddle">09:20 Short Straddle / Strangle (F&O Theta)</option>
+                    <option value="max-pain">Expiry Max Pain Convergence (F&O Pinning)</option>
+                  </optgroup>
+                  <optgroup label="Machine Learning & AI">
+                    <option value="ai-replay">AI Decision Replay (Gemini Snapshots)</option>
+                  </optgroup>
+                </select>
+                <div id="strategyCatalogMeta" class="strategy-meta-card mt-6" style="display: none;">
+                  <div class="flex-between">
+                    <span id="stratMetaCategory" class="badge badge-accent">TECHNICAL</span>
+                    <span id="stratMetaParamsCount" class="text-xs text-muted">0 Params</span>
+                  </div>
+                  <p id="stratMetaDesc" class="text-xs text-muted mt-4 mb-0">Strategy model description...</p>
+                </div>
+              </div>
 
-          <!-- Strategy Specific Parameters -->
-          <div id="equityParams" class="strat-params-block">
-            <div class="form-group">
-              <label for="symbolsInput">Equities to Test:</label>
-              <input type="text" id="symbolsInput" value="auto">
-              <small style="color: var(--text-muted); font-size: 0.7rem;"><b>auto</b> discovers all equities from the session database (or enter comma-separated symbols e.g. RELIANCE, TCS)</small>
+              <div class="form-group flex-1">
+                <label for="timeframeSelect">Bar Timeframe:</label>
+                <select id="timeframeSelect">
+                  <option value="1min">1 Minute (Primary)</option>
+                  <option value="5min">5 Minutes</option>
+                  <option value="15min">15 Minutes</option>
+                </select>
+              </div>
             </div>
+
+            <!-- Global Universe / Symbol Selector (FORM-01) -->
+            <div class="form-group universe-selector-group">
+              <label for="symbolsInput">Trading Universe / Symbols:</label>
+              <div class="universe-input-wrap">
+                <input type="text" id="symbolsInput" value="auto" placeholder="auto or comma-separated symbols (e.g. RELIANCE, INFY)">
+                <div class="quick-chips">
+                  <span class="chip chip-symbol" data-symbol="auto">Auto-Discover</span>
+                  <span class="chip chip-symbol" data-symbol="RELIANCE,TCS,INFY,HDFCBANK">Top 4 LargeCap</span>
+                  <span class="chip chip-symbol" data-symbol="NIFTY">NIFTY</span>
+                  <span class="chip chip-symbol" data-symbol="BANKNIFTY">BANKNIFTY</span>
+                </div>
+              </div>
+              <small class="form-hint"><b>auto</b> automatically discovers all active instruments in the selected session archives.</small>
+            </div>
+
+            <!-- Strategy Specific Parameters -->
+            <div id="equityParams" class="strat-params-block">
             <div class="form-row">
               <div class="form-group">
                 <label for="minScoreInput">Min Score (0-100):</label>
@@ -183,7 +227,7 @@
             <div class="form-group">
               <label for="orbSymbolsInput">Equities / Index to Test:</label>
               <input type="text" id="orbSymbolsInput" value="auto">
-              <small style="color: var(--text-muted); font-size: 0.7rem;"><b>auto</b> discovers all equities from session database, or specify symbols (e.g. RELIANCE, NIFTY)</small>
+              <small class="form-hint"><b>auto</b> discovers all equities from session database, or specify symbols (e.g. RELIANCE, NIFTY)</small>
             </div>
             <div class="form-row">
               <div class="form-group">
@@ -206,7 +250,7 @@
             <div class="form-group">
               <label for="stSymbolsInput">Equities / Index to Test:</label>
               <input type="text" id="stSymbolsInput" value="auto">
-              <small style="color: var(--text-muted); font-size: 0.7rem;"><b>auto</b> discovers all equities from session database, or specify symbols (e.g. RELIANCE, NIFTY)</small>
+              <small class="form-hint"><b>auto</b> discovers all equities from session database, or specify symbols (e.g. RELIANCE, NIFTY)</small>
             </div>
             <div class="form-row">
               <div class="form-group">
@@ -235,7 +279,7 @@
             <div class="form-group">
               <label for="camSymbolsInput">Equities / Index to Test:</label>
               <input type="text" id="camSymbolsInput" value="auto">
-              <small style="color: var(--text-muted); font-size: 0.7rem;"><b>auto</b> discovers all equities from session database, or specify symbols (e.g. RELIANCE, NIFTY)</small>
+              <small class="form-hint"><b>auto</b> discovers all equities from session database, or specify symbols (e.g. RELIANCE, NIFTY)</small>
             </div>
             <div class="form-row">
               <div class="form-group">
@@ -254,7 +298,7 @@
             <div class="form-group">
               <label for="ribbonSymbolsInput">Equities / Index to Test:</label>
               <input type="text" id="ribbonSymbolsInput" value="auto">
-              <small style="color: var(--text-muted); font-size: 0.7rem;"><b>auto</b> discovers all equities from session database, or specify symbols (e.g. RELIANCE, NIFTY)</small>
+              <small class="form-hint"><b>auto</b> discovers all equities from session database, or specify symbols (e.g. RELIANCE, NIFTY)</small>
             </div>
             <div class="form-row">
               <div class="form-group">
@@ -287,7 +331,7 @@
             <div class="form-group">
               <label for="bbBandsSymbolsInput">Equities / Index to Test:</label>
               <input type="text" id="bbBandsSymbolsInput" value="auto">
-              <small style="color: var(--text-muted); font-size: 0.7rem;"><b>auto</b> discovers all equities from session database, or specify symbols (e.g. RELIANCE, NIFTY)</small>
+              <small class="form-hint"><b>auto</b> discovers all equities from session database, or specify symbols (e.g. RELIANCE, NIFTY)</small>
             </div>
             <div class="form-row">
               <div class="form-group">
@@ -326,7 +370,7 @@
             <div class="form-group">
               <label for="macdSymbolsInput">Equities / Index to Test:</label>
               <input type="text" id="macdSymbolsInput" value="auto">
-              <small style="color: var(--text-muted); font-size: 0.7rem;"><b>auto</b> discovers all equities from session database, or specify symbols (e.g. RELIANCE, NIFTY)</small>
+              <small class="form-hint"><b>auto</b> discovers all equities from session database, or specify symbols (e.g. RELIANCE, NIFTY)</small>
             </div>
             <div class="form-row">
               <div class="form-group">
@@ -358,7 +402,7 @@
             <div class="form-group">
               <label for="vwapSymbolsInput">Equities / Index to Test:</label>
               <input type="text" id="vwapSymbolsInput" value="auto">
-              <small style="color: var(--text-muted); font-size: 0.7rem;"><b>auto</b> discovers all equities from session database, or specify symbols (e.g. RELIANCE, NIFTY)</small>
+              <small class="form-hint"><b>auto</b> discovers all equities from session database, or specify symbols (e.g. RELIANCE, NIFTY)</small>
             </div>
             <div class="form-row">
               <div class="form-group">
@@ -386,7 +430,7 @@
             <div class="form-group">
               <label for="rsiSymbolsInput">Equities / Index to Test:</label>
               <input type="text" id="rsiSymbolsInput" value="auto">
-              <small style="color: var(--text-muted); font-size: 0.7rem;"><b>auto</b> discovers all equities from session database, or specify symbols (e.g. RELIANCE, NIFTY)</small>
+              <small class="form-hint"><b>auto</b> discovers all equities from session database, or specify symbols (e.g. RELIANCE, NIFTY)</small>
             </div>
             <div class="form-row">
               <div class="form-group">
@@ -444,7 +488,7 @@
               <div class="form-group">
                 <label for="straddleOtmStrikes">OTM Strikes Offset:</label>
                 <input type="number" id="straddleOtmStrikes" value="0" min="0" max="5" step="1">
-                <small style="color: var(--text-muted); font-size: 0.7rem;">0 = ATM Straddle, 1+ = Strangle</small>
+                <small class="form-hint">0 = ATM Straddle, 1+ = Strangle</small>
               </div>
             </div>
             <div class="form-row">
@@ -575,179 +619,231 @@
             </div>
           </div>
 
-          <div class="card-header" style="margin-top: 14px; border-top: 1px solid var(--panel-border); padding-top: 10px;">
-            <h3>3. Capital & Risk Management</h3>
-            <span class="card-badge">Accounting</span>
-          </div>
-
-          <div class="form-row">
-            <div class="form-group">
-              <label for="capitalInput">Starting Capital (₹):</label>
-              <input type="number" id="capitalInput" value="500000" step="50000">
-            </div>
-            <div class="form-group">
-              <label for="maxLossInput">Max Loss / Trade (%):</label>
-              <input type="number" id="maxLossInput" value="1.5" step="0.1">
+          <!-- Dynamic Catalog-Driven Parameter Block (DYN-01) -->
+          <div id="dynamicParamsBlock" class="strat-params-block" style="display: none;">
+            <div class="dynamic-params-grid" id="dynamicParamsGrid">
+              <!-- Dynamically populated from catalog metadata -->
             </div>
           </div>
 
-          <div class="form-group">
-            <label for="trailingSlInput">Trailing SL Trigger (%):</label>
-            <input type="number" id="trailingSlInput" value="1.0" step="0.1">
-          </div>
+          </div><!-- /Card 1: Strategy Model & Universe -->
 
-          <!-- Action Buttons -->
-          <div style="margin-top: 16px;">
-            <div style="display: flex; gap: 8px; align-items: stretch;">
-              <button id="btnRun" class="btn-run" style="flex: 2; height: 44px; font-size: 0.95rem; display: inline-flex; align-items: center; justify-content: center; gap: 8px;"><span class="btn-icon">⚡</span><span class="btn-text">RUN BACKTEST</span></button>
-              <button id="btnCompare" class="btn-secondary" style="flex: 1; height: 44px; font-size: 0.85rem; display: inline-flex; align-items: center; justify-content: center; gap: 8px;" title="Compare selected strategies on chosen dates"><span class="btn-icon">⚖️</span><span class="btn-text">COMPARE (16)</span></button>
-              <button id="btnToggleCompareModels" class="btn-secondary" style="width: 44px; height: 44px; padding: 0; font-size: 1.05rem; display: inline-flex; align-items: center; justify-content: center;" title="Select strategy models to compare">⚙️</button>
+          <!-- Card 2: Capital & Risk Allocation (CONSOLE-01) -->
+          <div class="card card-risk">
+            <div class="card-header">
+              <h3>3. Capital & Risk Allocation</h3>
+              <span class="card-badge">Accounting</span>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="capitalInput">Starting Capital (₹):</label>
+                <input type="number" id="capitalInput" value="500000" step="50000">
+              </div>
+              <div class="form-group">
+                <label for="maxLossInput">Max Loss / Trade (%):</label>
+                <input type="number" id="maxLossInput" value="1.5" step="0.1">
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="trailingSlInput">Trailing SL Trigger (%):</label>
+              <input type="number" id="trailingSlInput" value="1.0" step="0.1">
+            </div>
+          </div><!-- /Card 2: Capital & Risk -->
+
+          <!-- Card 3: Execution Controls & Live Stream (CONSOLE-01) -->
+          <div class="card card-execution">
+            <div class="card-header">
+              <h3>4. Simulation Execution</h3>
+              <span class="card-badge">Engine</span>
+            </div>
+
+            <button id="btnRun" class="btn-run btn-run-large">
+              <span class="btn-icon">⚡</span>
+              <span class="btn-text">RUN BACKTEST</span>
+            </button>
+
+            <div class="console-action-subbar">
+              <button id="btnCompare" class="btn-secondary btn-secondary btn-md flex-1" title="Compare selected strategies on chosen dates">
+                <span class="btn-icon">⚖️</span>
+                <span class="btn-text">COMPARE (16)</span>
+              </button>
+              <button id="btnToggleCompareModels" class="btn-secondary btn-secondary h-38 p-0" title="Select strategy models to compare">⚙️</button>
             </div>
 
             <!-- Strategy Checkboxes Drawer for Multi-Strategy Comparison -->
-            <div id="compareModelsPanel" style="display: none; margin-top: 10px; background: rgba(0,0,0,0.35); border: 1px solid var(--panel-border); border-radius: 8px; padding: 12px;">
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
-                <span style="font-size: 0.78rem; font-weight: 700; color: #fff;">Compare Strategy Models:</span>
-                <div style="display: flex; gap: 6px; font-size: 0.72rem;">
-                  <button id="btnSelectAllCompare" type="button" class="link-btn" style="background:none; border:none; color:var(--accent-cyan); cursor:pointer;">All (16)</button>
-                  <span style="color:var(--text-muted);">|</span>
-                  <button id="btnSelectEquityCompare" type="button" class="link-btn" style="background:none; border:none; color:var(--accent-cyan); cursor:pointer;">Equity (9)</button>
-                  <span style="color:var(--text-muted);">|</span>
-                  <button id="btnSelectFnoCompare" type="button" class="link-btn" style="background:none; border:none; color:var(--accent-cyan); cursor:pointer;">F&O (6)</button>
-                  <span style="color:var(--text-muted);">|</span>
-                  <button id="btnSelectDefaultCompare" type="button" class="link-btn" style="background:none; border:none; color:var(--accent-cyan); cursor:pointer;">Default (6)</button>
+            <div id="compareModelsPanel" class="compare-drawer" style="display: none;">
+              <div class="flex-between flex-wrap flex-gap-6 mb-8">
+                <span class="font-bold text-sm">Compare Strategy Models:</span>
+                <div class="flex-gap-6 text-xs">
+                  <button id="btnSelectAllCompare" type="button" class="link-btn">All (16)</button>
+                  <span class="text-muted">|</span>
+                  <button id="btnSelectEquityCompare" type="button" class="link-btn">Equity (9)</button>
+                  <span class="text-muted">|</span>
+                  <button id="btnSelectFnoCompare" type="button" class="link-btn">F&O (6)</button>
+                  <span class="text-muted">|</span>
+                  <button id="btnSelectDefaultCompare" type="button" class="link-btn">Default (6)</button>
                 </div>
               </div>
-              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 0.75rem; max-height: 180px; overflow-y: auto; padding-right: 4px;">
-                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+              <div class="compare-grid">
+                <label class="compare-item-label">
                   <input type="checkbox" name="compareStrategy" value="equity" checked> Equity Momentum
                 </label>
-                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                <label class="compare-item-label">
                   <input type="checkbox" name="compareStrategy" value="orb" checked> ORB Breakout
                 </label>
-                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                <label class="compare-item-label">
                   <input type="checkbox" name="compareStrategy" value="supertrend" checked> Supertrend Follower
                 </label>
-                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                <label class="compare-item-label">
                   <input type="checkbox" name="compareStrategy" value="camarilla" checked> Camarilla Breakout
                 </label>
-                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                <label class="compare-item-label">
                   <input type="checkbox" name="compareStrategy" value="ema-ribbon" checked> EMA Ribbon
                 </label>
-                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                <label class="compare-item-label">
                   <input type="checkbox" name="compareStrategy" value="bollinger-b" checked> Bollinger %B
                 </label>
-                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                <label class="compare-item-label">
                   <input type="checkbox" name="compareStrategy" value="macd-accel" checked> MACD Acceleration
                 </label>
-                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                <label class="compare-item-label">
                   <input type="checkbox" name="compareStrategy" value="vwap-reversion" checked> VWAP Reversion
                 </label>
-                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                <label class="compare-item-label">
                   <input type="checkbox" name="compareStrategy" value="rsi-momentum" checked> RSI Momentum
                 </label>
-                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                <label class="compare-item-label">
                   <input type="checkbox" name="compareStrategy" value="options" checked> NIFTY Options
                 </label>
-                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                <label class="compare-item-label">
                   <input type="checkbox" name="compareStrategy" value="ai-replay" checked> AI Decision Replay
                 </label>
-                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                <label class="compare-item-label">
                   <input type="checkbox" name="compareStrategy" value="short-straddle" checked> Short Straddle
                 </label>
-                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                <label class="compare-item-label">
                   <input type="checkbox" name="compareStrategy" value="pcr-reversion" checked> PCR Reversion
                 </label>
-                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                <label class="compare-item-label">
                   <input type="checkbox" name="compareStrategy" value="banknifty-options" checked> BankNifty Options
                 </label>
-                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                <label class="compare-item-label">
                   <input type="checkbox" name="compareStrategy" value="futures-trend" checked> Futures Trend
                 </label>
-                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                <label class="compare-item-label">
                   <input type="checkbox" name="compareStrategy" value="max-pain" checked> Max Pain Convergence
                 </label>
               </div>
             </div>
+
             <!-- Live Streaming Progress Bar -->
-            <div id="runProgressContainer" style="display: none; margin-top: 10px;">
-              <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px;">
+            <div id="runProgressContainer" class="mt-10" style="display: none;">
+              <div class="flex-between text-xs text-muted mb-4">
                 <span id="runProgressLabel">Simulating...</span>
                 <span id="runProgressPct">0%</span>
               </div>
-              <div class="progress-bar-bg" style="width: 100%; height: 6px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden;">
-                <div id="runProgressBar" style="width: 0%; height: 100%; background: linear-gradient(90deg, var(--accent-cyan), var(--green)); transition: width 0.2s ease;"></div>
+              <div class="progress-bar-bg progress-bg">
+                <div id="runProgressBar" class="progress-fill"></div>
               </div>
             </div>
-            <div id="runStatus" class="run-status" style="margin-top: 8px;"></div>
-          </div>
+            <div id="runStatus" class="run-status mt-8"></div>
+          </div><!-- /Card 3: Execution Controls -->
 
-        </div>
+        </div><!-- /console-right-column -->
 
       </div>
     </div>
 
     <!-- ── TAB 2: RESULTS & ANALYTICS ──────────────────────────────────────── -->
-    <div class="tab-pane" id="tabAnalytics">
+    <div class="tab-pane" id="tabAnalytics" role="tabpanel" aria-labelledby="btnTabAnalytics" aria-hidden="true">
       <!-- Analytics Control / Actions Header Bar -->
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 10px;">
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <h3 style="font-size: 1.05rem; font-weight: 700; color: #fff; margin: 0;">Performance Analytics & Risk Profile</h3>
+      <div class="flex-between flex-wrap flex-gap-10 mb-14">
+        <div class="flex-align flex-gap-8">
+          <h3 class="card-header-title">Performance Analytics & Risk Profile</h3>
         </div>
-        <div style="display: flex; gap: 8px;">
-          <button id="btnAnalyticsTearsheet" class="btn-secondary" style="height: 34px; font-size: 0.8rem; font-weight: 600; color: var(--accent-cyan); border-color: rgba(0,242,254,0.4);" onclick="openTearsheet()">
+        <div class="flex-gap-8">
+          <button id="btnAnalyticsTearsheet" class="btn-secondary btn-accent-sm" title="View interactive institutional HTML tearsheet">
             📄 Institutional Tearsheet
           </button>
-          <button class="btn-secondary" style="height: 34px; font-size: 0.8rem;" onclick="window.location.href='/api/export_tearsheet'">
-            📥 Download Tearsheet
-          </button>
-          <button class="btn-secondary" style="height: 34px; font-size: 0.8rem;" onclick="window.location.href='/api/export_csv'">
-            📥 Export CSV
-          </button>
+          <div class="export-dropdown-wrap">
+            <button id="btnExportMenu" class="btn-secondary btn-sm flex-align flex-gap-6" title="Export reporting data in various formats">
+              <span>📥 Export Center</span>
+              <span style="font-size: 0.65rem;">▼</span>
+            </button>
+            <div id="exportMenuDropdown" class="export-dropdown-menu" style="display: none;">
+              <button id="btnDownloadTearsheet" class="export-dropdown-item">📄 Download HTML Tearsheet (.html)</button>
+              <button id="btnAnalyticsExportCsv" class="export-dropdown-item">📊 Export Trade Log (.csv)</button>
+              <button id="btnExportJsonSummary" class="export-dropdown-item">📋 Export Run Summary (.json)</button>
+            </div>
+          </div>
         </div>
       </div>
 
-      <!-- Performance KPI Header Bar -->
-      <section class="kpi-grid">
-        <div class="kpi-card">
-          <span class="kpi-label">Net Realized P&L</span>
-          <span class="kpi-value" id="kpiNetPnl">₹0.00</span>
-          <span class="kpi-sub" id="kpiReturn">0.00% return</span>
+      <!-- Run History Quick-Access Bar (HIST-01) -->
+      <div id="runHistoryBar" class="run-history-bar" style="display: none;">
+        <span class="text-xs text-muted" style="margin-right: 4px;">Recent Runs:</span>
+        <div id="runHistoryList" class="flex-gap-6" style="display: inline-flex; align-items: center;"></div>
+      </div>
+
+      <!-- Trust & Risk Alert Banner (TRUST-01) -->
+      <div id="trustVerdictBanner" class="trust-banner mb-14" style="display: none;">
+        <span class="trust-banner-icon" id="trustBannerIcon">⚠️</span>
+        <div class="trust-banner-content">
+          <strong id="trustBannerTitle">Sample Size Warning</strong>
+          <p id="trustBannerMsg" class="mb-0 text-xs">Fewer than 30 trades recorded in this test run. Statistical significance is low.</p>
         </div>
-        <div class="kpi-card">
-          <span class="kpi-label">Win Rate</span>
-          <span class="kpi-value" id="kpiWinRate">0.0%</span>
-          <span class="kpi-sub" id="kpiTradesCount">0 trades (0W / 0L / 0BE)</span>
+      </div>
+
+      <!-- Performance KPI Header Bar (Tiered Hierarchy: Hero vs Secondary) -->
+      <section class="kpi-tiered-container">
+        <!-- Tier 1: Hero Metrics (Net P&L, Win Rate, Sharpe, Max Drawdown) -->
+        <div class="kpi-hero-grid">
+          <div class="kpi-hero-card hero-pnl">
+            <span class="kpi-label">Net Realized P&L</span>
+            <span class="kpi-value" id="kpiNetPnl">—</span>
+            <span class="kpi-sub" id="kpiReturn">—% return</span>
+          </div>
+          <div class="kpi-hero-card">
+            <span class="kpi-label">Win Rate</span>
+            <span class="kpi-value" id="kpiWinRate">—%</span>
+            <span class="kpi-sub" id="kpiTradesCount">— trades (0W / 0L / 0BE)</span>
+          </div>
+          <div class="kpi-hero-card">
+            <span class="kpi-label">Sharpe Ratio</span>
+            <span class="kpi-value" id="kpiSharpe">—</span>
+            <span class="kpi-sub" id="kpiSortino">Sortino: —</span>
+          </div>
+          <div class="kpi-hero-card hero-drawdown">
+            <span class="kpi-label">Max Drawdown</span>
+            <span class="kpi-value" id="kpiMaxDD">—%</span>
+            <span class="kpi-sub" id="kpiMaxDDRs">— peak-to-trough</span>
+          </div>
         </div>
-        <div class="kpi-card">
-          <span class="kpi-label">Profit Factor</span>
-          <span class="kpi-value" id="kpiProfitFactor">0.00</span>
-          <span class="kpi-sub" id="kpiExpectancy">Exp: ₹0.00</span>
-        </div>
-        <div class="kpi-card">
-          <span class="kpi-label">Sharpe / Sortino</span>
-          <span class="kpi-value" id="kpiSharpe">0.00</span>
-          <span class="kpi-sub" id="kpiSortino">Sortino: 0.00</span>
-        </div>
-        <div class="kpi-card">
-          <span class="kpi-label">Calmar Ratio</span>
-          <span class="kpi-value" id="kpiCalmar">0.00</span>
-          <span class="kpi-sub" id="kpiCalmarSub">Return / Max Drawdown</span>
-        </div>
-        <div class="kpi-card">
-          <span class="kpi-label">Max Drawdown</span>
-          <span class="kpi-value neg" id="kpiMaxDD">0.00%</span>
-          <span class="kpi-sub" id="kpiMaxDDRs">₹0.00 peak-to-trough</span>
-        </div>
-        <div class="kpi-card">
-          <span class="kpi-label">Best Streak / Worst Streak</span>
-          <span class="kpi-value pos" id="kpiMaxWinStreak">0 wins</span>
-          <span class="kpi-sub" id="kpiMaxLossStreak" style="color: var(--red);">0 consecutive losses</span>
-        </div>
-        <div class="kpi-card">
-          <span class="kpi-label">Regulatory Charges</span>
-          <span class="kpi-value" id="kpiCharges">₹0.00</span>
-          <span class="kpi-sub" id="kpiBreakeven">0 breakeven trades</span>
+
+        <!-- Tier 2: Secondary Risk & Operational Metrics -->
+        <div class="kpi-secondary-grid">
+          <div class="kpi-card">
+            <span class="kpi-label">Profit Factor</span>
+            <span class="kpi-value" id="kpiProfitFactor">—</span>
+            <span class="kpi-sub" id="kpiExpectancy">Exp: —</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Calmar Ratio</span>
+            <span class="kpi-value" id="kpiCalmar">—</span>
+            <span class="kpi-sub" id="kpiCalmarSub">Return / Max Drawdown</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Best Streak / Worst Streak</span>
+            <span class="kpi-value" id="kpiMaxWinStreak">—</span>
+            <span class="kpi-sub" id="kpiMaxLossStreak">— consecutive losses</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Regulatory Charges</span>
+            <span class="kpi-value" id="kpiCharges">—</span>
+            <span class="kpi-sub" id="kpiBreakeven">— breakeven trades</span>
+          </div>
         </div>
       </section>
 
@@ -756,9 +852,15 @@
         <!-- Row 1: Equity Curve & Drawdown Profile -->
         <div class="charts-row">
           <div class="chart-card">
-            <div class="chart-header-row">
+            <div class="chart-header-row flex-between">
               <h3>Cumulative Portfolio Equity (₹)</h3>
-              <span class="chart-badge" id="equityReturnBadge">Net Equity Curve</span>
+              <div class="flex-align flex-gap-10">
+                <label class="benchmark-toggle-label flex-align flex-gap-6 text-xs text-muted" title="Overlay NIFTY 50 Buy & Hold return">
+                  <input type="checkbox" id="chkShowBenchmark" style="width: 14px; height: 14px; cursor: pointer;">
+                  <span>NIFTY Benchmark</span>
+                </label>
+                <span class="chart-badge" id="equityReturnBadge">Net Equity Curve</span>
+              </div>
             </div>
             <div class="chart-container">
               <canvas id="equityChart"></canvas>
@@ -771,7 +873,7 @@
           <div class="chart-card">
             <div class="chart-header-row">
               <h3>Underwater Drawdown Profile (%)</h3>
-              <span class="chart-badge" style="color: var(--red);">Risk Curve</span>
+              <span class="chart-badge text-red">Risk Curve</span>
             </div>
             <div class="chart-container">
               <canvas id="drawdownChart"></canvas>
@@ -784,7 +886,7 @@
         </div>
 
         <!-- Row 2: Daily Session P&L & Hourly Time-of-Day P&L -->
-        <div class="charts-row" style="margin-top: 16px;">
+        <div class="charts-row mt-16">
           <div class="chart-card">
             <div class="chart-header-row">
               <h3>Daily Session Net P&L (₹)</h3>
@@ -814,7 +916,7 @@
         </div>
 
         <!-- Row 3: Trade Outcome Breakdown & P&L Frequency Spread -->
-        <div class="charts-row" style="margin-top: 16px;">
+        <div class="charts-row mt-16">
           <div class="chart-card">
             <div class="chart-header-row">
               <h3>Trade Outcome Breakdown</h3>
@@ -844,56 +946,54 @@
         </div>
       </section>
 
-      <!-- Section: Session-by-Session Breakdown Table (Multi-Day Runs) -->
-      <div class="card table-card" id="sessionBreakdownCard" style="display: none; margin-top: 24px;">
-        <div class="card-header-row" style="display: flex; justify-content: space-between; align-items: center; padding: 14px 18px 10px 18px;">
-          <div>
-            <h3 style="color: #fff; font-size: 1.05rem; margin: 0;">📅 Session-by-Session Performance Breakdown</h3>
-            <p style="color: var(--text-muted); font-size: 0.8rem; margin: 4px 0 0 0;">
-              Granular daily audit log across all evaluated market sessions.
-            </p>
+      <!-- Calendar P&L Matrix & Weekday Performance Breakdown (VIZ-01) -->
+      <div class="calendar-heatmap-container mt-20" id="calendarHeatmapRow">
+        <div class="calendar-heatmap-card">
+          <div class="card-header-row flex-between">
+            <div>
+              <h3 class="card-header-title">📅 Daily Session P&L Distribution Heatmap</h3>
+              <p class="card-header-sub">Daily return intensity across historical sessions</p>
+            </div>
+            <div class="flex-align flex-gap-8 text-xs text-muted">
+              <span>Loss</span>
+              <span class="calendar-day-cell heat-loss-3" style="width: 14px; height: 14px; display: inline-block;"></span>
+              <span class="calendar-day-cell heat-loss-1" style="width: 14px; height: 14px; display: inline-block;"></span>
+              <span class="calendar-day-cell heat-neutral" style="width: 14px; height: 14px; display: inline-block;"></span>
+              <span class="calendar-day-cell heat-win-1" style="width: 14px; height: 14px; display: inline-block;"></span>
+              <span class="calendar-day-cell heat-win-3" style="width: 14px; height: 14px; display: inline-block;"></span>
+              <span>Win</span>
+            </div>
           </div>
-          <span class="chart-badge" id="sessionCountBadge" style="color: var(--accent-cyan); font-weight: 600;">0 Sessions</span>
+          <div class="calendar-grid" id="calendarHeatmapGrid">
+            <div class="empty-state text-xs">Execute backtest to view daily calendar heatmap.</div>
+          </div>
         </div>
-        <div class="table-wrap" style="overflow-x: auto;">
-          <table id="sessionBreakdownTable" style="width: 100%;">
-            <thead>
-              <tr>
-                <th style="min-width: 110px;">Date</th>
-                <th>Starting Equity (₹)</th>
-                <th>Ending Equity (₹)</th>
-                <th>Gross P&L (₹)</th>
-                <th>Charges (₹)</th>
-                <th>Net P&L (₹)</th>
-                <th>Return %</th>
-                <th>Trades</th>
-                <th>Win Rate %</th>
-              </tr>
-            </thead>
-            <tbody id="sessionBreakdownBody">
-              <!-- Dynamically populated -->
-            </tbody>
-            <tfoot id="sessionBreakdownFoot" style="font-weight: 700; border-top: 2px solid rgba(255,255,255,0.15); background: rgba(0,0,0,0.25);">
-              <!-- Summary totals -->
-            </tfoot>
-          </table>
+
+        <div class="weekday-distribution-card">
+          <div class="card-header-row">
+            <h3 class="card-header-title">📊 Weekday Alpha Edge</h3>
+            <p class="card-header-sub">Net P&L performance by day of week</p>
+          </div>
+          <div class="weekday-bars-container" id="weekdayBarsContainer">
+            <div class="empty-state text-xs">Run simulation to view weekday distribution.</div>
+          </div>
         </div>
       </div>
 
       <!-- Section: Multi-Strategy Comparison Matrix & Overlay -->
-      <div id="compareSection" style="display: none; margin-top: 24px;">
-        <div class="card" style="margin-bottom: 16px;">
-          <div class="card-header-row" style="display: flex; justify-content: space-between; align-items: center;">
+      <div id="compareSection" class="mt-24" style="display: none;">
+        <div class="card mb-16">
+          <div class="card-header-row flex-between">
             <div>
-              <h3 style="color: #fff; font-size: 1.05rem; margin: 0;">⚖️ Multi-Strategy Performance Comparison</h3>
-              <p style="color: var(--text-muted); font-size: 0.8rem; margin: 4px 0 0 0;">
+              <h3 class="card-header-title">⚖️ Multi-Strategy Performance Comparison</h3>
+              <p class="card-header-sub">
                 Side-by-side benchmark across strategies tested on the same market sessions.
               </p>
             </div>
-            <span class="chart-badge" style="color: var(--accent-cyan);">Institutional Matrix</span>
+            <span class="chart-badge text-cyan">Institutional Matrix</span>
           </div>
-          <div class="table-wrap" style="margin-top: 12px; overflow-x: auto;">
-            <table id="compareTable" style="width: 100%;">
+          <div class="table-wrap">
+            <table id="compareTable">
               <thead>
                 <tr>
                   <th>Strategy</th>
@@ -920,15 +1020,36 @@
             <h3>Multi-Strategy Equity Comparison (₹)</h3>
             <span class="chart-badge">Overlay Chart</span>
           </div>
-          <div class="chart-container" style="height: 340px;">
+          <div class="chart-container chart-h340">
             <canvas id="compareChart"></canvas>
           </div>
+        </div>
+      </div>
+
+      <!-- Institutional Robustness & Overfitting Validation Section (API-03) -->
+      <div id="validationSection" class="card mt-24" style="display: none;">
+        <div class="card-header flex-between">
+          <div class="flex-align flex-gap-8">
+            <span class="text-xl">🛡️</span>
+            <div>
+              <h3 class="card-header-title">Institutional Validation & Overfitting Hurdles</h3>
+              <p class="card-header-sub">Deflated Sharpe Ratio (Bailey & López de Prado), Monte Carlo 1,000-resampling & drawdown stress tests</p>
+            </div>
+          </div>
+          <div class="flex-align flex-gap-8">
+            <span id="validationVerdictBadge" class="badge badge-accent">PENDING AUDIT</span>
+            <button id="btnRunValidation" class="btn-secondary btn-sm" title="Re-evaluate candidate strategy against institutional hurdles">⚡ Run Robustness Audit</button>
+          </div>
+        </div>
+
+        <div class="validation-grid mt-14" id="validationGrid">
+          <!-- Populated dynamically: Score, Hurdles checklist, Monte Carlo stats -->
         </div>
       </div>
     </div>
 
     <!-- ── TAB 3: TRADE INSPECTOR & LOG ────────────────────────────────────── -->
-    <div class="tab-pane" id="tabInspector">
+    <div class="tab-pane" id="tabInspector" role="tabpanel" aria-labelledby="btnTabInspector" aria-hidden="true">
       <!-- Filter Bar & Search -->
       <div class="trades-control-bar">
         <div class="table-filters">
@@ -940,16 +1061,13 @@
           <button class="filter-pill" data-filter="sell">Shorts (SELL)</button>
         </div>
 
-        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-          <select id="tradeDateFilter" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; color: #fff; height: 34px; padding: 0 10px; font-size: 0.8rem;">
-            <option value="">All Dates</option>
-          </select>
-          <select id="tradeSymbolFilter" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; color: #fff; height: 34px; padding: 0 10px; font-size: 0.8rem;">
+        <div class="flex-align flex-wrap flex-gap-10">
+          <select id="tradeSymbolFilter" class="input-select-sm">
             <option value="">All Symbols</option>
           </select>
           <span id="tradesCountBadge" class="trades-count-badge">0 trades</span>
-          <input type="text" id="tradeSearchInput" placeholder="Filter by symbol, reason, side, date..." class="search-input" style="width: 240px;">
-          <button id="btnInspectorTearsheet" class="btn-secondary" style="height: 34px; font-size: 0.8rem; font-weight: 600; color: var(--accent-cyan); border-color: rgba(0,242,254,0.4);" onclick="openTearsheet()">📄 Tearsheet</button>
+          <input type="text" id="tradeSearchInput" placeholder="Filter by symbol, reason, side, date..." class="search-input" class="input-search-w">
+          <button id="btnInspectorTearsheet" class="btn-secondary btn-accent-sm">📄 Tearsheet</button>
           <button id="btnExportCsv" class="btn-export">📥 Export CSV</button>
         </div>
       </div>
@@ -963,7 +1081,6 @@
             <table id="tradesTable">
               <thead>
                 <tr>
-                  <th data-sort="entry_date">Date ⬍</th>
                   <th data-sort="entry_time">Time ⬍</th>
                   <th data-sort="symbol">Symbol ⬍</th>
                   <th data-sort="side">Side ⬍</th>
@@ -979,7 +1096,7 @@
               </thead>
               <tbody id="tradesBody">
                 <tr>
-                  <td colspan="12" class="empty-state">No simulated trades executed yet. Run a backtest in the Console tab to view trade logs.</td>
+                  <td colspan="11" class="empty-state">No simulated trades executed yet. Run a backtest in the Console tab to view trade logs.</td>
                 </tr>
               </tbody>
             </table>
@@ -988,8 +1105,8 @@
 
         <!-- Right: Dedicated Trade Inspector Panel -->
         <div class="card inspector-card" id="tradeInspectorCard">
-          <div class="card-header" style="margin-bottom: 12px;">
-            <div style="display: flex; align-items: center; gap: 8px;">
+          <div class="card-header mb-12">
+            <div class="flex-align flex-gap-8">
               <span style="font-size: 1.1rem;">🔬</span>
               <h3 id="inspTitle">Trade Inspector</h3>
             </div>
@@ -997,7 +1114,7 @@
           </div>
 
           <div id="inspectorContent" class="inspector-content">
-            <div class="empty-state" style="padding: 40px 10px; text-align: center;">
+            <div class="empty-state text-center" style="padding: 40px 10px;">
               <span style="font-size: 2rem; display: block; margin-bottom: 8px;">🔍</span>
               <p style="color: var(--text-muted); font-size: 0.85rem;">Click <strong>Inspect 🔍</strong> on any trade in the log to inspect complete tick-level fills, price deltas, and statutory tax breakdowns.</p>
             </div>
@@ -1007,18 +1124,36 @@
     </div>
 
     <!-- ── TAB 4: DATA EXPLORER ────────────────────────────────────────────── -->
-    <div class="tab-pane" id="tabExplorer">
-      <div class="card" style="margin-bottom: 20px;">
-        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+    <div class="tab-pane" id="tabExplorer" role="tabpanel" aria-labelledby="btnTabExplorer" aria-hidden="true">
+      <div class="card mb-20">
+        <div class="flex-between flex-wrap flex-gap-12">
           <div>
-            <h3 style="font-size: 1.05rem; font-weight: 700; color: #fff;">Market Recordings & Database Explorer</h3>
-            <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">
+            <h3 class="card-header-title">Market Recordings & Database Explorer</h3>
+            <p class="card-header-sub">
               Inspect real SQLite database recordings, constituent tables, and cache state across market dates.
             </p>
           </div>
-          <div style="display: flex; gap: 8px;">
-            <button onclick="openFileBrowser()" class="btn-secondary">📁 Browse File/Folder</button>
+          <div class="flex-gap-8">
+            <button id="btnExplorerAudit" class="btn-secondary btn-accent-sm" title="Run institutional quality & integrity audit on market recordings">🛡️ Audit Data Health</button>
+            <button id="btnExplorerBrowse" class="btn-secondary">📁 Browse File/Folder</button>
             <button id="btnExplorerRefresh" class="btn-secondary">🔄 Refresh Data</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Data Quality & Health Audit Banner (API-02) -->
+      <div id="explorerAuditBanner" class="audit-banner mb-16" style="display: none;">
+        <div class="flex-between flex-wrap flex-gap-10">
+          <div class="flex-align flex-gap-8">
+            <span class="text-xl" id="auditStatusIcon">🟢</span>
+            <div>
+              <h4 id="auditStatusTitle" class="font-bold text-sm mb-0">Data Quality: EXCELLENT</h4>
+              <p id="auditStatusDetail" class="text-xs text-muted mb-0">Audited session data across candles: 0 missing bars, 0 anomalies, 0 stale bars.</p>
+            </div>
+          </div>
+          <div class="flex-align flex-gap-8">
+            <span class="badge badge-accent" id="auditScoreBadge">Score: 100%</span>
+            <button id="btnCloseAuditBanner" class="btn-secondary btn-xs">✕ Dismiss</button>
           </div>
         </div>
       </div>
@@ -1030,7 +1165,7 @@
     </div>
 
     <!-- ── TAB 5: WALK-FORWARD OPTIMIZATION & ROBUSTNESS ─────────────────────── -->
-    <div class="tab-pane" id="tabWalkForward">
+    <div class="tab-pane" id="tabWalkForward" role="tabpanel" aria-labelledby="btnTabWalkForward" aria-hidden="true">
       <div class="console-grid">
         <!-- Controls Column -->
         <div class="card console-card">
@@ -1065,12 +1200,12 @@
             <div class="form-group">
               <label for="wfoInSampleInput">In-Sample Window (Days):</label>
               <input type="number" id="wfoInSampleInput" value="3" min="2" max="20">
-              <small style="color: var(--text-muted); font-size: 0.7rem;">Training / Optimization history</small>
+              <small class="form-hint">Training / Optimization history</small>
             </div>
             <div class="form-group">
               <label for="wfoOutSampleInput">Out-of-Sample Window (Days):</label>
               <input type="number" id="wfoOutSampleInput" value="1" min="1" max="10">
-              <small style="color: var(--text-muted); font-size: 0.7rem;">Forward-test evaluation period</small>
+              <small class="form-hint">Forward-test evaluation period</small>
             </div>
           </div>
 
@@ -1084,19 +1219,9 @@
             </select>
           </div>
 
-          <div style="margin-top: 16px;">
-            <button id="btnRunWfo" class="btn-run" style="width: 100%; height: 44px; font-size: 0.95rem;">🧪 RUN WALK-FORWARD ANALYSIS</button>
-            <!-- WFO Live Progress Bar -->
-            <div id="wfoProgressContainer" style="display: none; margin-top: 10px;">
-              <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px;">
-                <span id="wfoProgressLabel">Analyzing window...</span>
-                <span id="wfoProgressPct">0%</span>
-              </div>
-              <div class="progress-bar-bg" style="width: 100%; height: 6px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden;">
-                <div id="wfoProgressBar" style="width: 0%; height: 100%; background: linear-gradient(90deg, var(--accent-cyan), var(--green)); transition: width 0.2s ease;"></div>
-              </div>
-            </div>
-            <div id="wfoStatus" class="run-status" style="margin-top: 8px;"></div>
+          <div class="mt-16">
+            <button id="btnRunWfo" class="btn-run btn-run-large">🧪 RUN WALK-FORWARD ANALYSIS</button>
+            <div id="wfoStatus" class="run-status mt-8"></div>
           </div>
         </div>
 
@@ -1107,34 +1232,49 @@
             <span class="card-badge" id="wfoVerdictBadge">Awaiting Run</span>
           </div>
 
-          <div id="wfoVerdictCard" style="background: rgba(255,255,255,0.03); border: 1px solid var(--panel-border); border-radius: 8px; padding: 16px; margin-bottom: 14px; text-align: center;">
+          <div id="wfoVerdictCard" class="verdict-card">
             <span style="font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Walk-Forward Efficiency (WFE)</span>
             <div id="wfoWfeVal" style="font-size: 2.2rem; font-weight: 800; font-family: 'JetBrains Mono', monospace; color: var(--accent-cyan); margin: 6px 0;">--</div>
             <div id="wfoVerdictText" style="font-size: 0.88rem; color: var(--text-muted);">
               Run Walk-Forward analysis across selected market dates to evaluate out-of-sample persistence.
             </div>
+            <!-- WFO Robustness Traffic Light Gauge (VIZ-03) -->
+            <div id="wfoTrafficLight" class="wfo-traffic-light mt-10">
+              <div class="traffic-light-pill traffic-pill-green" id="wfoLightRobust" title="WFE &ge; 70%: High out-of-sample persistence">
+                <span class="light-dot"></span>
+                <span>ROBUST (&ge;70%)</span>
+              </div>
+              <div class="traffic-light-pill traffic-pill-yellow" id="wfoLightModerate" title="50% &le; WFE &lt; 70%: Moderate efficiency">
+                <span class="light-dot"></span>
+                <span>MODERATE (50-70%)</span>
+              </div>
+              <div class="traffic-light-pill traffic-pill-red" id="wfoLightDegraded" title="WFE &lt; 50%: Severe overfitting / curve fitting">
+                <span class="light-dot"></span>
+                <span>OVERFIT (&lt;50%)</span>
+              </div>
+            </div>
           </div>
 
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-            <div class="kpi-card" style="padding: 10px 14px;">
+            <div class="kpi-card kpi-card-lg">
               <span class="kpi-label">Total Windows</span>
-              <span class="kpi-value" id="wfoTotalWindows" style="font-size: 1.2rem;">0</span>
+              <span class="kpi-value" id="wfoTotalWindows" class="kpi-val-lg">—</span>
             </div>
-            <div class="kpi-card" style="padding: 10px 14px;">
+            <div class="kpi-card kpi-card-lg">
               <span class="kpi-label">OOS Net Realized P&L</span>
-              <span class="kpi-value" id="wfoOosNetPnl" style="font-size: 1.2rem;">₹0.00</span>
+              <span class="kpi-value" id="wfoOosNetPnl" class="kpi-val-lg">—</span>
             </div>
           </div>
         </div>
       </div>
 
       <!-- Chart: IS vs OOS Performance per Window -->
-      <div class="chart-card" style="margin-top: 20px;">
+      <div class="chart-card mt-20">
         <div class="chart-header-row">
           <h3>Rolling Window In-Sample vs. Out-of-Sample Sharpe Comparison</h3>
           <span class="chart-badge">WFO Stability</span>
         </div>
-        <div class="chart-container" style="height: 280px;">
+        <div class="chart-container chart-h280">
           <canvas id="wfoChartCanvas"></canvas>
           <div class="chart-placeholder" id="wfoPlaceholder">
             <span>🧪</span>
@@ -1144,7 +1284,7 @@
       </div>
 
       <!-- Windows Breakdown Table -->
-      <div class="card table-card" style="margin-top: 20px;">
+      <div class="card table-card mt-20">
         <div class="card-header">
           <h3>Rolling Window Breakdown</h3>
           <span class="card-badge">Window Logs</span>
@@ -1175,7 +1315,7 @@
     </div>
 
     <!-- ── TAB 6: STRATEGY PARAMETER OPTIMIZER ────────────────────────────────── -->
-    <div class="tab-pane" id="tabOptimizer">
+    <div class="tab-pane" id="tabOptimizer" role="tabpanel" aria-labelledby="btnTabOptimizer" aria-hidden="true">
       <div class="console-grid">
         <!-- Controls Column -->
         <div class="card console-card">
@@ -1218,27 +1358,17 @@
           </div>
 
           <div class="form-group">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-              <label for="optGridJson" style="margin-bottom: 0;">Parameter Grid (JSON):</label>
-              <button id="btnOptResetGrid" class="link-btn" style="background: none; border: none; font-size: 0.75rem; color: var(--accent-cyan); cursor: pointer;">Reset to Default</button>
+            <div class="flex-between mb-4">
+              <label for="optGridJson" class="mb-0">Parameter Grid (JSON):</label>
+              <button id="btnOptResetGrid" class="link-btn">Reset to Default</button>
             </div>
-            <textarea id="optGridJson" rows="6" style="width: 100%; font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; background: rgba(0,0,0,0.3); border: 1px solid var(--panel-border); border-radius: 6px; color: #fff; padding: 10px; resize: vertical;"></textarea>
-            <small style="color: var(--text-muted); font-size: 0.7rem;">Define array of candidate values for each strategy parameter.</small>
+            <textarea id="optGridJson" rows="6" class="form-textarea-code"></textarea>
+            <small class="form-hint">Define array of candidate values for each strategy parameter.</small>
           </div>
 
-          <div style="margin-top: 16px;">
-            <button id="btnRunOptimizer" class="btn-run" style="width: 100%; height: 44px; font-size: 0.95rem;">🚀 RUN GRID OPTIMIZATION</button>
-            <!-- Optimizer Live Progress Bar -->
-            <div id="optProgressContainer" style="display: none; margin-top: 10px;">
-              <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px;">
-                <span id="optProgressLabel">Testing combo...</span>
-                <span id="optProgressPct">0%</span>
-              </div>
-              <div class="progress-bar-bg" style="width: 100%; height: 6px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden;">
-                <div id="optProgressBar" style="width: 0%; height: 100%; background: linear-gradient(90deg, var(--accent-cyan), var(--green)); transition: width 0.2s ease;"></div>
-              </div>
-            </div>
-            <div id="optStatus" class="run-status" style="margin-top: 8px;"></div>
+          <div class="mt-16">
+            <button id="btnRunOptimizer" class="btn-run btn-run-large">🚀 RUN GRID OPTIMIZATION</button>
+            <div id="optStatus" class="run-status mt-8"></div>
           </div>
         </div>
 
@@ -1249,26 +1379,26 @@
             <span class="card-badge" id="optBestBadge">No Run Yet</span>
           </div>
 
-          <div id="optBestContainer" style="background: rgba(255,255,255,0.03); border: 1px solid var(--panel-border); border-radius: 8px; padding: 16px; margin-bottom: 14px;">
+          <div id="optBestContainer" class="verdict-card">
             <div class="empty-state" id="optBestPlaceholder">Run parameter optimization to discover optimal parameter weights.</div>
             <div id="optBestContent" style="display: none;">
               <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 6px;">Optimal Discovered Parameters:</div>
               <pre id="optBestParamsJson" style="background: rgba(0,0,0,0.4); padding: 10px; border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; color: var(--accent-cyan); margin-bottom: 12px;"></pre>
               <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px;">
-                <div class="kpi-card" style="padding: 8px 10px;">
+                <div class="kpi-card kpi-card-md">
                   <span class="kpi-label">Net P&L</span>
-                  <span class="kpi-value" id="optBestNetPnl" style="font-size: 1.05rem;">₹0.00</span>
+                  <span class="kpi-value" id="optBestNetPnl" class="kpi-val-md">—</span>
                 </div>
-                <div class="kpi-card" style="padding: 8px 10px;">
+                <div class="kpi-card kpi-card-md">
                   <span class="kpi-label">Sharpe</span>
-                  <span class="kpi-value" id="optBestSharpe" style="font-size: 1.05rem;">0.00</span>
+                  <span class="kpi-value" id="optBestSharpe" class="kpi-val-md">—</span>
                 </div>
-                <div class="kpi-card" style="padding: 8px 10px;">
+                <div class="kpi-card kpi-card-md">
                   <span class="kpi-label">Win Rate</span>
-                  <span class="kpi-value" id="optBestWinRate" style="font-size: 1.05rem;">0.0%</span>
+                  <span class="kpi-value" id="optBestWinRate" class="kpi-val-md">—%</span>
                 </div>
               </div>
-              <button id="btnApplyBestParams" class="btn-secondary" style="width: 100%; height: 38px; color: var(--green); border-color: rgba(46,160,67,0.5); font-weight: 700;">
+              <button id="btnApplyBestParams" class="btn-secondary btn-apply-best">
                 ⚡ Apply to Backtest Console
               </button>
             </div>
@@ -1277,7 +1407,7 @@
       </div>
 
       <!-- Ranked Parameter Sets Table -->
-      <div class="card table-card" style="margin-top: 20px;">
+      <div class="card table-card mt-20">
         <div class="card-header">
           <h3>Ranked Parameter Combinations</h3>
           <span class="card-badge" id="optRankedCountBadge">0 combinations</span>
@@ -1308,8 +1438,268 @@
       </div>
     </div>
 
-    <!-- ── Tab 7: Trading Engine Insights (Deep Integration & Cockpit) ────── -->
-    <div class="tab-pane" id="tabTradingEngine">
+    <!-- ── TAB 7: MASS ITERATION LAB (NEXT-GEN) ────────────────────────────────── -->
+    <div class="tab-pane" id="tabMassIteration" role="tabpanel" aria-labelledby="btnTabMassIteration" aria-hidden="true">
+      <div class="console-grid">
+        <!-- Configuration Column -->
+        <div class="card console-card">
+          <div class="card-header">
+            <h3>1. Mass Sweep Configuration</h3>
+            <span class="card-badge card-badge-cyan">Institutional Lab</span>
+          </div>
+
+          <div class="form-group">
+            <label for="massStrategySelect">Strategy (56-Catalog):</label>
+            <select id="massStrategySelect">
+              <optgroup label="⚡ Options Suite (12 Strategies)">
+                <option value="options_flow_momentum">Options Flow Momentum</option>
+                <option value="pcr_extreme_reversal">PCR Extreme Reversal</option>
+                <option value="iv_expansion_breakout">IV Expansion Breakout</option>
+                <option value="straddle_premium_decay">Straddle Premium Decay</option>
+                <option value="gamma_scalp_momentum">Gamma Scalp Momentum</option>
+                <option value="theta_harvest_slope">Theta Harvest Slope</option>
+                <option value="option_buyer_vwap_cross">Option Buyer VWAP Cross</option>
+                <option value="expiry_pinning_magnet">Expiry Pinning Magnet</option>
+                <option value="volatility_crush_reversion">Volatility Crush Reversion</option>
+                <option value="max_pain_convergence">Max Pain Convergence</option>
+                <option value="oi_buildup_trend">OI Buildup Trend</option>
+                <option value="option_breakout_consolidation">Option Breakout Consolidation</option>
+              </optgroup>
+              <optgroup label="📈 Index Suite (13 Strategies)">
+                <option value="orb_15min_breakout">ORB 15-Min Breakout</option>
+                <option value="orb_30min_expansion">ORB 30-Min Expansion</option>
+                <option value="cpr_pivot_reversal">CPR Pivot Reversal</option>
+                <option value="camarilla_pivot_breakout">Camarilla Pivot Breakout</option>
+                <option value="ttm_squeeze_pro">TTM Squeeze Pro</option>
+                <option value="supertrend_multi_tf" selected>Supertrend Multi-TF</option>
+                <option value="ema_ribbon_alignment">EMA Ribbon Alignment</option>
+                <option value="vwap_band_pinch">VWAP Band Pinch</option>
+                <option value="gap_fill_fade">Gap Fill Fade</option>
+                <option value="nifty_internals_breadth">Nifty Internals Breadth</option>
+                <option value="heikin_ashi_trend_rider">Heikin Ashi Trend Rider</option>
+                <option value="fii_dii_cash_momentum">FII/DII Cash Momentum</option>
+                <option value="india_vix_divergence">India VIX Divergence</option>
+              </optgroup>
+              <optgroup label="🏢 Equities Suite (13 Strategies)">
+                <option value="equity_momentum_rsi_ema">Equity Momentum RSI+EMA</option>
+                <option value="vwap_institutional_bounce">VWAP Institutional Bounce</option>
+                <option value="connors_rsi2_pullback">Connors RSI(2) Pullback</option>
+                <option value="volume_price_action_breakout">Volume Price Action Breakout</option>
+                <option value="donchian_channel_turtle">Donchian Channel Turtle</option>
+                <option value="keltner_channel_momentum">Keltner Channel Momentum</option>
+                <option value="stochastic_rsi_crossover">Stochastic RSI Crossover</option>
+                <option value="macd_histogram_acceleration">MACD Histogram Acceleration</option>
+                <option value="relative_strength_alpha">Relative Strength Alpha</option>
+                <option value="hull_ma_direction_flip">Hull MA Direction Flip</option>
+                <option value="ichimoku_cloud_breakout">Ichimoku Cloud Breakout</option>
+                <option value="linear_regression_slope">Linear Regression Slope</option>
+                <option value="bollinger_percent_b_reversal">Bollinger %B Reversal</option>
+              </optgroup>
+              <optgroup label="⚔️ Futures Suite (12 Strategies)">
+                <option value="futures_vsa_climactic">Futures Volume Spread Analysis</option>
+                <option value="order_flow_imbalance">Order Flow Imbalance</option>
+                <option value="futures_basis_momentum">Futures Basis Arbitrage</option>
+                <option value="vwap_value_area_poc">VWAP Value Area POC</option>
+                <option value="atr_volatility_expansion">ATR Volatility Expansion</option>
+                <option value="futures_oi_divergence">Futures OI Divergence</option>
+                <option value="parabolic_sar_momentum">Parabolic SAR Momentum</option>
+                <option value="multi_day_breakout">Multi-Day Breakout</option>
+                <option value="futures_momentum_pinbar">Futures Momentum Pinbar</option>
+                <option value="choppiness_breakout">Choppiness Breakout</option>
+                <option value="futures_vwap_envelope_reversion">Futures VWAP Mean Reversion</option>
+                <option value="futures_dual_thrust">Futures Dual Thrust</option>
+              </optgroup>
+              <optgroup label="🧠 AI & Macro Suite (6 Strategies)">
+                <option value="ai_replay">Gemini AI Decision Replay</option>
+                <option value="fii_flow_momentum">FII Flow Momentum</option>
+                <option value="vol_regime">Volatility Regime Switcher</option>
+                <option value="momentum_rsi">Momentum RSI Classic</option>
+                <option value="vwap_reversion">VWAP Reversion Classic</option>
+                <option value="options_flow">Options Flow Classic</option>
+              </optgroup>
+            </select>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="massSamplingMode">Sampling Method:</label>
+              <select id="massSamplingMode">
+                <option value="LHS" selected>Latin Hypercube (LHS Stratified)</option>
+                <option value="BAYESIAN_TPE">Bayesian TPE (Guided Optimization)</option>
+                <option value="SOBOL">Sobol Low-Discrepancy</option>
+                <option value="GRID">Cartesian Grid</option>
+                <option value="RANDOM">Uniform Random</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="massMaxIter">Max Iterations:</label>
+              <input type="number" id="massMaxIter" value="50" min="4" max="2000" step="10">
+            </div>
+          </div>
+
+          <div class="form-group" style="background: rgba(0,0,0,0.25); border: 1px solid var(--panel-border); border-radius: 6px; padding: 10px; margin-bottom: 12px;">
+            <div class="flex-align flex-gap-8">
+              <input type="checkbox" id="massEarlyPruning" checked style="width: 16px; height: 16px; cursor: pointer;">
+              <label for="massEarlyPruning" style="margin-bottom: 0; font-weight: 600; cursor: pointer; color: #fff;">Successive Halving / Early Pruning</label>
+            </div>
+            <p style="font-size: 0.72rem; color: var(--text-muted); margin-top: 4px; margin-bottom: 0;">
+              Prunes bottom 50% performers after 30% dates, advancing top candidates to full history. (4x speedup)
+            </p>
+          </div>
+
+          <div class="form-group">
+            <div class="flex-between mb-4">
+              <label for="massGridJson" class="mb-0">Parameter Grid / Search Space (JSON):</label>
+              <button id="btnMassResetGrid" class="link-btn">Reset to Strategy Defaults</button>
+            </div>
+            <textarea id="massGridJson" rows="6" class="form-textarea-code"></textarea>
+          </div>
+
+          <div class="form-group mt-14">
+            <button id="btnLaunchMass" class="btn-run btn-run-large">⚡ LAUNCH MASS SWEEP</button>
+            <button id="btnCancelMass" class="btn-secondary btn-cancel-mass" style="display: none;">Cancel Job</button>
+          </div>
+        </div>
+
+        <!-- Live Progress & Best Discovered Metric -->
+        <div class="card console-card">
+          <div class="card-header">
+            <h3>2. Live Execution & Alpha Driver</h3>
+            <span class="card-badge" id="massStatusBadge">Idle</span>
+          </div>
+
+          <!-- Progress Bar -->
+          <div id="massProgressWrap" class="mb-16">
+            <div class="flex-between text-sm mb-4">
+              <span id="massProgressText" style="color: var(--text-muted);">Ready to start</span>
+              <span id="massProgressPct" style="color: var(--accent-cyan); font-weight: 700;">0%</span>
+            </div>
+            <div class="mass-progress-track">
+              <div id="massProgressBar" class="mass-progress-fill"></div>
+            </div>
+            <div class="flex-between text-xs text-muted mt-4">
+              <span id="massElapsed">Elapsed: 0.0s</span>
+              <span id="massEta">ETA: --</span>
+            </div>
+          </div>
+
+          <!-- Live Card -->
+          <div id="massLiveCard" class="verdict-card">
+            <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 6px;">Last Completed Run:</div>
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 10px;">
+              <div class="kpi-card kpi-card-sm">
+                <span class="kpi-label">P&L Net</span>
+                <span class="kpi-value" id="massLivePnl" class="kpi-val-sm">—</span>
+              </div>
+              <div class="kpi-card kpi-card-sm">
+                <span class="kpi-label">Win Rate</span>
+                <span class="kpi-value" id="massLiveWinRate" class="kpi-val-sm">—%</span>
+              </div>
+              <div class="kpi-card kpi-card-sm">
+                <span class="kpi-label">Sharpe</span>
+                <span class="kpi-value" id="massLiveSharpe" class="kpi-val-sm">—</span>
+              </div>
+            </div>
+            <div style="font-size: 0.72rem; color: var(--accent-cyan); font-family: 'JetBrains Mono', monospace;" id="massLiveParams">--</div>
+          </div>
+
+          <!-- Persistence action -->
+          <div class="flex-gap-8">
+            <button id="btnSaveMassSession" class="btn-secondary btn-secondary btn-md flex-1 font-bold" disabled>💾 Save Session</button>
+            <button id="btnViewSessionMatrix" class="btn-secondary btn-secondary btn-md flex-1 font-bold" disabled>📊 2D Matrix View</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2D Parameter Stability Landscape (VIZ-04) -->
+      <div class="card mt-20" id="massStabilityMatrixCard" style="display: none;">
+        <div class="card-header flex-between">
+          <div class="flex-align flex-gap-8">
+            <span class="text-xl">🏔️</span>
+            <div>
+              <h3 class="card-header-title">2D Parameter Stability Landscape</h3>
+              <p class="card-header-sub">Evaluates parameter plateau stability vs precarious isolated peaks</p>
+            </div>
+          </div>
+          <div class="flex-align flex-gap-8">
+            <label for="matrixParamX" class="text-xs text-muted mb-0">X Axis:</label>
+            <select id="matrixParamX" class="input-select-sm"></select>
+            <label for="matrixParamY" class="text-xs text-muted mb-0">Y Axis:</label>
+            <select id="matrixParamY" class="input-select-sm"></select>
+            <button id="btnCloseStabilityMatrix" class="btn-secondary btn-xs">✕ Close</button>
+          </div>
+        </div>
+        <div class="matrix-heatmap-wrap" id="stabilityMatrixContainer">
+          <div class="empty-state text-xs">Select parameters above to render 2D stability landscape.</div>
+        </div>
+      </div>
+
+      <!-- Ranked Table & Matrix Heatmap Section -->
+      <div class="card table-card mt-20">
+        <div class="card-header flex-between">
+          <h3>Ranked Parameter Results</h3>
+          <span class="card-badge" id="massTotalRunsBadge">0 runs</span>
+        </div>
+        <div class="table-wrap">
+          <table id="massRankedTable">
+            <thead>
+              <tr>
+                <th>Rank</th>
+                <th>Instrument</th>
+                <th>Parameters</th>
+                <th>Net P&L (₹)</th>
+                <th>Charges (₹)</th>
+                <th>Win Rate %</th>
+                <th>Sharpe</th>
+                <th>Profit Factor</th>
+                <th>Max DD %</th>
+                <th>Trades</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="massRankedBody">
+              <tr>
+                <td colspan="11" class="empty-state">No mass optimization run executed yet.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Saved Experiment Sessions Table -->
+      <div class="card table-card mt-20">
+        <div class="card-header flex-between">
+          <h3>📂 Saved Experiment Sessions (Persistent Disk Catalog)</h3>
+          <button id="btnRefreshSessions" class="link-btn">🔄 Refresh</button>
+        </div>
+        <div class="table-wrap">
+          <table id="sessionsTable">
+            <thead>
+              <tr>
+                <th>Session ID</th>
+                <th>Session Name</th>
+                <th>Saved At</th>
+                <th>Strategy</th>
+                <th>Sampling</th>
+                <th>Runs</th>
+                <th>Best P&L (₹)</th>
+                <th>Best Sharpe</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="sessionsBody">
+              <tr>
+                <td colspan="9" class="empty-state">Loading saved sessions...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  
+
+<div class="tab-pane" id="tabTradingEngine" role="tabpanel" aria-labelledby="btnTabTradingEngine" aria-hidden="true">
       <div class="tab-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px;">
         <div>
           <h2 style="margin: 0; font-size: 1.4rem; color: #fff; display: flex; align-items: center; gap: 8px;">
@@ -2352,6 +2742,101 @@
       </div>
     </div>
   </div>
+    </div>
+
+  <!-- Trade Detail Modal (Preserved as fallback) -->
+  <div id="tradeModal" class="modal-backdrop" style="display: none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="modalTitle">Trade Details</h3>
+        <button id="modalCloseBtn" class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body" id="modalContent">
+        <!-- Injected via JS -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Interactive File/Folder Browser Modal -->
+  <div id="fileBrowserModal" class="modal-backdrop" style="display: none;">
+    <div class="modal-card modal-explorer">
+      <div class="modal-header">
+        <div class="flex-align flex-gap-8">
+          <span class="kpi-val-lg">📂</span>
+          <h3 id="explorerModalTitle">Select Data Directory or Market Archive</h3>
+        </div>
+        <button id="closeBrowserModal" class="modal-close">&times;</button>
+      </div>
+
+      <div class="modal-body explorer-body">
+        <!-- Quick Places / Bookmarks -->
+        <div class="explorer-places">
+          <span class="place-chip" data-path="~/Downloads">📥 Downloads</span>
+          <span class="place-chip" data-path="~/Projects/stocks-engine">💼 stocks-engine</span>
+          <span class="place-chip" data-path="./data_cache">💾 data_cache</span>
+          <span class="place-chip" data-path="~">🏠 Home (~)</span>
+          <span class="place-chip" data-path="/">💻 Root (/)</span>
+        </div>
+
+        <!-- Navigation Bar -->
+        <div class="explorer-nav-bar">
+          <button id="btnNavUp" class="btn-secondary btn-sm" title="Go up to parent folder">⬆ Up</button>
+          <input type="text" id="explorerPathInput" class="explorer-path-input" spellcheck="false">
+          <button id="btnNavGo" class="btn-secondary btn-sm">Go</button>
+        </div>
+
+        <!-- Filter Box inside explorer -->
+        <div class="flex-between">
+          <input type="text" id="explorerSearchFilter" placeholder="Filter files or folders in current directory..." class="search-input" style="width: 100%; height: 32px; font-size: 0.76rem;">
+        </div>
+
+        <!-- List of directories and files -->
+        <div class="explorer-list-container" id="explorerItemsList">
+          <div class="empty-state">Loading folder contents...</div>
+        </div>
+
+        <!-- Selection Footer -->
+        <div class="explorer-footer">
+          <div class="explorer-selected-info">
+            <span style="color: var(--text-muted); font-size: 0.75rem;">Selected Path:</span>
+            <span id="selectedItemDisplay" class="explorer-selected-text">/home/adityas/Downloads</span>
+          </div>
+          <div class="flex-gap-8">
+            <button id="btnSelectCurrentDir" class="btn-secondary">Select Current Folder</button>
+            <button id="btnConfirmSelection" class="btn-run btn-run btn-md">Confirm Selection ⚡</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  <!-- Toast Notification Container (NOTIF-01) -->
+  <div id="toastContainer" class="toast-container" aria-live="polite"></div>
+
+  <!-- Prompt Modal Dialog (NOTIF-03) -->
+  <div id="promptModalBackdrop" class="prompt-modal-backdrop" aria-hidden="true">
+    <div class="prompt-modal" role="dialog" aria-modal="true" aria-labelledby="promptModalTitle">
+      <h3 id="promptModalTitle">Save Experiment Session</h3>
+      <p id="promptModalMessage">Enter a name for this experiment session:</p>
+      <input type="text" id="promptModalInput" class="form-control" autocomplete="off" />
+      <div class="prompt-modal-actions">
+        <button type="button" id="btnPromptCancel" class="btn-secondary">Cancel</button>
+        <button type="button" id="btnPromptConfirm" class="btn-run btn-run btn-md">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Command Palette Modal (CMD-01) -->
+  <div class="command-palette-backdrop" id="commandPaletteBackdrop" style="display: none;" aria-hidden="true">
+    <div class="command-palette-modal" role="dialog" aria-modal="true" aria-label="Command Palette">
+      <div class="command-palette-input-wrap">
+        <span class="cmd-icon">🔍</span>
+        <input type="text" id="commandPaletteInput" placeholder="Type a command, strategy, or lab (e.g. 'run', 'analytics', 'orb', 'wfo')..." autocomplete="off">
+        <span class="cmd-esc-hint">ESC</span>
+      </div>
+      <div class="command-palette-results" id="commandPaletteResults">
+        <!-- Dynamically populated commands and navigation items -->
+      </div>
+    </div>
+  </div>
 
   <!-- Daily Session Audit Modal -->
   <div id="teAuditModal" class="modal-backdrop" style="display: none;">
@@ -2373,6 +2858,7 @@
     </div>
   </div>
 
-  <script src="/static/js/dashboard.js?v=4.4"></script>
+  <script src="/static/js/dashboard.js?v={{ js_v or '4.2' }}"></script>
+  <script src="/static/js/trading_engine.js?v={{ js_v or '4.2' }}"></script>
 </body>
 </html>

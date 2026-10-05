@@ -2,27 +2,27 @@
 strategies/banknifty_options.py — BankNifty High-Beta Option Breakout Strategy.
 
 Institutional BankNifty Options Strategy:
-1. Operates on high-volatility BankNifty index (strike step: 100 points, lot size: 15).
+1. Operates on high-volatility BankNifty index (100 pt strike interval, point-in-time lot size).
 2. Establishes the 09:15 - 09:30 Opening Range Breakout (ORB) channel.
-3. Upon breakout with EMA ribbon (EMA 9 vs 21) & RSI momentum confirmation:
-   - Bullish breakout: Buys ATM Call Option (CE).
-   - Bearish breakdown: Buys ATM Put Option (PE).
-4. Employs BankNifty-specific risk brackets (30 pts SL, 2.0x target multiplier).
+3. Upon breakout above ORB High: Buys ATM Call Option (CE).
+4. Upon breakdown below ORB Low: Buys ATM Put Option (PE).
+5. Employs BankNifty risk brackets (30 pts SL, 2.0x target multiplier).
 """
 
 from typing import Dict, List, Any, Optional
 import pandas as pd
 
+from config import TRADING_START
+from data.instrument_master import InstrumentMaster
+from data.option_chain_loader import OptionChainLoader
+from engine.param_spec import ParamSpec
 from execution.order import OrderSide, InstrumentType
 from execution.portfolio import Portfolio
 from strategies.base_strategy import BaseStrategy
-from data.option_chain_loader import OptionChainLoader
-from indicators.indicators import calculate_ema, calculate_rsi
-from config import TRADING_START
 
 
 class BankNiftyOptionsStrategy(BaseStrategy):
-    """BankNifty High-Beta Option Breakout Strategy."""
+    """BankNifty High-Beta Option Breakout Strategy with dynamic lot and strike resolution."""
 
     def __init__(self, params: Optional[Dict[str, Any]] = None, option_loader: Optional[Any] = None):
         if isinstance(params, OptionChainLoader):
@@ -53,6 +53,15 @@ class BankNiftyOptionsStrategy(BaseStrategy):
         self.orb_established = False
         self.daily_bars: List[Dict[str, Any]] = []
         self.last_trade_time = ""
+        self.current_date = ""
+
+    @classmethod
+    def param_specs(cls) -> List[ParamSpec]:
+        return [
+            ParamSpec("orb_window_minutes", "int", default=15, min_val=5, max_val=30, step=5, description="ORB period minutes"),
+            ParamSpec("sl_points", "float", default=30.0, min_val=15.0, max_val=60.0, step=5.0, description="Stop loss points on option premium"),
+            ParamSpec("target_multiplier", "float", default=2.0, min_val=1.5, max_val=3.5, step=0.5, description="Target multiple"),
+        ]
 
     def on_session_start(self, date_str: str, portfolio: Portfolio, context: Dict[str, Any]):
         if context and "option_loader" in context and isinstance(context["option_loader"], OptionChainLoader):
@@ -62,6 +71,7 @@ class BankNiftyOptionsStrategy(BaseStrategy):
         self.orb_established = False
         self.daily_bars.clear()
         self.last_trade_time = ""
+        self.current_date = date_str
 
     def on_bar(
         self,
@@ -79,9 +89,6 @@ class BankNiftyOptionsStrategy(BaseStrategy):
         bn_ltp = float(bn_quote.get("close", bn_quote.get("ltp", 0.0)))
         bn_high = float(bn_quote.get("high", bn_ltp))
         bn_low = float(bn_quote.get("low", bn_ltp))
-
-        if bn_ltp <= 0:
-            return []
 
         self.daily_bars.append(bn_quote)
 
@@ -102,98 +109,89 @@ class BankNiftyOptionsStrategy(BaseStrategy):
         if time_part < TRADING_START or time_part >= "14:45":
             return []
 
-        # Cooldown: avoid duplicate trades in quick succession
         if self.last_trade_time and timestamp <= self.last_trade_time:
             return []
 
-        if len(self.daily_bars) < 15:
-            return []
-
-        closes = pd.Series([float(b.get("close", b.get("ltp", 0.0))) for b in self.daily_bars])
-        ema9 = calculate_ema(closes, 9).iloc[-1]
-        ema21 = calculate_ema(closes, 21).iloc[-1]
-        rsi = calculate_rsi(closes, 14).iloc[-1]
-
+        date_str = self.current_date or timestamp.split(" ")[0].replace("-", "_")
         signals = []
-        date_str = timestamp.split(" ")[0]
+
         step = float(self.params.get("strike_step", 100.0))
-        sl_points = float(self.params.get("sl_points", 30.0))
-        tgt_mult = float(self.params.get("target_multiplier", 2.0))
-        lot_size = int(self.params.get("lot_size", 15))
+        lot_size = self.params.get("lot_size")
+        if not lot_size:
+            lot_size = InstrumentMaster.get_lot_size(underlying, date_str, is_derivative=True)
 
-        # ── Bullish Breakout -> BUY ATM CE ───────────────────────────────────
-        bullish_orb = (self.orb_high is not None) and (bn_ltp > self.orb_high) and (ema9 > ema21) and (rsi >= 55)
-        bullish_trend = (time_part >= "13:00") and (bn_ltp > ema9 > ema21) and (rsi >= 60)
-
-        if bullish_orb or bullish_trend:
-            atm_contract = self.option_loader.get_atm_contract(
+        # Bullish Breakout -> Buy ATM CE
+        if bn_ltp > self.orb_high:
+            contract = self.option_loader.get_atm_contract(
                 date_str=date_str,
-                timestamp=timestamp,
+                timestamp=time_part,
                 option_type="CE",
                 underlying=underlying,
                 step=step
             )
-            if atm_contract and atm_contract.get("ltp", 0) > 30:
-                opt_ltp = atm_contract["ltp"]
-                opt_strike = atm_contract["strike_price"]
-                opt_symbol = f"{underlying}_{int(opt_strike)}_CE"
-                sl = round(max(5.0, opt_ltp - sl_points), 2)
-                tgt = round(opt_ltp + (sl_points * tgt_mult), 2)
+            if contract and contract.get("ltp", 0.0) > 10.0:
+                prem = contract["ltp"]
+                sl_pts = float(self.params.get("sl_points", 30.0))
+                tgt_pts = sl_pts * float(self.params.get("target_multiplier", 2.0))
+                sl_price = max(1.0, round(prem - sl_pts, 2))
+                tgt_price = round(prem + tgt_pts, 2)
 
+                contract_sym = f"OPT_{contract['security_id']}_{underlying}_{contract['strike_price']}_CE"
                 signals.append({
-                    "symbol": opt_symbol,
-                    "security_id": atm_contract.get("security_id", 0),
+                    "symbol": contract_sym,
+                    "security_id": contract["security_id"],
                     "side": OrderSide.BUY,
-                    "price": opt_ltp,
-                    "sl": sl,
-                    "target": tgt,
+                    "price": prem,
+                    "sl": sl_price,
+                    "target": tgt_price,
                     "score": 85,
-                    "instrument_type": InstrumentType.OPTION_CE,
                     "lot_size": lot_size,
+                    "instrument_type": InstrumentType.OPTION_CE,
                     "metadata": {
                         "underlying": underlying,
-                        "underlying_ltp": bn_ltp,
-                        "strike": opt_strike,
+                        "strike": contract["strike_price"],
                         "option_type": "CE",
-                        "strategy": self.name,
-                        "delta": atm_contract.get("delta", 0.5)
+                        "delta": contract.get("delta", 0.5),
+                        "iv": contract.get("iv", 18.0),
+                        "strategy": self.name
                     }
                 })
                 self.last_trade_time = timestamp
 
-        # ── Bearish Breakdown -> BUY ATM PE ───────────────────────────────────
-        elif (self.orb_low is not None) and (bn_ltp < self.orb_low) and (ema9 < ema21) and (rsi <= 45):
-            atm_contract = self.option_loader.get_atm_contract(
+        # Bearish Breakdown -> Buy ATM PE
+        elif bn_ltp < self.orb_low:
+            contract = self.option_loader.get_atm_contract(
                 date_str=date_str,
-                timestamp=timestamp,
+                timestamp=time_part,
                 option_type="PE",
                 underlying=underlying,
                 step=step
             )
-            if atm_contract and atm_contract.get("ltp", 0) > 30:
-                opt_ltp = atm_contract["ltp"]
-                opt_strike = atm_contract["strike_price"]
-                opt_symbol = f"{underlying}_{int(opt_strike)}_PE"
-                sl = round(max(5.0, opt_ltp - sl_points), 2)
-                tgt = round(opt_ltp + (sl_points * tgt_mult), 2)
+            if contract and contract.get("ltp", 0.0) > 10.0:
+                prem = contract["ltp"]
+                sl_pts = float(self.params.get("sl_points", 30.0))
+                tgt_pts = sl_pts * float(self.params.get("target_multiplier", 2.0))
+                sl_price = max(1.0, round(prem - sl_pts, 2))
+                tgt_price = round(prem + tgt_pts, 2)
 
+                contract_sym = f"OPT_{contract['security_id']}_{underlying}_{contract['strike_price']}_PE"
                 signals.append({
-                    "symbol": opt_symbol,
-                    "security_id": atm_contract.get("security_id", 0),
+                    "symbol": contract_sym,
+                    "security_id": contract["security_id"],
                     "side": OrderSide.BUY,
-                    "price": opt_ltp,
-                    "sl": sl,
-                    "target": tgt,
+                    "price": prem,
+                    "sl": sl_price,
+                    "target": tgt_price,
                     "score": 85,
-                    "instrument_type": InstrumentType.OPTION_PE,
                     "lot_size": lot_size,
+                    "instrument_type": InstrumentType.OPTION_PE,
                     "metadata": {
                         "underlying": underlying,
-                        "underlying_ltp": bn_ltp,
-                        "strike": opt_strike,
+                        "strike": contract["strike_price"],
                         "option_type": "PE",
-                        "strategy": self.name,
-                        "delta": atm_contract.get("delta", -0.5)
+                        "delta": contract.get("delta", -0.5),
+                        "iv": contract.get("iv", 18.0),
+                        "strategy": self.name
                     }
                 })
                 self.last_trade_time = timestamp
@@ -201,4 +199,8 @@ class BankNiftyOptionsStrategy(BaseStrategy):
         return signals
 
     def on_session_end(self, date_str: str, portfolio: Portfolio, context: Dict[str, Any]):
+        self.orb_high = None
+        self.orb_low = None
+        self.orb_established = False
         self.daily_bars.clear()
+        self.last_trade_time = ""

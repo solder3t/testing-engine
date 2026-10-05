@@ -61,13 +61,16 @@ class MultiDayRunner:
                     risk_pct_per_trade=self.risk_pct,
                     simulator=self.engine.simulator
                 )
+                import copy
+                strat_instance = copy.deepcopy(strategy)
                 return d_str, self.engine.run_session(
                     date_str=d_str,
-                    strategy=strategy,
+                    strategy=strat_instance,
                     symbols=symbols,
                     portfolio=p,
                     timeframe=timeframe
                 )
+
 
             max_workers = min(len(sorted_dates), 8)
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -77,31 +80,21 @@ class MultiDayRunner:
             parallel_results.sort(key=lambda x: x[0])
             for d, session_res in parallel_results:
                 day_trades = session_res["trades"]
-                for t in day_trades:
-                    if hasattr(t, "metadata") and isinstance(t.metadata, dict):
-                        if "date" not in t.metadata:
-                            t.metadata["date"] = d
                 all_closed_trades.extend(day_trades)
                 full_equity_curve.extend(session_res["equity_curve"])
 
                 m = session_res["metrics"]
-                start_cap = self.capital
-                end_cap = session_res["final_equity"]
-                ret_pct = round(((end_cap - start_cap) / start_cap) * 100, 2) if start_cap > 0 else 0.0
+                day_equity = session_res.get("final_equity", session_res.get("ending_equity", current_capital))
                 daily_summaries.append({
                     "date": d,
-                    "starting_equity": round(start_cap, 2),
-                    "ending_equity": round(end_cap, 2),
-                    "gross_pnl": round(m["gross_pnl"], 2),
-                    "charges": round(m["total_charges"], 2),
-                    "net_pnl": round(m["net_pnl"], 2),
-                    "pnl": round(m["net_pnl"], 2),
-                    "return_pct": ret_pct,
-                    "trades": m["total_trades"],
                     "trades_count": m["total_trades"],
-                    "win_rate": round(m["win_rate"], 2)
+                    "win_rate": m["win_rate"],
+                    "gross_pnl": m["gross_pnl"],
+                    "charges": m["total_charges"],
+                    "net_pnl": m["net_pnl"],
+                    "ending_equity": day_equity
                 })
-                current_capital = end_cap
+                current_capital = day_equity
 
             overall_metrics = calculate_performance_metrics(
                 trades=all_closed_trades,
@@ -121,16 +114,24 @@ class MultiDayRunner:
                 "equity_curve": full_equity_curve
             }
 
+        portfolio = Portfolio(
+            initial_capital=current_capital,
+            risk_pct_per_trade=self.risk_pct,
+            simulator=self.engine.simulator
+        )
+
         for d in sorted_dates:
             logger.info(f"Running backtest for session {d}...")
-            start_cap = current_capital if self.compound_capital else self.capital
+            # Reset daily P&L counter each session so intraday risk limits work correctly
+            portfolio.daily_pnl = 0.0
 
-            # Instantiate fresh portfolio for each session so trades and equity curve are isolated per day
-            portfolio = Portfolio(
-                initial_capital=start_cap,
-                risk_pct_per_trade=self.risk_pct,
-                simulator=self.engine.simulator
-            )
+            if not self.compound_capital:
+                # Reset portfolio per day
+                portfolio = Portfolio(
+                    initial_capital=self.capital,
+                    risk_pct_per_trade=self.risk_pct,
+                    simulator=self.engine.simulator
+                )
 
             session_res = self.engine.run_session(
                 date_str=d,
@@ -142,31 +143,22 @@ class MultiDayRunner:
 
             # Extract day results
             day_trades = session_res["trades"]
-            for t in day_trades:
-                if hasattr(t, "metadata") and isinstance(t.metadata, dict):
-                    if "date" not in t.metadata:
-                        t.metadata["date"] = d
             all_closed_trades.extend(day_trades)
             full_equity_curve.extend(session_res["equity_curve"])
 
+            day_equity = session_res.get("final_equity", session_res.get("ending_equity", current_capital))
             m = session_res["metrics"]
-            end_cap = session_res["final_equity"]
-            ret_pct = round(((end_cap - start_cap) / start_cap) * 100, 2) if start_cap > 0 else 0.0
             daily_summaries.append({
                 "date": d,
-                "starting_equity": round(start_cap, 2),
-                "ending_equity": round(end_cap, 2),
-                "gross_pnl": round(m["gross_pnl"], 2),
-                "charges": round(m["total_charges"], 2),
-                "net_pnl": round(m["net_pnl"], 2),
-                "pnl": round(m["net_pnl"], 2),
-                "return_pct": ret_pct,
-                "trades": m["total_trades"],
                 "trades_count": m["total_trades"],
-                "win_rate": round(m["win_rate"], 2)
+                "win_rate": m["win_rate"],
+                "gross_pnl": m["gross_pnl"],
+                "charges": m["total_charges"],
+                "net_pnl": m["net_pnl"],
+                "ending_equity": day_equity
             })
 
-            current_capital = end_cap
+            current_capital = day_equity
 
         # Aggregate metrics across the full multi-day period
         overall_metrics = calculate_performance_metrics(
@@ -226,7 +218,6 @@ class MultiDayRunner:
                     risk_pct_per_trade=self.risk_pct,
                     simulator=self.engine.simulator
                 )
-            start_cap = current_capital if self.compound_capital else self.capital
 
             session_res = self.engine.run_session(
                 date_str=d,
@@ -237,31 +228,21 @@ class MultiDayRunner:
             )
 
             day_trades = session_res["trades"]
-            for t in day_trades:
-                if hasattr(t, "metadata") and isinstance(t.metadata, dict):
-                    if "date" not in t.metadata:
-                        t.metadata["date"] = d
             all_closed_trades.extend(day_trades)
             full_equity_curve.extend(session_res["equity_curve"])
 
             m = session_res["metrics"]
-            end_cap = session_res["final_equity"]
-            ret_pct = round(((end_cap - start_cap) / start_cap) * 100, 2) if start_cap > 0 else 0.0
             summary = {
                 "date": d,
-                "starting_equity": round(start_cap, 2),
-                "ending_equity": round(end_cap, 2),
-                "gross_pnl": round(m["gross_pnl"], 2),
-                "charges": round(m["total_charges"], 2),
-                "net_pnl": round(m["net_pnl"], 2),
-                "pnl": round(m["net_pnl"], 2),
-                "return_pct": ret_pct,
-                "trades": m["total_trades"],
                 "trades_count": m["total_trades"],
-                "win_rate": round(m["win_rate"], 2)
+                "win_rate": m["win_rate"],
+                "gross_pnl": m["gross_pnl"],
+                "charges": m["total_charges"],
+                "net_pnl": m["net_pnl"],
+                "ending_equity": session_res["final_equity"]
             }
             daily_summaries.append(summary)
-            current_capital = end_cap
+            current_capital = session_res["final_equity"]
 
             # Yield progress event — dashboard renders a progress bar update
             yield {

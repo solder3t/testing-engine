@@ -187,3 +187,96 @@ def test_tabs_and_inspector_rendered(client):
     assert "kpiMaxLossStreak" in content
     assert "kpiBreakeven" in content
     assert "0W / 0L / 0BE" in content
+
+    # Mass Iteration Lab tab verification
+    assert "btnTabMassIteration" in content
+    assert "tabMassIteration" in content
+    assert "massStrategySelect" in content
+    assert "massSamplingMode" in content
+
+
+def test_api_strategies_catalog(client):
+    """Verify /api/strategies/catalog returns all 56 strategies with metadata."""
+    res = client.get("/api/strategies/catalog")
+    assert res.status_code == 200
+    data = res.get_json()
+    assert data["status"] == "success"
+    assert data["count"] == 56
+    assert len(data["strategies"]) == 56
+
+    strat_keys = set(s["key"] for s in data["strategies"])
+    assert "supertrend_multi_tf" in strat_keys
+    assert "options_flow_momentum" in strat_keys
+    assert "connors_rsi2_pullback" in strat_keys
+    assert "futures_vsa_climactic" in strat_keys
+
+
+def test_api_mass_optimize_and_sessions(client):
+    """Verify submitting a mass optimization job, polling status, and saving/retrieving sessions."""
+    # 1. Submit job
+    payload = {
+        "strategy_type": "supertrend",
+        "sampling_mode": "GRID",
+        "max_iterations": 2,
+        "parameter_grid": {"atr_period": [7, 14]},
+        "dates": ["2026_09_11"]
+    }
+    submit_res = client.post("/api/mass_optimize", json=payload)
+    assert submit_res.status_code == 200
+    sub_data = submit_res.get_json()
+    assert sub_data["status"] == "submitted"
+    job_id = sub_data["job_id"]
+    assert job_id
+
+    # 2. Check status
+    stat_res = client.get(f"/api/mass_optimize/status/{job_id}")
+    assert stat_res.status_code == 200
+    assert stat_res.get_json()["status"] == "success"
+
+    # 3. Test Sessions API
+    sess_list = client.get("/api/sessions")
+    assert sess_list.status_code == 200
+    assert sess_list.get_json()["status"] == "success"
+
+    # Save mock session
+    save_payload = {
+        "name": "Integration Test Session",
+        "spec": payload,
+        "results": {
+            "total_runs": 2,
+            "valid_runs": 2,
+            "errored_runs": 0,
+            "strategy_type": "supertrend",
+            "best_run": {"pnl_net": 5000.0, "sharpe_ratio": 2.1, "win_rate_pct": 60.0},
+            "ranked_results": [
+                {
+                    "run_id": 0,
+                    "instrument": "NIFTY",
+                    "parameters": {"atr_period": 7},
+                    "pnl_net": 5000.0,
+                    "sharpe_ratio": 2.1,
+                    "win_rate_pct": 60.0,
+                    "per_date_breakdown": {
+                        "2026_09_11": {"pnl_net": 5000.0, "win_rate_pct": 60.0}
+                    }
+                }
+            ]
+        }
+    }
+    save_res = client.post("/api/sessions/save", json=save_payload)
+    assert save_res.status_code == 200
+    session_id = save_res.get_json()["session_id"]
+    assert session_id
+
+    # Retrieve session
+    get_res = client.get(f"/api/sessions/{session_id}")
+    assert get_res.status_code == 200
+    assert get_res.get_json()["session"]["name"] == "Integration Test Session"
+
+    # Run analysis
+    analysis_res = client.get(f"/api/analysis/{session_id}")
+    assert analysis_res.status_code == 200
+    analysis = analysis_res.get_json()["analysis"]
+    assert "instrument_stats" in analysis
+    assert "date_stats" in analysis
+
