@@ -2217,14 +2217,91 @@ tbody tr.selected-row {
   display: flex;
   align-items: center;
   gap: 10px;
+/* ── Dynamic Parameter Sweep Builder & Lot Customization Styling ── */
+.sweep-builder-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.command-palette-item-category {
-  font-size: 0.7rem;
-  color: var(--text-muted);
-  font-family: 'JetBrains Mono', monospace;
-  text-transform: uppercase;
+.sweep-param-card {
+  background: rgba(13, 20, 36, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 8px 10px;
+  transition: border-color 0.15s ease;
 }
+
+.sweep-param-card.active-sweep {
+  border-color: rgba(0, 229, 255, 0.4);
+  background: rgba(0, 229, 255, 0.04);
+}
+
+.sweep-param-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.sweep-param-title {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sweep-input-mini {
+  height: 28px;
+  background: rgba(7, 11, 20, 0.9);
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  color: #fff;
+  padding: 0 6px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  width: 70px;
+}
+
+.sweep-param-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+
+.sweep-pill {
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.7rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.15s ease;
+}
+
+.sweep-pill.active {
+  background: rgba(0, 229, 255, 0.2);
+  border-color: var(--accent-cyan);
+  color: #fff;
+}
+
+.lot-info-badge {
+  background: rgba(0, 229, 255, 0.05);
+  border: 1px solid rgba(0, 229, 255, 0.2);
+  border-radius: 6px;
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
 
 
 

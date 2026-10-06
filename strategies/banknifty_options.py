@@ -120,13 +120,16 @@ class BankNiftyOptionsStrategy(BaseStrategy):
         if not lot_size:
             lot_size = InstrumentMaster.get_lot_size(underlying, date_str, is_derivative=True)
 
-        # Bullish Breakout -> Buy ATM CE
+        strike_mode = str(self.params.get("strike_mode", "ATM"))
+
+        # Bullish Breakout -> Buy ATM / Selected Strike CE
         if bn_ltp > self.orb_high:
-            contract = self.option_loader.get_atm_contract(
+            contract = self.option_loader.get_contract(
                 date_str=date_str,
                 timestamp=time_part,
                 option_type="CE",
                 underlying=underlying,
+                strike_mode=strike_mode,
                 step=step
             )
             if contract and contract.get("ltp", 0.0) > 10.0:
@@ -158,13 +161,14 @@ class BankNiftyOptionsStrategy(BaseStrategy):
                 })
                 self.last_trade_time = timestamp
 
-        # Bearish Breakdown -> Buy ATM PE
+        # Bearish Breakdown -> Buy ATM / Selected Strike PE
         elif bn_ltp < self.orb_low:
-            contract = self.option_loader.get_atm_contract(
+            contract = self.option_loader.get_contract(
                 date_str=date_str,
                 timestamp=time_part,
                 option_type="PE",
                 underlying=underlying,
+                strike_mode=strike_mode,
                 step=step
             )
             if contract and contract.get("ltp", 0.0) > 10.0:

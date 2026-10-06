@@ -29,6 +29,39 @@ if sys.platform == "win32":
         pass
 
 
+def _rank_key_func(obj_metric: str) -> Callable[[Dict[str, Any]], Tuple[float, float]]:
+    """Returns sorting key lambda based on user-selected objective metric."""
+    m = str(obj_metric or "sharpe_ratio").lower().strip()
+    if m in ("sharpe", "sharpe_ratio"):
+        return lambda x: (float(x.get("sharpe_ratio", 0.0)), float(x.get("pnl_net", 0.0)))
+    elif m in ("profit_factor", "pf"):
+        return lambda x: (float(x.get("profit_factor", 0.0)), float(x.get("sharpe_ratio", 0.0)))
+    elif m in ("win_rate", "win_rate_pct"):
+        return lambda x: (float(x.get("win_rate_pct", 0.0)), float(x.get("pnl_net", 0.0)))
+    elif m in ("max_drawdown", "max_drawdown_pct", "min_drawdown"):
+        return lambda x: (-abs(float(x.get("max_drawdown_pct", 100.0))), float(x.get("pnl_net", 0.0)))
+    else:  # default or net pnl
+        return lambda x: (float(x.get("pnl_net", 0.0)), float(x.get("sharpe_ratio", 0.0)))
+
+
+def _compute_tpe_score(res: Dict[str, Any], obj_metric: str) -> float:
+    """Computes single scalar score for Bayesian TPE optimization feedback."""
+    m = str(obj_metric or "sharpe_ratio").lower().strip()
+    if m in ("pnl", "pnl_net", "net_pnl"):
+        return float(res.get("pnl_net", 0.0))
+    elif m in ("profit_factor", "pf"):
+        return float(res.get("profit_factor", 0.0))
+    elif m in ("win_rate", "win_rate_pct"):
+        return float(res.get("win_rate_pct", 0.0))
+    elif m in ("max_drawdown", "max_drawdown_pct", "min_drawdown"):
+        return -abs(float(res.get("max_drawdown_pct", 100.0)))
+    else:
+        s = float(res.get("sharpe_ratio", 0.0))
+        if s == 0.0 and res.get("pnl_net", 0.0) != 0.0:
+            s = float(res.get("pnl_net", 0.0)) / 1000.0
+        return s
+
+
 def _execute_single_run_worker(args: tuple) -> Dict[str, Any]:
     """
     Module-level picklable worker function for multiprocessing.
@@ -316,12 +349,11 @@ class MassOptimizer:
                     batch_results = _run_batch_with_pool(batch_specs, workers)
 
                     tpe_feedback = []
+                    target_obj = original_spec.get("objective_metric") or original_spec.get("rank_by", "sharpe_ratio")
                     for res in batch_results:
                         all_results.append(res)
                         job.completed += 1
-                        score = float(res.get("sharpe_ratio", 0.0))
-                        if score == 0.0 and res.get("pnl_net", 0.0) != 0.0:
-                            score = float(res.get("pnl_net", 0.0)) / 1000.0
+                        score = _compute_tpe_score(res, target_obj)
                         tpe_feedback.append((res.get("parameters", {}), score))
 
                         try:
@@ -353,7 +385,8 @@ class MassOptimizer:
         wall_ms = round((time.perf_counter() - wall_start) * 1000, 2)
         valid = [r for r in all_results if "error" not in r]
         errored = [r for r in all_results if "error" in r]
-        valid.sort(key=lambda x: (x.get("pnl_net", 0.0), x.get("sharpe_ratio", 0.0)), reverse=True)
+        target_obj = original_spec.get("objective_metric") or original_spec.get("rank_by", "sharpe_ratio")
+        valid.sort(key=_rank_key_func(target_obj), reverse=True)
 
         job.results = {
             "job_id": job.job_id,
@@ -424,9 +457,10 @@ class MassOptimizer:
                     except queue.Full:
                         pass
 
-                # Retain top 50% based on Sharpe / Net PnL
+                # Retain top 50% based on user objective
                 valid_s1 = [r for r in stage1_results if "error" not in r]
-                valid_s1.sort(key=lambda x: (x.get("pnl_net", 0.0), x.get("sharpe_ratio", 0.0)), reverse=True)
+                target_obj = original_spec.get("objective_metric") or original_spec.get("rank_by", "sharpe_ratio")
+                valid_s1.sort(key=_rank_key_func(target_obj), reverse=True)
                 top_cutoff = max(1, len(valid_s1) // 2)
                 top_run_ids = set(r["run_id"] for r in valid_s1[:top_cutoff])
 
@@ -481,7 +515,8 @@ class MassOptimizer:
         wall_ms = round((time.perf_counter() - wall_start) * 1000, 2)
         valid = [r for r in all_results if "error" not in r]
         errored = [r for r in all_results if "error" in r]
-        valid.sort(key=lambda x: (x.get("pnl_net", 0.0), x.get("sharpe_ratio", 0.0)), reverse=True)
+        target_obj = original_spec.get("objective_metric") or original_spec.get("rank_by", "sharpe_ratio")
+        valid.sort(key=_rank_key_func(target_obj), reverse=True)
 
         job.results = {
             "job_id": job.job_id,

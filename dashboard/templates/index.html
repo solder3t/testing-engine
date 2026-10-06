@@ -147,31 +147,88 @@
                   </div>
                 </div>
                 <select id="strategySelect">
-                  <optgroup label="Trend Following & Momentum">
-                    <option value="equity">Equity Momentum (v4/v5)</option>
+                  <optgroup label="⚡ Options Suite (12 Strategies)">
+                    <option value="options_flow_momentum">Options Flow Momentum</option>
+                    <option value="pcr_extreme_reversal">PCR Extreme Reversal</option>
+                    <option value="iv_expansion_breakout">IV Expansion Breakout</option>
+                    <option value="straddle_premium_decay">Straddle Premium Decay</option>
+                    <option value="gamma_scalp_momentum">Gamma Scalp Momentum</option>
+                    <option value="theta_harvest_slope">Theta Harvest Slope</option>
+                    <option value="option_buyer_vwap_cross">Option Buyer VWAP Cross</option>
+                    <option value="expiry_pinning_magnet">Expiry Pinning Magnet</option>
+                    <option value="volatility_crush_reversion">Volatility Crush Reversion</option>
+                    <option value="max_pain_convergence">Max Pain Convergence</option>
+                    <option value="oi_buildup_trend">OI Buildup Trend</option>
+                    <option value="option_breakout_consolidation">Option Breakout Consolidation</option>
+                  </optgroup>
+                  <optgroup label="📈 Index Suite (13 Strategies)">
+                    <option value="orb_15min_breakout">ORB 15-Min Breakout</option>
+                    <option value="orb_30min_expansion">ORB 30-Min Expansion</option>
+                    <option value="cpr_pivot_reversal">CPR Pivot Reversal</option>
+                    <option value="camarilla_pivot_breakout">Camarilla Pivot Breakout</option>
+                    <option value="ttm_squeeze_pro">TTM Squeeze Pro</option>
+                    <option value="supertrend_multi_tf">Supertrend Multi-TF</option>
+                    <option value="ema_ribbon_alignment">EMA Ribbon Alignment</option>
+                    <option value="vwap_band_pinch">VWAP Band Pinch</option>
+                    <option value="gap_fill_fade">Gap Fill Fade</option>
+                    <option value="nifty_internals_breadth">Nifty Internals Breadth</option>
+                    <option value="heikin_ashi_trend_rider">Heikin Ashi Trend Rider</option>
+                    <option value="fii_dii_cash_momentum">FII/DII Cash Momentum</option>
+                    <option value="india_vix_divergence">India VIX Divergence</option>
+                  </optgroup>
+                  <optgroup label="🏢 Equities Suite (13 Strategies)">
+                    <option value="equity_momentum_rsi_ema">Equity Momentum RSI+EMA</option>
+                    <option value="vwap_institutional_bounce">VWAP Institutional Bounce</option>
+                    <option value="connors_rsi2_pullback">Connors RSI(2) Pullback</option>
+                    <option value="volume_price_action_breakout">Volume Price Action Breakout</option>
+                    <option value="donchian_channel_turtle">Donchian Channel Turtle</option>
+                    <option value="keltner_channel_momentum">Keltner Channel Momentum</option>
+                    <option value="stochastic_rsi_crossover">Stochastic RSI Crossover</option>
+                    <option value="macd_histogram_acceleration">MACD Histogram Acceleration</option>
+                    <option value="relative_strength_alpha">Relative Strength Alpha</option>
+                    <option value="hull_ma_direction_flip">Hull MA Direction Flip</option>
+                    <option value="ichimoku_cloud_breakout">Ichimoku Cloud Breakout</option>
+                    <option value="linear_regression_slope">Linear Regression Slope</option>
+                    <option value="bollinger_percent_b_reversal">Bollinger %B Reversal</option>
+                  </optgroup>
+                  <optgroup label="⚔️ Futures Suite (12 Strategies)">
+                    <option value="futures_vsa_climactic">Futures Volume Spread Analysis</option>
+                    <option value="order_flow_imbalance">Order Flow Imbalance</option>
+                    <option value="futures_basis_momentum">Futures Basis Arbitrage</option>
+                    <option value="vwap_value_area_poc">VWAP Value Area POC</option>
+                    <option value="atr_volatility_expansion">ATR Volatility Expansion</option>
+                    <option value="futures_oi_divergence">Futures OI Divergence</option>
+                    <option value="parabolic_sar_momentum">Parabolic SAR Momentum</option>
+                    <option value="multi_day_breakout">Multi-Day Breakout</option>
+                    <option value="futures_momentum_pinbar">Futures Momentum Pinbar</option>
+                    <option value="choppiness_breakout">Choppiness Breakout</option>
+                    <option value="futures_vwap_envelope_reversion">Futures VWAP Mean Reversion</option>
+                    <option value="futures_dual_thrust">Futures Dual Thrust</option>
+                  </optgroup>
+                  <optgroup label="🧠 AI & Macro Suite (6 Strategies)">
+                    <option value="ai_replay">Gemini AI Decision Replay</option>
+                    <option value="fii_flow_momentum">FII Flow Momentum</option>
+                    <option value="vol_regime">Volatility Regime Switcher</option>
+                    <option value="momentum_rsi">Momentum RSI Classic</option>
+                    <option value="vwap_reversion">VWAP Reversion Classic</option>
+                    <option value="options_flow">Options Flow Classic</option>
+                  </optgroup>
+                  <optgroup label="🔧 Classic Models & Multi-Engine">
+                    <option value="equity" selected>Equity Momentum (v4/v5)</option>
+                    <option value="trading_engine_v4">Trading Engine v4 (Institutional Multi-Engine)</option>
+                    <option value="orb">Opening Range Breakout (ORB 15-Min)</option>
                     <option value="supertrend">Supertrend Trend Follower (10, 3 + 50 EMA)</option>
+                    <option value="camarilla">Camarilla Floor Pivot Breakout (H4/L4)</option>
                     <option value="ema-ribbon">Triple EMA Ribbon Alignment (9/21/50)</option>
+                    <option value="bollinger-b">Bollinger %B Mean Reversion</option>
                     <option value="macd-accel">MACD Momentum Acceleration</option>
                     <option value="rsi-momentum">Dual EMA + RSI Momentum Filter</option>
-                    <option value="futures-trend">Nifty Index Futures Trend (VWAP+ATR)</option>
-                  </optgroup>
-                  <optgroup label="Breakout & Volatility">
-                    <option value="orb">Opening Range Breakout (ORB 15-Min)</option>
-                    <option value="camarilla">Camarilla Floor Pivot Breakout (H4/L4)</option>
-                    <option value="banknifty-options">BankNifty High-Beta Breakout (F&O 100-pt)</option>
-                    <option value="options">NIFTY Index Options Breakout</option>
-                  </optgroup>
-                  <optgroup label="Mean Reversion & Extremes">
-                    <option value="bollinger-b">Bollinger %B Mean Reversion</option>
-                    <option value="vwap-reversion">VWAP Mean Reversion (Bollinger/VWAP)</option>
-                    <option value="pcr-reversion">PCR Sentiment Reversion (F&O Contrarian)</option>
-                  </optgroup>
-                  <optgroup label="Options Premium & Non-Directional">
                     <option value="short-straddle">09:20 Short Straddle / Strangle (F&O Theta)</option>
+                    <option value="pcr-reversion">PCR Sentiment Reversion (F&O Contrarian)</option>
+                    <option value="banknifty-options">BankNifty High-Beta Breakout (F&O 100-pt)</option>
+                    <option value="futures-trend">Nifty Index Futures Trend (VWAP+ATR)</option>
                     <option value="max-pain">Expiry Max Pain Convergence (F&O Pinning)</option>
-                  </optgroup>
-                  <optgroup label="Machine Learning & AI">
-                    <option value="ai-replay">AI Decision Replay (Gemini Snapshots)</option>
+                    <option value="options">NIFTY Index Options Breakout</option>
                   </optgroup>
                 </select>
                 <div id="strategyCatalogMeta" class="strategy-meta-card mt-6" style="display: none;">
@@ -189,6 +246,43 @@
                   <option value="1min">1 Minute (Primary)</option>
                   <option value="5min">5 Minutes</option>
                   <option value="15min">15 Minutes</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Instrument & Option Selection Controls -->
+            <div class="form-row mb-8">
+              <div class="form-group flex-1">
+                <label for="instrumentTypeSelect">Instrument Type:</label>
+                <select id="instrumentTypeSelect">
+                  <option value="AUTO" selected>Auto-Detect (From Strategy)</option>
+                  <option value="EQUITY">Cash Equity (Shares)</option>
+                  <option value="INDEX">Index Spot (NIFTY/BANKNIFTY)</option>
+                  <option value="FUTURES">Futures Contract</option>
+                  <option value="OPTION_CE">Options Call (CE)</option>
+                  <option value="OPTION_PE">Options Put (PE)</option>
+                </select>
+              </div>
+              <div class="form-group flex-1" id="optionStrikeGroup" style="display: none;">
+                <label for="strikeModeSelect">Option Strike Selection:</label>
+                <select id="strikeModeSelect">
+                  <option value="ATM" selected>ATM (At-The-Money)</option>
+                  <option value="ITM1">ITM 1 (1 Strike In-The-Money)</option>
+                  <option value="ITM2">ITM 2 (2 Strikes In-The-Money)</option>
+                  <option value="ITM3">ITM 3 (3 Strikes In-The-Money)</option>
+                  <option value="OTM1">OTM 1 (1 Strike Out-of-The-Money)</option>
+                  <option value="OTM2">OTM 2 (2 Strikes Out-of-The-Money)</option>
+                  <option value="OTM3">OTM 3 (3 Strikes Out-of-The-Money)</option>
+                  <option value="DELTA_0.3">Delta ~0.30 (OTM Momentum)</option>
+                  <option value="DELTA_0.5">Delta ~0.50 (ATM Delta)</option>
+                </select>
+              </div>
+              <div class="form-group flex-1" id="optionExpiryGroup" style="display: none;">
+                <label for="expiryModeSelect">Contract Expiry:</label>
+                <select id="expiryModeSelect">
+                  <option value="NEAREST" selected>Current Weekly / Nearest</option>
+                  <option value="NEXT_WEEKLY">Next Weekly Expiry</option>
+                  <option value="MONTHLY">Monthly Expiry</option>
                 </select>
               </div>
             </div>
@@ -649,6 +743,41 @@
             <div class="form-group">
               <label for="trailingSlInput">Trailing SL Trigger (%):</label>
               <input type="number" id="trailingSlInput" value="1.0" step="0.1">
+            </div>
+
+            <!-- Position Sizing & Lot Size Customization Panel -->
+            <div class="form-row mt-10">
+              <div class="form-group flex-1">
+                <label for="sizingModeSelect">Position Sizing Mode:</label>
+                <select id="sizingModeSelect">
+                  <option value="risk_based" selected>Risk-Based (% Capital / Stop-Loss)</option>
+                  <option value="fixed_lots">Fixed Lots (Trade N Lots)</option>
+                  <option value="fixed_capital_pct">Fixed Capital % (Trade % Allocation)</option>
+                  <option value="fixed_qty">Fixed Quantity (Exact Shares/Units)</option>
+                </select>
+              </div>
+              <div class="form-group flex-1" id="fixedLotsGroup">
+                <label for="fixedLotsInput">Number of Lots:</label>
+                <input type="number" id="fixedLotsInput" value="1" min="1" max="100" step="1">
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group flex-1">
+                <label for="lotMultiplierInput">Lot Size Multiplier:</label>
+                <input type="number" id="lotMultiplierInput" value="1.0" min="0.1" max="20" step="0.5">
+                <small class="form-hint">Multiplies base lot (e.g. 2x = 50 Nifty)</small>
+              </div>
+              <div class="form-group flex-1">
+                <label for="customLotSizeInput">Custom Lot Size Override:</label>
+                <input type="number" id="customLotSizeInput" placeholder="Auto from Exchange" min="1" step="1">
+                <small class="form-hint">Blank = Point-in-Time exchange lot size</small>
+              </div>
+            </div>
+
+            <div id="lotSizeInfoPill" class="lot-info-badge mt-4 mb-4" style="background: rgba(0, 229, 255, 0.05); border: 1px solid rgba(0, 229, 255, 0.2); border-radius: 6px; padding: 6px 10px; display: flex; align-items: center; justify-content: space-between;">
+              <span class="badge badge-accent" style="font-size: 0.68rem; padding: 2px 6px;">LOT ENGINE</span>
+              <span id="lotInfoSummary" style="font-size: 0.74rem; font-family: 'JetBrains Mono', monospace; color: var(--accent-cyan);">Exchange Dynamic Lot Resolution Active</span>
             </div>
           </div><!-- /Card 2: Capital & Risk -->
 
@@ -1177,22 +1306,90 @@
           <div class="form-group">
             <label for="wfoStrategySelect">Strategy Model:</label>
             <select id="wfoStrategySelect">
-              <option value="orb">Opening Range Breakout (ORB)</option>
-              <option value="equity">Equity Momentum (v4/v5)</option>
-              <option value="supertrend">Supertrend Trend Follower</option>
-              <option value="camarilla">Camarilla Floor Pivot Breakout</option>
-              <option value="ema-ribbon">Triple EMA Ribbon Alignment</option>
-              <option value="bollinger-b">Bollinger %B Mean Reversion</option>
-              <option value="macd-accel">MACD Momentum Acceleration</option>
-              <option value="vwap-reversion">VWAP Mean Reversion</option>
-              <option value="rsi-momentum">Dual EMA + RSI Momentum</option>
-              <option value="options">NIFTY Options Breakout</option>
-              <option value="ai-replay">AI Decision Replay</option>
-              <option value="short-straddle">09:20 Short Straddle / Strangle</option>
-              <option value="pcr-reversion">PCR Sentiment Reversion</option>
-              <option value="banknifty-options">BankNifty High-Beta Breakout</option>
-              <option value="futures-trend">Nifty Futures Trend Follower</option>
-              <option value="max-pain">Expiry Max Pain Convergence</option>
+              <optgroup label="⚡ Options Suite (12 Strategies)">
+                <option value="options_flow_momentum">Options Flow Momentum</option>
+                <option value="pcr_extreme_reversal">PCR Extreme Reversal</option>
+                <option value="iv_expansion_breakout">IV Expansion Breakout</option>
+                <option value="straddle_premium_decay">Straddle Premium Decay</option>
+                <option value="gamma_scalp_momentum">Gamma Scalp Momentum</option>
+                <option value="theta_harvest_slope">Theta Harvest Slope</option>
+                <option value="option_buyer_vwap_cross">Option Buyer VWAP Cross</option>
+                <option value="expiry_pinning_magnet">Expiry Pinning Magnet</option>
+                <option value="volatility_crush_reversion">Volatility Crush Reversion</option>
+                <option value="max_pain_convergence">Max Pain Convergence</option>
+                <option value="oi_buildup_trend">OI Buildup Trend</option>
+                <option value="option_breakout_consolidation">Option Breakout Consolidation</option>
+              </optgroup>
+              <optgroup label="📈 Index Suite (13 Strategies)">
+                <option value="orb_15min_breakout">ORB 15-Min Breakout</option>
+                <option value="orb_30min_expansion">ORB 30-Min Expansion</option>
+                <option value="cpr_pivot_reversal">CPR Pivot Reversal</option>
+                <option value="camarilla_pivot_breakout">Camarilla Pivot Breakout</option>
+                <option value="ttm_squeeze_pro">TTM Squeeze Pro</option>
+                <option value="supertrend_multi_tf">Supertrend Multi-TF</option>
+                <option value="ema_ribbon_alignment">EMA Ribbon Alignment</option>
+                <option value="vwap_band_pinch">VWAP Band Pinch</option>
+                <option value="gap_fill_fade">Gap Fill Fade</option>
+                <option value="nifty_internals_breadth">Nifty Internals Breadth</option>
+                <option value="heikin_ashi_trend_rider">Heikin Ashi Trend Rider</option>
+                <option value="fii_dii_cash_momentum">FII/DII Cash Momentum</option>
+                <option value="india_vix_divergence">India VIX Divergence</option>
+              </optgroup>
+              <optgroup label="🏢 Equities Suite (13 Strategies)">
+                <option value="equity_momentum_rsi_ema">Equity Momentum RSI+EMA</option>
+                <option value="vwap_institutional_bounce">VWAP Institutional Bounce</option>
+                <option value="connors_rsi2_pullback">Connors RSI(2) Pullback</option>
+                <option value="volume_price_action_breakout">Volume Price Action Breakout</option>
+                <option value="donchian_channel_turtle">Donchian Channel Turtle</option>
+                <option value="keltner_channel_momentum">Keltner Channel Momentum</option>
+                <option value="stochastic_rsi_crossover">Stochastic RSI Crossover</option>
+                <option value="macd_histogram_acceleration">MACD Histogram Acceleration</option>
+                <option value="relative_strength_alpha">Relative Strength Alpha</option>
+                <option value="hull_ma_direction_flip">Hull MA Direction Flip</option>
+                <option value="ichimoku_cloud_breakout">Ichimoku Cloud Breakout</option>
+                <option value="linear_regression_slope">Linear Regression Slope</option>
+                <option value="bollinger_percent_b_reversal">Bollinger %B Reversal</option>
+              </optgroup>
+              <optgroup label="⚔️ Futures Suite (12 Strategies)">
+                <option value="futures_vsa_climactic">Futures Volume Spread Analysis</option>
+                <option value="order_flow_imbalance">Order Flow Imbalance</option>
+                <option value="futures_basis_momentum">Futures Basis Arbitrage</option>
+                <option value="vwap_value_area_poc">VWAP Value Area POC</option>
+                <option value="atr_volatility_expansion">ATR Volatility Expansion</option>
+                <option value="futures_oi_divergence">Futures OI Divergence</option>
+                <option value="parabolic_sar_momentum">Parabolic SAR Momentum</option>
+                <option value="multi_day_breakout">Multi-Day Breakout</option>
+                <option value="futures_momentum_pinbar">Futures Momentum Pinbar</option>
+                <option value="choppiness_breakout">Choppiness Breakout</option>
+                <option value="futures_vwap_envelope_reversion">Futures VWAP Mean Reversion</option>
+                <option value="futures_dual_thrust">Futures Dual Thrust</option>
+              </optgroup>
+              <optgroup label="🧠 AI & Macro Suite (6 Strategies)">
+                <option value="ai_replay">Gemini AI Decision Replay</option>
+                <option value="fii_flow_momentum">FII Flow Momentum</option>
+                <option value="vol_regime">Volatility Regime Switcher</option>
+                <option value="momentum_rsi">Momentum RSI Classic</option>
+                <option value="vwap_reversion">VWAP Reversion Classic</option>
+                <option value="options_flow">Options Flow Classic</option>
+              </optgroup>
+              <optgroup label="🔧 Classic Models & Multi-Engine">
+                <option value="orb" selected>Opening Range Breakout (ORB)</option>
+                <option value="equity">Equity Momentum (v4/v5)</option>
+                <option value="trading_engine_v4">Trading Engine v4 (Institutional Multi-Engine)</option>
+                <option value="supertrend">Supertrend Trend Follower</option>
+                <option value="camarilla">Camarilla Floor Pivot Breakout</option>
+                <option value="ema-ribbon">Triple EMA Ribbon Alignment</option>
+                <option value="bollinger-b">Bollinger %B Mean Reversion</option>
+                <option value="macd-accel">MACD Momentum Acceleration</option>
+                <option value="vwap-reversion">VWAP Mean Reversion</option>
+                <option value="rsi-momentum">Dual EMA + RSI Momentum</option>
+                <option value="options">NIFTY Options Breakout</option>
+                <option value="short-straddle">09:20 Short Straddle / Strangle</option>
+                <option value="pcr-reversion">PCR Sentiment Reversion</option>
+                <option value="banknifty-options">BankNifty High-Beta Breakout</option>
+                <option value="futures-trend">Nifty Futures Trend Follower</option>
+                <option value="max-pain">Expiry Max Pain Convergence</option>
+              </optgroup>
             </select>
           </div>
 
@@ -1521,7 +1718,30 @@
           </div>
 
           <div class="form-row">
-            <div class="form-group">
+            <div class="form-group flex-1">
+              <label for="massObjectiveMetric">Optimization Target Metric:</label>
+              <select id="massObjectiveMetric">
+                <option value="sharpe_ratio" selected>Sharpe Ratio (Institutional Alpha)</option>
+                <option value="pnl_net">Net Realized P&L (₹)</option>
+                <option value="profit_factor">Profit Factor (Gross Win/Loss)</option>
+                <option value="win_rate">Win Rate (%)</option>
+                <option value="min_drawdown">Minimum Drawdown %</option>
+              </select>
+            </div>
+            <div class="form-group flex-1">
+              <label for="massAssetType">Contract & Universe Mode:</label>
+              <select id="massAssetType">
+                <option value="INDEX_SPOT" selected>Index Spot (NIFTY/BANKNIFTY)</option>
+                <option value="FUTURES">Futures Contract</option>
+                <option value="OPTIONS_ATM">Options ATM (CE + PE)</option>
+                <option value="OPTIONS_MULTI_STRIKE">Options Multi-Strike (ATM &plusmn; 2 Strikes)</option>
+                <option value="EQUITY">Cash Equities Universe</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group flex-1">
               <label for="massSamplingMode">Sampling Method:</label>
               <select id="massSamplingMode">
                 <option value="LHS" selected>Latin Hypercube (LHS Stratified)</option>
@@ -1531,7 +1751,7 @@
                 <option value="RANDOM">Uniform Random</option>
               </select>
             </div>
-            <div class="form-group">
+            <div class="form-group flex-1">
               <label for="massMaxIter">Max Iterations:</label>
               <input type="number" id="massMaxIter" value="50" min="4" max="2000" step="10">
             </div>
@@ -1547,12 +1767,30 @@
             </p>
           </div>
 
+          <!-- Dynamic Visual Parameter Sweep Builder & JSON Switcher -->
           <div class="form-group">
-            <div class="flex-between mb-4">
-              <label for="massGridJson" class="mb-0">Parameter Grid / Search Space (JSON):</label>
-              <button id="btnMassResetGrid" class="link-btn">Reset to Strategy Defaults</button>
+            <div class="flex-between mb-6">
+              <div class="flex-align flex-gap-8">
+                <label class="mb-0 font-bold">Dynamic Parameter Sweep Space:</label>
+                <span id="massSweepCombosBadge" class="badge badge-accent" style="font-size: 0.7rem;">Estimating...</span>
+              </div>
+              <div class="flex-align flex-gap-6">
+                <button id="btnToggleMassJsonView" type="button" class="link-btn" title="Toggle between visual slider grid and raw JSON code view">{'}'} JSON View</button>
+                <span class="text-muted">|</span>
+                <button id="btnMassResetGrid" type="button" class="link-btn">Reset Defaults</button>
+              </div>
             </div>
-            <textarea id="massGridJson" rows="6" class="form-textarea-code"></textarea>
+
+            <!-- Visual Parameter Sweep Builder (Default) -->
+            <div id="massDynamicSweepBuilder" class="sweep-builder-container mb-8" style="background: rgba(0,0,0,0.2); border: 1px solid var(--panel-border); border-radius: 6px; padding: 10px; max-height: 320px; overflow-y: auto;">
+              <div class="empty-state text-xs">Loading parameter sweep space...</div>
+            </div>
+
+            <!-- Raw JSON Editor (Collapsible) -->
+            <div id="massJsonViewWrap" style="display: none;">
+              <textarea id="massGridJson" rows="6" class="form-textarea-code"></textarea>
+              <small class="form-hint">Changes in JSON synchronize bidirectionally with the visual sweep controls.</small>
+            </div>
           </div>
 
           <div class="form-group mt-14">

@@ -124,14 +124,17 @@ class NiftyOptionsStrategy(BaseStrategy):
         date_str = self.current_date or timestamp.split(" ")[0].replace("-", "_")
         signals = []
 
-        # Bullish Breakout -> Buy ATM CE
+        strike_mode = str(self.params.get("strike_mode", "ATM"))
+
+        # Bullish Breakout -> Buy ATM / Selected Strike CE
         if u_ltp > self.orb_high and ema9 > ema21 and 55 <= rsi <= 75:
             step = InstrumentMaster.get_strike_interval(underlying, u_ltp)
-            contract = self.option_loader.get_atm_contract(
+            contract = self.option_loader.get_contract(
                 date_str=date_str,
                 timestamp=time_part,
                 option_type="CE",
                 underlying=underlying,
+                strike_mode=strike_mode,
                 step=step
             )
             if contract and contract.get("ltp", 0.0) > 10.0:
@@ -167,14 +170,15 @@ class NiftyOptionsStrategy(BaseStrategy):
                 })
                 self.last_trade_time = timestamp
 
-        # Bearish Breakdown -> Buy ATM PE
+        # Bearish Breakdown -> Buy ATM / Selected Strike PE
         elif u_ltp < self.orb_low and ema9 < ema21 and 25 <= rsi <= 45:
             step = InstrumentMaster.get_strike_interval(underlying, u_ltp)
-            contract = self.option_loader.get_atm_contract(
+            contract = self.option_loader.get_contract(
                 date_str=date_str,
                 timestamp=time_part,
                 option_type="PE",
                 underlying=underlying,
+                strike_mode=strike_mode,
                 step=step
             )
             if contract and contract.get("ltp", 0.0) > 10.0:

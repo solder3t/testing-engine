@@ -359,6 +359,52 @@ function switchTab(tabId) {
 window.switchTab = switchTab;
 
 // ── Strategy Selector ────────────────────────────────────────────────────────
+// ── Dynamic Lot Size Info Badge (LOT-01) ──────────────────────────────────────
+function updateLotInfoBadge() {
+  const badge = document.getElementById("lotInfoSummary");
+  if (!badge) return;
+  const symInput = document.getElementById("symbolsInput");
+  const sym = symInput ? symInput.value.trim().toUpperCase() : "NIFTY";
+  const rootSym = sym.split(",")[0].trim() || "NIFTY";
+  const mult = parseFloat(document.getElementById("lotMultiplierInput")?.value) || 1.0;
+  const customOverride = parseInt(document.getElementById("customLotSizeInput")?.value);
+  const mode = document.getElementById("sizingModeSelect")?.value || "risk_based";
+  const fixedLots = parseInt(document.getElementById("fixedLotsInput")?.value) || 1;
+
+  let baseLot = 1;
+  if (customOverride && customOverride > 0) {
+    baseLot = customOverride;
+  } else if (rootSym.includes("NIFTY50") || rootSym === "NIFTY") {
+    baseLot = 25;
+  } else if (rootSym.includes("BANKNIFTY")) {
+    baseLot = 15;
+  } else if (rootSym.includes("FINNIFTY")) {
+    baseLot = 40;
+  } else if (rootSym.includes("MIDCPNIFTY")) {
+    baseLot = 75;
+  } else if (rootSym.includes("SENSEX")) {
+    baseLot = 10;
+  } else if (rootSym.includes("RELIANCE")) {
+    baseLot = 250;
+  } else if (rootSym.includes("TCS")) {
+    baseLot = 175;
+  } else if (rootSym.includes("INFY")) {
+    baseLot = 400;
+  } else if (rootSym.includes("HDFCBANK")) {
+    baseLot = 550;
+  }
+
+  const effectiveLot = Math.max(1, Math.round(baseLot * mult));
+  let modeLabel = "Risk-Based (% Capital)";
+  if (mode === "fixed_lots") modeLabel = `Fixed ${fixedLots} Lot(s) (${fixedLots * effectiveLot} units)`;
+  else if (mode === "fixed_capital_pct") modeLabel = "Capital % Allocation";
+  else if (mode === "fixed_qty") modeLabel = "Fixed Units";
+
+  badge.innerText = `${rootSym}: Base ${baseLot} × ${mult}x = ${effectiveLot} units/lot | Sizing: ${modeLabel}`;
+}
+window.updateLotInfoBadge = updateLotInfoBadge;
+
+// ── Strategy Selector & Instrument Options (INST-01 / DYN-01) ─────────────────
 function initStrategySelector() {
   const select = document.getElementById("strategySelect");
   const eqGroup = document.getElementById("equityParams");
@@ -379,66 +425,81 @@ function initStrategySelector() {
   const mpGroup = document.getElementById("maxPainParams");
   const dynGroup = document.getElementById("dynamicParamsBlock");
 
+  const instTypeSel = document.getElementById("instrumentTypeSelect");
+  const strikeGroup = document.getElementById("optionStrikeGroup");
+  const expiryGroup = document.getElementById("optionExpiryGroup");
+  const sizingSel = document.getElementById("sizingModeSelect");
+  const fixedLotsGroup = document.getElementById("fixedLotsGroup");
+
+  const isOptionContext = (stratVal, instVal) => {
+    if (instVal === "OPTION_CE" || instVal === "OPTION_PE") return true;
+    if (instVal === "EQUITY" || instVal === "INDEX" || instVal === "FUTURES") return false;
+    const s = String(stratVal || "").toLowerCase();
+    return s.includes("option") || s.includes("straddle") || s.includes("max_pain") || s.includes("max-pain") || s.includes("pcr") || s.includes("gamma") || s.includes("theta") || s.includes("iv_");
+  };
+
+  const updateOptionControls = () => {
+    const isOpt = isOptionContext(select.value, instTypeSel ? instTypeSel.value : "AUTO");
+    if (strikeGroup) strikeGroup.style.display = isOpt ? "block" : "none";
+    if (expiryGroup) expiryGroup.style.display = isOpt ? "block" : "none";
+  };
+
+  const updateSizingControls = () => {
+    if (fixedLotsGroup && sizingSel) {
+      fixedLotsGroup.style.display = (sizingSel.value === "fixed_lots") ? "block" : "none";
+    }
+    updateLotInfoBadge();
+  };
+
+  if (instTypeSel) instTypeSel.addEventListener("change", updateOptionControls);
+  if (sizingSel) sizingSel.addEventListener("change", updateSizingControls);
+  ["lotMultiplierInput", "customLotSizeInput", "fixedLotsInput", "symbolsInput"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener("input", updateLotInfoBadge);
+  });
+
   const hideAll = () => {
-    if (eqGroup) eqGroup.style.display = "none";
-    if (orbGroup) orbGroup.style.display = "none";
-    if (stGroup) stGroup.style.display = "none";
-    if (camGroup) camGroup.style.display = "none";
-    if (ribbonGroup) ribbonGroup.style.display = "none";
-    if (bbBandsGroup) bbBandsGroup.style.display = "none";
-    if (macdGroup) macdGroup.style.display = "none";
-    if (vwapGroup) vwapGroup.style.display = "none";
-    if (rsiGroup) rsiGroup.style.display = "none";
-    if (optGroup) optGroup.style.display = "none";
-    if (aiGroup) aiGroup.style.display = "none";
-    if (straddleGroup) straddleGroup.style.display = "none";
-    if (pcrGroup) pcrGroup.style.display = "none";
-    if (bnGroup) bnGroup.style.display = "none";
-    if (futGroup) futGroup.style.display = "none";
-    if (mpGroup) mpGroup.style.display = "none";
-    if (dynGroup) dynGroup.style.display = "none";
+    [eqGroup, orbGroup, stGroup, camGroup, ribbonGroup, bbBandsGroup, macdGroup, vwapGroup,
+     rsiGroup, optGroup, aiGroup, straddleGroup, pcrGroup, bnGroup, futGroup, mpGroup, dynGroup].forEach(g => {
+      if (g) g.style.display = "none";
+    });
   };
 
   select.addEventListener("change", () => {
     hideAll();
     const val = select.value;
-    if (val === "equity" && eqGroup) {
-      eqGroup.style.display = "block";
-    } else if (val === "orb" && orbGroup) {
-      orbGroup.style.display = "block";
-    } else if (val === "supertrend" && stGroup) {
-      stGroup.style.display = "block";
-    } else if (val === "camarilla" && camGroup) {
-      camGroup.style.display = "block";
-    } else if (val === "ema-ribbon" && ribbonGroup) {
-      ribbonGroup.style.display = "block";
-    } else if (val === "bollinger-b" && bbBandsGroup) {
-      bbBandsGroup.style.display = "block";
-    } else if (val === "macd-accel" && macdGroup) {
-      macdGroup.style.display = "block";
-    } else if (val === "vwap-reversion" && vwapGroup) {
-      vwapGroup.style.display = "block";
-    } else if (val === "rsi-momentum" && rsiGroup) {
-      rsiGroup.style.display = "block";
-    } else if (val === "options" && optGroup) {
-      optGroup.style.display = "block";
-    } else if (val === "ai-replay" && aiGroup) {
-      aiGroup.style.display = "block";
-    } else if (val === "short-straddle" && straddleGroup) {
-      straddleGroup.style.display = "block";
-    } else if (val === "pcr-reversion" && pcrGroup) {
-      pcrGroup.style.display = "block";
-    } else if (val === "banknifty-options" && bnGroup) {
-      bnGroup.style.display = "block";
-    } else if (val === "futures-trend" && futGroup) {
-      futGroup.style.display = "block";
-    } else if (val === "max-pain" && mpGroup) {
-      mpGroup.style.display = "block";
+    updateOptionControls();
+    updateLotInfoBadge();
+
+    const staticMap = {
+      "equity": eqGroup,
+      "orb": orbGroup,
+      "supertrend": stGroup,
+      "camarilla": camGroup,
+      "ema-ribbon": ribbonGroup,
+      "bollinger-b": bbBandsGroup,
+      "macd-accel": macdGroup,
+      "vwap-reversion": vwapGroup,
+      "rsi-momentum": rsiGroup,
+      "options": optGroup,
+      "ai-replay": aiGroup,
+      "short-straddle": straddleGroup,
+      "pcr-reversion": pcrGroup,
+      "banknifty-options": bnGroup,
+      "futures-trend": futGroup,
+      "max-pain": mpGroup
+    };
+
+    if (staticMap[val] && staticMap[val] !== null) {
+      staticMap[val].style.display = "block";
     } else if (dynGroup) {
       renderDynamicParams(val);
       dynGroup.style.display = "block";
     }
   });
+
+  updateOptionControls();
+  updateSizingControls();
 }
 
 // ── Directory & Archive Scanner ──────────────────────────────────────────────
@@ -781,6 +842,15 @@ async function runBacktest() {
     const trailingSl = (parseFloat(document.getElementById("trailingSlInput").value) || 1.0) / 100.0;
     const archiveDir = dirInput ? dirInput.value.trim() : "";
 
+  const instType = document.getElementById("instrumentTypeSelect") ? document.getElementById("instrumentTypeSelect").value : "EQUITY";
+  const strikeMode = document.getElementById("strikeModeSelect") ? document.getElementById("strikeModeSelect").value : "ATM";
+  const expiryMode = document.getElementById("expiryModeSelect") ? document.getElementById("expiryModeSelect").value : "CURRENT_WEEKLY";
+
+  const sizingMode = document.getElementById("sizingModeSelect") ? document.getElementById("sizingModeSelect").value : "risk_based";
+  const fixedLots = parseInt(document.getElementById("fixedLotsInput")?.value) || 1;
+  const lotMultiplier = parseFloat(document.getElementById("lotMultiplierInput")?.value) || 1.0;
+  const customLotSize = document.getElementById("customLotSizeInput")?.value ? parseInt(document.getElementById("customLotSizeInput").value) : null;
+
   const payload = {
     archive_dir: archiveDir,
     dates: selectedDates,
@@ -788,7 +858,22 @@ async function runBacktest() {
     timeframe: tf,
     capital: capital,
     risk_pct: maxLoss,
-    trailing_sl_pct: trailingSl
+    trailing_sl_pct: trailingSl,
+    instrument_type: instType,
+    strike_mode: strikeMode,
+    expiry_mode: expiryMode,
+    sizing_mode: sizingMode,
+    fixed_lots: fixedLots,
+    lot_multiplier: lotMultiplier,
+    custom_lot_size: customLotSize,
+    portfolio_config: {
+      sizing_mode: sizingMode,
+      fixed_lots: fixedLots,
+      lot_multiplier: lotMultiplier,
+      custom_lot_size: customLotSize,
+      capital: capital,
+      risk_pct: maxLoss
+    }
   };
 
   // Strategy specific parameters
@@ -888,7 +973,15 @@ async function runBacktest() {
   const dynInputs = document.querySelectorAll("#dynamicParamsGrid [data-param-key]");
   dynInputs.forEach(inp => {
     const key = inp.getAttribute("data-param-key");
-    const val = inp.type === "number" ? parseFloat(inp.value) : inp.value;
+    let val;
+    if (inp.type === "checkbox") {
+      val = inp.checked;
+    } else if (inp.type === "number") {
+      val = parseFloat(inp.value);
+      if (isNaN(val)) val = 0;
+    } else {
+      val = inp.value;
+    }
     payload[key] = val;
   });
   if (!payload.symbols) {
@@ -2785,31 +2878,222 @@ let currentMassResults = null;
 function initMassIterationLab() {
   const stratSel = document.getElementById("massStrategySelect");
   const gridText = document.getElementById("massGridJson");
+  const builderContainer = document.getElementById("massDynamicSweepBuilder");
+  const jsonWrap = document.getElementById("massJsonViewWrap");
+  const btnToggleJson = document.getElementById("btnToggleMassJsonView");
   const btnReset = document.getElementById("btnMassResetGrid");
   const btnLaunch = document.getElementById("btnLaunchMass");
   const btnCancel = document.getElementById("btnCancelMass");
   const btnSave = document.getElementById("btnSaveMassSession");
   const btnRefresh = document.getElementById("btnRefreshSessions");
+  const samplingSel = document.getElementById("massSamplingMode");
+  const maxIterInp = document.getElementById("massMaxIter");
 
   if (!stratSel) return;
+
+  function updateMassSweepBadge(grid) {
+    const badge = document.getElementById("massSweepCombosBadge");
+    if (!badge) return;
+    const keys = Object.keys(grid || {});
+    if (keys.length === 0) {
+      badge.innerText = "0 Combos";
+      return;
+    }
+    let totalCombos = 1;
+    keys.forEach(k => {
+      const len = Array.isArray(grid[k]) ? grid[k].length : 1;
+      totalCombos *= Math.max(1, len);
+    });
+    const sampling = samplingSel ? samplingSel.value : "LHS";
+    const maxIter = parseInt(maxIterInp ? maxIterInp.value : 50) || 50;
+
+    if (sampling === "GRID") {
+      badge.innerText = `${totalCombos.toLocaleString()} Cartesian Combos`;
+      badge.style.color = totalCombos > 500 ? "#f6ad55" : "var(--accent-cyan)";
+    } else {
+      badge.innerText = `${totalCombos.toLocaleString()} Grid Space (${maxIter} ${sampling} Samples)`;
+      badge.style.color = "var(--accent-cyan)";
+    }
+  }
+
+  function syncVisualGridToJson() {
+    if (!builderContainer || !gridText) return;
+    const activeCards = builderContainer.querySelectorAll(".sweep-param-card.active-sweep");
+    const grid = {};
+    activeCards.forEach(card => {
+      const key = card.getAttribute("data-param-key");
+      const valInput = card.querySelector(".sweep-values-input");
+      if (!key || !valInput) return;
+      const parsedVals = valInput.value.split(",")
+        .map(s => s.trim())
+        .filter(Boolean)
+        .map(s => {
+          const n = Number(s);
+          return isNaN(n) ? s : n;
+        });
+      if (parsedVals.length > 0) {
+        grid[key] = parsedVals;
+      }
+    });
+    gridText.value = JSON.stringify(grid, null, 2);
+    updateMassSweepBadge(grid);
+  }
+
+  function renderMassDynamicSweepCards(gridObj) {
+    if (!builderContainer) return;
+    const keys = Object.keys(gridObj || {});
+    if (keys.length === 0) {
+      builderContainer.innerHTML = '<div class="empty-state text-xs">No parameters configured for sweep.</div>';
+      updateMassSweepBadge({});
+      return;
+    }
+
+    builderContainer.innerHTML = keys.map(k => {
+      const vals = Array.isArray(gridObj[k]) ? gridObj[k] : [gridObj[k]];
+      const isNumVals = vals.every(v => typeof v === "number");
+      let minVal = "";
+      let maxVal = "";
+      let stepVal = "";
+      if (isNumVals && vals.length > 0) {
+        minVal = Math.min(...vals);
+        maxVal = Math.max(...vals);
+        stepVal = vals.length > 1 ? Math.round((vals[1] - vals[0]) * 100) / 100 : (String(minVal).includes(".") ? 0.1 : 1);
+      }
+
+      return `
+        <div class="sweep-param-card active-sweep" data-param-key="${k}">
+          <div class="sweep-param-header">
+            <div class="sweep-param-title">
+              <input type="checkbox" class="sweep-param-toggle" checked style="cursor: pointer; width: 14px; height: 14px;" title="Include parameter in sweep">
+              <span>${k}</span>
+            </div>
+            <span class="sweep-count-badge badge badge-accent" style="font-size: 0.68rem; font-family: monospace;">${vals.length} values</span>
+          </div>
+          <div class="sweep-param-controls mb-4">
+            <span style="font-size: 0.72rem; color: var(--text-muted); min-width: 46px;">Values:</span>
+            <input type="text" class="form-control sweep-values-input flex-1" style="font-family: monospace; font-size: 0.74rem; height: 26px; padding: 2px 6px;" value="${vals.join(', ')}">
+          </div>
+          <div class="sweep-range-row flex-align flex-gap-6" style="font-size: 0.7rem; color: var(--text-muted);">
+            <span>Quick Range:</span>
+            <input type="number" class="sweep-input-mini sweep-gen-min" placeholder="min" value="${minVal}">
+            <input type="number" class="sweep-input-mini sweep-gen-max" placeholder="max" value="${maxVal}">
+            <input type="number" class="sweep-input-mini sweep-gen-step" placeholder="step" value="${stepVal}">
+            <button type="button" class="btn-xs btn-gen-range" style="background: rgba(0, 229, 255, 0.15); border: 1px solid var(--accent-cyan); color: #fff; border-radius: 4px; padding: 2px 8px; cursor: pointer;">Generate</button>
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    // Wire listeners on cards
+    builderContainer.querySelectorAll(".sweep-param-card").forEach(card => {
+      const valInput = card.querySelector(".sweep-values-input");
+      const toggle = card.querySelector(".sweep-param-toggle");
+      const badge = card.querySelector(".sweep-count-badge");
+      const btnGen = card.querySelector(".btn-gen-range");
+
+      if (valInput) {
+        valInput.addEventListener("input", () => {
+          const count = valInput.value.split(",").map(s => s.trim()).filter(Boolean).length;
+          if (badge) badge.innerText = `${count} values`;
+          syncVisualGridToJson();
+        });
+      }
+
+      if (toggle) {
+        toggle.addEventListener("change", () => {
+          if (toggle.checked) {
+            card.classList.add("active-sweep");
+            if (valInput) valInput.disabled = false;
+            const count = valInput.value.split(",").map(s => s.trim()).filter(Boolean).length;
+            if (badge) badge.innerText = `${count} values`;
+          } else {
+            card.classList.remove("active-sweep");
+            if (valInput) valInput.disabled = true;
+            if (badge) badge.innerText = "Inactive";
+          }
+          syncVisualGridToJson();
+        });
+      }
+
+      if (btnGen) {
+        btnGen.addEventListener("click", () => {
+          const min = parseFloat(card.querySelector(".sweep-gen-min").value);
+          const max = parseFloat(card.querySelector(".sweep-gen-max").value);
+          const step = parseFloat(card.querySelector(".sweep-gen-step").value) || 1;
+          if (!isNaN(min) && !isNaN(max) && step > 0 && max >= min) {
+            const newVals = [];
+            for (let v = min; v <= max + (step * 0.001); v += step) {
+              newVals.push(Math.round(v * 1000) / 1000);
+            }
+            if (valInput) {
+              valInput.value = newVals.join(", ");
+              if (badge) badge.innerText = `${newVals.length} values`;
+            }
+            syncVisualGridToJson();
+          }
+        });
+      }
+    });
+
+    updateMassSweepBadge(gridObj);
+  }
 
   async function updateDefaultGrid() {
     const strat = stratSel.value;
     try {
-      const resp = await fetch(`/api/strategy_params?strategy=${strat}`);
+      const resp = await fetch(`/api/strategy_params?strategy=${encodeURIComponent(strat)}`);
       if (resp.ok) {
         const data = await resp.json();
-        if (data.default_grid) {
+        if (data.default_grid && Object.keys(data.default_grid).length > 0) {
           gridText.value = JSON.stringify(data.default_grid, null, 2);
+          renderMassDynamicSweepCards(data.default_grid);
           return;
         }
       }
     } catch (e) {}
-    gridText.value = JSON.stringify({ "sl_pts": [10.0, 15.0, 20.0], "target_pts": [20.0, 30.0, 40.0] }, null, 2);
+    const fallbackGrid = { "sl_pts": [10.0, 15.0, 20.0], "target_pts": [20.0, 30.0, 40.0] };
+    gridText.value = JSON.stringify(fallbackGrid, null, 2);
+    renderMassDynamicSweepCards(fallbackGrid);
   }
 
   stratSel.addEventListener("change", updateDefaultGrid);
   if (btnReset) btnReset.addEventListener("click", updateDefaultGrid);
+  if (samplingSel) samplingSel.addEventListener("change", () => {
+    try { updateMassSweepBadge(JSON.parse(gridText.value)); } catch(e) {}
+  });
+  if (maxIterInp) maxIterInp.addEventListener("input", () => {
+    try { updateMassSweepBadge(JSON.parse(gridText.value)); } catch(e) {}
+  });
+
+  if (gridText) {
+    gridText.addEventListener("input", () => {
+      try {
+        const parsed = JSON.parse(gridText.value);
+        updateMassSweepBadge(parsed);
+      } catch (e) {}
+    });
+  }
+
+  if (btnToggleJson && jsonWrap && builderContainer) {
+    btnToggleJson.addEventListener("click", () => {
+      const isJsonVisible = jsonWrap.style.display !== "none";
+      if (isJsonVisible) {
+        jsonWrap.style.display = "none";
+        builderContainer.style.display = "block";
+        btnToggleJson.innerText = "{ } JSON View";
+        try {
+          const parsed = JSON.parse(gridText.value);
+          renderMassDynamicSweepCards(parsed);
+        } catch (e) {}
+      } else {
+        syncVisualGridToJson();
+        builderContainer.style.display = "none";
+        jsonWrap.style.display = "block";
+        btnToggleJson.innerText = "🎛️ Visual View";
+      }
+    });
+  }
+
   updateDefaultGrid();
 
   if (btnLaunch) btnLaunch.addEventListener("click", launchMassOptimization);
@@ -2851,6 +3135,8 @@ async function launchMassOptimization() {
   const maxIter = parseInt(document.getElementById("massMaxIter").value) || 50;
   const earlyPruning = document.getElementById("massEarlyPruning") ? document.getElementById("massEarlyPruning").checked : false;
   const gridText = document.getElementById("massGridJson").value;
+  const objectiveMetric = document.getElementById("massObjectiveMetric") ? document.getElementById("massObjectiveMetric").value : "sharpe_ratio";
+  const assetType = document.getElementById("massAssetType") ? document.getElementById("massAssetType").value : "INDEX_SPOT";
 
   let paramGrid = {};
   try {
@@ -2864,14 +3150,37 @@ async function launchMassOptimization() {
   const selectedDates = (typeof getSelectedDates === "function") ? getSelectedDates() : [];
   const dates = selectedDates.length > 0 ? selectedDates : ["2026_09_11"];
 
+  // Instrument universe definition
+  let instruments = [];
+  if (assetType === "INDEX_SPOT") {
+    instruments = [{ asset_type: "INDEX", symbol: "NIFTY", trade_as: "SPOT" }];
+  } else if (assetType === "FUTURES") {
+    instruments = [{ asset_type: "FUTURES", symbol: "NIFTY", trade_as: "FUTURES" }];
+  } else if (assetType === "OPTIONS_ATM") {
+    instruments = [{ asset_type: "INDEX", symbol: "NIFTY", trade_as: "OPTION", include_atm: true, itm_count: 0, otm_count: 0, expiry_mode: "NEAREST" }];
+  } else if (assetType === "OPTIONS_MULTI_STRIKE") {
+    instruments = [{ asset_type: "INDEX", symbol: "NIFTY", trade_as: "OPTION", include_atm: true, itm_count: 2, otm_count: 2, expiry_mode: "NEAREST" }];
+  } else if (assetType === "EQUITY") {
+    instruments = [
+      { asset_type: "EQUITY", symbol: "RELIANCE" },
+      { asset_type: "EQUITY", symbol: "HDFCBANK" },
+      { asset_type: "EQUITY", symbol: "INFY" },
+      { asset_type: "EQUITY", symbol: "TCS" }
+    ];
+  } else {
+    instruments = [{ asset_type: "INDEX", symbol: "NIFTY" }];
+  }
+
   const payload = {
     strategy_type: strat,
     sampling_mode: sampling,
     max_iterations: maxIter,
     early_pruning: earlyPruning,
     parameter_grid: paramGrid,
+    objective_metric: objectiveMetric,
+    rank_by: objectiveMetric,
     dates: dates,
-    instruments: [{ asset_type: "INDEX", symbol: "NIFTY" }]
+    instruments: instruments
   };
 
   const btnLaunch = document.getElementById("btnLaunchMass");
@@ -4047,18 +4356,69 @@ async function renderDynamicParams(strategyKey) {
       const key = p.name || p.key || p.id;
       const label = p.label || key.replace(/_/g, " ").toUpperCase();
       const val = p.default !== undefined ? p.default : (p.value !== undefined ? p.value : "");
-      const isNum = typeof val === "number" || p.type === "number";
+      const isBool = p.type === "bool" || typeof val === "boolean";
+      const hasChoices = (p.choices && Array.isArray(p.choices) && p.choices.length > 0) || p.type === "choice";
+      const isNum = !isBool && !hasChoices && (typeof val === "number" || p.type === "number" || p.type === "int" || p.type === "float");
       const step = (p.step || (isNum ? (String(val).includes(".") ? "0.1" : "1") : undefined));
+      const descHint = p.description ? `<small class="text-muted block text-xs" style="margin-top: 2px;">${p.description}</small>` : '';
+
+      if (isBool) {
+        return `
+          <div class="dynamic-param-field form-group" style="padding-top: 18px;">
+            <div class="flex-align flex-gap-8">
+              <input type="checkbox"
+                     id="dynParam_${key}"
+                     data-param-key="${key}"
+                     ${Boolean(val) ? 'checked' : ''}
+                     style="width: 16px; height: 16px; cursor: pointer;">
+              <label for="dynParam_${key}" style="margin-bottom: 0; cursor: pointer; font-weight: 500;">${label}</label>
+            </div>
+            ${descHint}
+          </div>
+        `;
+      }
+
+      if (hasChoices) {
+        const opts = (p.choices || []).map(c => `<option value="${c}" ${String(c) === String(val) ? 'selected' : ''}>${c}</option>`).join("");
+        return `
+          <div class="dynamic-param-field form-group">
+            <label for="dynParam_${key}">${label}:</label>
+            <select id="dynParam_${key}" data-param-key="${key}" class="form-control">
+              ${opts}
+            </select>
+            ${descHint}
+          </div>
+        `;
+      }
+
+      if (isNum) {
+        const minAttr = (p.min !== undefined && p.min !== null) ? `min="${p.min}"` : '';
+        const maxAttr = (p.max !== undefined && p.max !== null) ? `max="${p.max}"` : '';
+        return `
+          <div class="dynamic-param-field form-group">
+            <label for="dynParam_${key}">${label}:</label>
+            <input type="number"
+                   id="dynParam_${key}"
+                   data-param-key="${key}"
+                   value="${val}"
+                   ${minAttr}
+                   ${maxAttr}
+                   ${step ? `step="${step}"` : ''}
+                   class="form-control">
+            ${descHint}
+          </div>
+        `;
+      }
 
       return `
         <div class="dynamic-param-field form-group">
           <label for="dynParam_${key}">${label}:</label>
-          <input type="${isNum ? 'number' : 'text'}"
+          <input type="text"
                  id="dynParam_${key}"
                  data-param-key="${key}"
                  value="${val}"
-                 ${step ? `step="${step}"` : ''}
                  class="form-control">
+          ${descHint}
         </div>
       `;
     }).join("");

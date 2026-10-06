@@ -25,7 +25,8 @@ class MultiDayRunner:
         risk_pct: float = DEFAULT_RISK_PCT_PER_TRADE,
         compound_capital: bool = True,
         source_dir: Optional[str] = None,
-        parallel: bool = False
+        parallel: bool = False,
+        portfolio_config: Optional[Dict[str, Any]] = None
     ):
         self.source_dir = source_dir
         self.engine = engine or BacktestEngine(capital=capital, risk_pct=risk_pct, source_dir=source_dir)
@@ -33,6 +34,21 @@ class MultiDayRunner:
         self.risk_pct = risk_pct
         self.compound_capital = compound_capital
         self.parallel = parallel
+        self.portfolio_config = portfolio_config or {}
+
+    def _create_portfolio(self, capital: float) -> Portfolio:
+        cfg = self.portfolio_config or {}
+        return Portfolio(
+            initial_capital=capital,
+            risk_pct_per_trade=self.risk_pct,
+            simulator=self.engine.simulator,
+            sizing_mode=cfg.get("sizing_mode", "risk_based"),
+            fixed_lots=cfg.get("fixed_lots", 1),
+            lot_multiplier=cfg.get("lot_multiplier", 1.0),
+            custom_lot_size=cfg.get("custom_lot_size"),
+            fixed_qty=cfg.get("fixed_qty", 0),
+            capital_pct=cfg.get("capital_pct", 0.10),
+        )
 
     def run(
         self,
@@ -56,11 +72,7 @@ class MultiDayRunner:
             from concurrent.futures import ThreadPoolExecutor
 
             def _run_single_day(d_str: str):
-                p = Portfolio(
-                    initial_capital=self.capital,
-                    risk_pct_per_trade=self.risk_pct,
-                    simulator=self.engine.simulator
-                )
+                p = self._create_portfolio(self.capital)
                 import copy
                 strat_instance = copy.deepcopy(strategy)
                 return d_str, self.engine.run_session(
@@ -114,11 +126,7 @@ class MultiDayRunner:
                 "equity_curve": full_equity_curve
             }
 
-        portfolio = Portfolio(
-            initial_capital=current_capital,
-            risk_pct_per_trade=self.risk_pct,
-            simulator=self.engine.simulator
-        )
+        portfolio = self._create_portfolio(current_capital)
 
         for d in sorted_dates:
             logger.info(f"Running backtest for session {d}...")
@@ -127,11 +135,7 @@ class MultiDayRunner:
 
             if not self.compound_capital:
                 # Reset portfolio per day
-                portfolio = Portfolio(
-                    initial_capital=self.capital,
-                    risk_pct_per_trade=self.risk_pct,
-                    simulator=self.engine.simulator
-                )
+                portfolio = self._create_portfolio(self.capital)
 
             session_res = self.engine.run_session(
                 date_str=d,
@@ -203,21 +207,13 @@ class MultiDayRunner:
         full_equity_curve = []
         daily_summaries = []
 
-        portfolio = Portfolio(
-            initial_capital=current_capital,
-            risk_pct_per_trade=self.risk_pct,
-            simulator=self.engine.simulator
-        )
+        portfolio = self._create_portfolio(current_capital)
 
         for i, d in enumerate(sorted_dates, start=1):
             logger.info(f"[stream] Session {i}/{total}: {d}")
             portfolio.daily_pnl = 0.0
             if not self.compound_capital:
-                portfolio = Portfolio(
-                    initial_capital=self.capital,
-                    risk_pct_per_trade=self.risk_pct,
-                    simulator=self.engine.simulator
-                )
+                portfolio = self._create_portfolio(self.capital)
 
             session_res = self.engine.run_session(
                 date_str=d,

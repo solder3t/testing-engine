@@ -137,7 +137,10 @@ def create_strategy_instance(strategy_name: str, data: dict, symbols: list):
         strat_params = {
             "sl_points": float(data.get("sl_points", 12.0)),
             "target_multiplier": float(data.get("target_multiplier", 1.8)),
-            "lot_size": int(data.get("lot_size", 25))
+            "lot_size": int(data.get("lot_size", 25)),
+            "strike_mode": str(data.get("strike_mode", "ATM")),
+            "expiry_mode": str(data.get("expiry_mode", "CURRENT_WEEKLY")),
+            "instrument_type": str(data.get("instrument_type", "OPTION_CE")),
         }
         return NiftyOptionsStrategy(params=strat_params), ["NIFTY"]
 
@@ -155,6 +158,7 @@ def create_strategy_instance(strategy_name: str, data: dict, symbols: list):
             "lot_size": int(data.get("lot_size", 25)),
             "strike_step": float(data.get("strike_step", 50.0)),
             "otm_strikes": int(data.get("otm_strikes", 0)),
+            "expiry_mode": str(data.get("expiry_mode", "CURRENT_WEEKLY")),
         }
         return ShortStraddleStrategy(params=strat_params), ["NIFTY"]
 
@@ -166,6 +170,8 @@ def create_strategy_instance(strategy_name: str, data: dict, symbols: list):
             "target_pct": float(data.get("target_pct", 0.50)),
             "lot_size": int(data.get("lot_size", 25)),
             "strike_step": float(data.get("strike_step", 50.0)),
+            "strike_mode": str(data.get("strike_mode", "ATM")),
+            "expiry_mode": str(data.get("expiry_mode", "CURRENT_WEEKLY")),
         }
         return PcrReversionStrategy(params=strat_params), ["NIFTY"]
 
@@ -176,6 +182,9 @@ def create_strategy_instance(strategy_name: str, data: dict, symbols: list):
             "target_multiplier": float(data.get("target_multiplier", 2.0)),
             "lot_size": int(data.get("lot_size", 15)),
             "strike_step": float(data.get("strike_step", 100.0)),
+            "strike_mode": str(data.get("strike_mode", "ATM")),
+            "expiry_mode": str(data.get("expiry_mode", "CURRENT_WEEKLY")),
+            "instrument_type": str(data.get("instrument_type", "OPTION_CE")),
         }
         return BankNiftyOptionsStrategy(params=strat_params), ["BANKNIFTY"]
 
@@ -187,6 +196,7 @@ def create_strategy_instance(strategy_name: str, data: dict, symbols: list):
             "atr_multiplier": float(data.get("atr_multiplier", 1.5)),
             "risk_reward": float(data.get("risk_reward", 2.0)),
             "lot_size": int(data.get("lot_size", 25)),
+            "instrument_type": str(data.get("instrument_type", "FUTURES")),
         }
         return FuturesTrendStrategy(params=strat_params), ["NIFTY"]
 
@@ -199,6 +209,8 @@ def create_strategy_instance(strategy_name: str, data: dict, symbols: list):
             "target_pct": float(data.get("target_pct", 0.50)),
             "lot_size": int(data.get("lot_size", 25)),
             "strike_step": float(data.get("strike_step", 50.0)),
+            "strike_mode": str(data.get("strike_mode", "ATM")),
+            "expiry_mode": str(data.get("expiry_mode", "CURRENT_WEEKLY")),
         }
         return MaxPainConvergenceStrategy(params=strat_params), ["NIFTY"]
 
@@ -207,17 +219,22 @@ def create_strategy_instance(strategy_name: str, data: dict, symbols: list):
         strat_symbols = symbols if symbols != ["auto"] else ["NIFTY"]
         return TradingEngineV4Strategy(params=data), strat_symbols
 
-    elif strategy_name in STRATEGY_REGISTRY:
-        cls = STRATEGY_REGISTRY[strategy_name]
-        try:
-            return cls(params=data), symbols
-        except TypeError:
-            inst = cls()
-            if hasattr(inst, "current_params"):
-                inst.current_params.update(data)
-            return inst, symbols
-
     else:
+        norm_name = strategy_name.replace("-", "_")
+        dash_name = strategy_name.replace("_", "-")
+        cls = (
+            STRATEGY_REGISTRY.get(strategy_name)
+            or STRATEGY_REGISTRY.get(norm_name)
+            or STRATEGY_REGISTRY.get(dash_name)
+        )
+        if cls:
+            try:
+                return cls(params=data), symbols
+            except TypeError:
+                inst = cls()
+                if hasattr(inst, "current_params"):
+                    inst.current_params.update(data)
+                return inst, symbols
         raise ValueError(f"Unknown strategy: {strategy_name}")
 
 
@@ -262,10 +279,18 @@ def run_backtest():
     symbols = data.get("symbols", ["RELIANCE", "HDFCBANK", "INFY"])
 
     try:
+        portfolio_config = {
+            "sizing_mode": data.get("sizing_mode", "risk_based"),
+            "fixed_lots": int(data.get("fixed_lots", 1)),
+            "lot_multiplier": float(data.get("lot_multiplier", 1.0)),
+            "custom_lot_size": int(data.get("custom_lot_size")) if data.get("custom_lot_size") else None,
+            "fixed_qty": int(data.get("fixed_qty", 0)),
+            "capital_pct": float(data.get("capital_pct", 0.10)),
+        }
         for d in selected_dates:
             mgr.extract_archive(d, target_dir=source_dir)
 
-        runner = MultiDayRunner(capital=capital, risk_pct=risk_pct, source_dir=source_dir)
+        runner = MultiDayRunner(capital=capital, risk_pct=risk_pct, source_dir=source_dir, portfolio_config=portfolio_config)
         strat, strat_symbols = server.create_strategy_instance(strategy_name, data, symbols)
         res = runner.run(dates=selected_dates, strategy=strat, symbols=strat_symbols, timeframe=timeframe)
         serializable_res = server.serialize_run_result(res, source_dir)
@@ -315,12 +340,21 @@ def run_backtest_stream():
     timeframe = data.get("timeframe", "1min")
     symbols = server.resolve_server_symbols(data.get("symbols"))
 
+    portfolio_config = {
+        "sizing_mode": data.get("sizing_mode", "risk_based"),
+        "fixed_lots": int(data.get("fixed_lots", 1)),
+        "lot_multiplier": float(data.get("lot_multiplier", 1.0)),
+        "custom_lot_size": int(data.get("custom_lot_size")) if data.get("custom_lot_size") else None,
+        "fixed_qty": int(data.get("fixed_qty", 0)),
+        "capital_pct": float(data.get("capital_pct", 0.10)),
+    }
+
     def event_stream():
         try:
             for d in selected_dates:
                 mgr.extract_archive(d, target_dir=source_dir)
 
-            runner = MultiDayRunner(capital=capital, risk_pct=risk_pct, source_dir=source_dir)
+            runner = MultiDayRunner(capital=capital, risk_pct=risk_pct, source_dir=source_dir, portfolio_config=portfolio_config)
             strat, strat_symbols = server.create_strategy_instance(strategy_name, data, symbols)
 
             for event in runner.stream(dates=selected_dates, strategy=strat, symbols=strat_symbols, timeframe=timeframe):
@@ -373,6 +407,15 @@ def api_compare_models():
     timeframe = data.get("timeframe", "1min")
     symbols = server.resolve_server_symbols(data.get("symbols"))
 
+    portfolio_config = {
+        "sizing_mode": data.get("sizing_mode", "risk_based"),
+        "fixed_lots": int(data.get("fixed_lots", 1)),
+        "lot_multiplier": float(data.get("lot_multiplier", 1.0)),
+        "custom_lot_size": int(data.get("custom_lot_size")) if data.get("custom_lot_size") else None,
+        "fixed_qty": int(data.get("fixed_qty", 0)),
+        "capital_pct": float(data.get("capital_pct", 0.10)),
+    }
+
     for d in selected_dates:
         mgr.extract_archive(d, target_dir=source_dir)
 
@@ -380,7 +423,14 @@ def api_compare_models():
     for s_name in strat_list:
         try:
             strat, strat_symbols = server.create_strategy_instance(s_name, data, symbols)
-            runner = MultiDayRunner(capital=capital, risk_pct=risk_pct, source_dir=source_dir, compound_capital=False, parallel=True)
+            runner = MultiDayRunner(
+                capital=capital,
+                risk_pct=risk_pct,
+                source_dir=source_dir,
+                compound_capital=False,
+                parallel=True,
+                portfolio_config=portfolio_config
+            )
             res = runner.run(dates=selected_dates, strategy=strat, symbols=strat_symbols, timeframe=timeframe)
             m = res["metrics"]
             comparison_results.append({

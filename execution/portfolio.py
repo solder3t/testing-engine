@@ -22,7 +22,13 @@ class Portfolio:
         initial_capital: float = config.DEFAULT_CAPITAL,
         risk_pct_per_trade: float = config.DEFAULT_RISK_PCT_PER_TRADE,
         simulator: Optional[ExecutionSimulator] = None,
-        risk_manager: Optional[RiskManager] = None
+        risk_manager: Optional[RiskManager] = None,
+        sizing_mode: str = "risk_based",
+        fixed_lots: int = 1,
+        lot_multiplier: float = 1.0,
+        custom_lot_size: Optional[int] = None,
+        fixed_qty: int = 0,
+        capital_pct: float = 0.10,
     ):
         self.initial_capital = initial_capital
         self.capital = initial_capital
@@ -30,6 +36,12 @@ class Portfolio:
         self.risk_pct_per_trade = risk_pct_per_trade
         self.simulator = simulator or ExecutionSimulator()
         self.risk_manager = risk_manager or RiskManager(capital=initial_capital)
+        self.sizing_mode = sizing_mode
+        self.fixed_lots = max(1, int(fixed_lots)) if fixed_lots else 1
+        self.lot_multiplier = max(0.1, float(lot_multiplier)) if lot_multiplier else 1.0
+        self.custom_lot_size = int(custom_lot_size) if custom_lot_size and int(custom_lot_size) > 0 else None
+        self.fixed_qty = int(fixed_qty) if fixed_qty else 0
+        self.capital_pct = float(capital_pct) if capital_pct else 0.10
 
         self.open_trades: List[Trade] = []
         self.closed_trades: List[Trade] = []
@@ -104,25 +116,52 @@ class Portfolio:
     ) -> int:
         """
         Calculates position size strictly bounded by risk-per-trade,
-        margin requirements, instrument-specific point-in-time lot sizes, and NSE freeze limits.
+        margin requirements, instrument-specific point-in-time lot sizes, custom overrides,
+        and NSE freeze limits.
         """
         risk_per_unit = abs(entry_price - stop_loss)
         
-        # Determine point-in-time lot size dynamically
-        effective_lot = lot_size
-        if effective_lot is None or effective_lot <= 1:
+        # Determine base lot size (custom override takes highest precedence)
+        if self.custom_lot_size is not None and self.custom_lot_size > 0:
+            effective_lot = self.custom_lot_size
+        elif lot_size is not None and lot_size > 1:
+            effective_lot = lot_size
+        else:
             effective_lot = InstrumentMaster.get_lot_size(symbol, trade_date, is_derivative=True)
-        if effective_lot <= 0:
-            effective_lot = 1
+            if effective_lot <= 0:
+                effective_lot = 1
 
-        if risk_per_unit <= 0:
-            return effective_lot
+        effective_lot = max(1, int(round(effective_lot * self.lot_multiplier)))
+        freeze_qty = InstrumentMaster.get_freeze_qty(symbol)
+        max_allowed = min(freeze_qty, config.MAX_QTY_PER_TRADE)
+
+        # Mode 1: Fixed Quantity
+        if self.sizing_mode == "fixed_qty" and self.fixed_qty > 0:
+            return max(1, min(self.fixed_qty, max_allowed))
+
+        # Mode 2: Fixed Lots
+        if self.sizing_mode == "fixed_lots":
+            lots = max(1, self.fixed_lots)
+            qty = lots * effective_lot
+            return max(effective_lot, min(qty, max_allowed))
 
         # Effective capital includes unrealized P&L
         effective_capital = (
             self.equity_curve[-1]["equity"] if self.equity_curve else self.capital
         )
         available_capital = max(0.0, effective_capital - getattr(self, "blocked_margin", 0.0))
+
+        # Mode 3: Fixed Capital Percentage
+        if self.sizing_mode == "fixed_capital_pct":
+            trade_capital = available_capital * self.capital_pct
+            raw_qty = trade_capital / max(1.0, entry_price)
+            lots = max(1, math.floor(raw_qty / effective_lot))
+            qty = lots * effective_lot
+            return max(effective_lot, min(qty, max_allowed))
+
+        # Mode 4: Risk-Based (default)
+        if risk_per_unit <= 0:
+            return effective_lot
 
         risk_capital = available_capital * self.risk_pct_per_trade
 
@@ -153,9 +192,6 @@ class Portfolio:
                 lots = max(1, max_lots_by_margin)
                 qty = lots * effective_lot
 
-        # Clamp by instrument freeze limit and configured max qty
-        freeze_qty = InstrumentMaster.get_freeze_qty(symbol)
-        max_allowed = min(freeze_qty, config.MAX_QTY_PER_TRADE)
         return max(effective_lot, min(qty, max_allowed))
 
     def open_trade(

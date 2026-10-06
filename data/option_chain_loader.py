@@ -201,6 +201,96 @@ class OptionChainLoader:
             effective_step = 50.0
         return round(underlying_ltp / effective_step) * effective_step
 
+    def get_contract(
+        self,
+        date_str: str,
+        timestamp: str,
+        option_type: str = "CE",
+        underlying: str = "NIFTY",
+        strike_mode: str = "ATM",
+        step: Optional[float] = None
+    ) -> Optional[Dict]:
+        """
+        Retrieves option contract snapshot for given timestamp, option type, and strike selection mode.
+        Supported strike_mode values:
+        - 'ATM': At-the-money
+        - 'ITM1', 'ITM2', 'ITM3', 'ITM4', 'ITM5': In-the-money offsets
+        - 'OTM1', 'OTM2', 'OTM3', 'OTM4', 'OTM5': Out-of-the-money offsets
+        - 'DELTA_0.3', 'DELTA_0.5': Closest delta strike
+        """
+        chain = self.get_nearest_chain(date_str, timestamp, underlying)
+        if chain is None or chain.empty:
+            return None
+
+        underlying_ltp = float(chain["underlying_ltp"].iloc[0])
+        effective_step = step or InstrumentMaster.get_strike_interval(underlying, underlying_ltp)
+        if effective_step <= 0:
+            effective_step = 50.0
+
+        atm_strike = self.get_atm_strike(underlying_ltp, step=effective_step, symbol=underlying)
+        opt_t = option_type.upper().strip()
+        prefix = opt_t.lower()
+        mode_upper = str(strike_mode).upper().strip()
+
+        target_strike = atm_strike
+
+        if mode_upper.startswith("ITM"):
+            try:
+                offset = int(mode_upper.replace("ITM", ""))
+            except ValueError:
+                offset = 1
+            if opt_t == "CE":
+                target_strike = atm_strike - (offset * effective_step)
+            else:
+                target_strike = atm_strike + (offset * effective_step)
+
+        elif mode_upper.startswith("OTM"):
+            try:
+                offset = int(mode_upper.replace("OTM", ""))
+            except ValueError:
+                offset = 1
+            if opt_t == "CE":
+                target_strike = atm_strike + (offset * effective_step)
+            else:
+                target_strike = atm_strike - (offset * effective_step)
+
+        elif mode_upper.startswith("DELTA"):
+            try:
+                target_delta = float(mode_upper.replace("DELTA_", "").replace("DELTA", ""))
+            except ValueError:
+                target_delta = 0.5
+            delta_col = f"{prefix}_delta"
+            if delta_col in chain.columns and chain[delta_col].notna().any():
+                deltas = chain[delta_col].abs()
+                best_idx = (deltas - target_delta).abs().idxmin()
+                row = chain.loc[best_idx]
+                target_strike = float(row["strike_price"])
+
+        match = chain[chain["strike_price"] == target_strike]
+        if match.empty:
+            diffs = (chain["strike_price"] - target_strike).abs()
+            match = chain.loc[[diffs.idxmin()]]
+
+        row = match.iloc[0]
+
+        return {
+            "snapshot_time": row["snapshot_time"],
+            "underlying_ltp": underlying_ltp,
+            "strike_price": float(row["strike_price"]),
+            "strike_mode": mode_upper,
+            "security_id": int(row[f"{prefix}_security_id"]) if f"{prefix}_security_id" in row and pd.notna(row[f"{prefix}_security_id"]) else 0,
+            "ltp": float(row[f"{prefix}_ltp"]) if f"{prefix}_ltp" in row and pd.notna(row[f"{prefix}_ltp"]) else 0.0,
+            "iv": float(row[f"{prefix}_iv"]) if f"{prefix}_iv" in row and pd.notna(row[f"{prefix}_iv"]) else 0.0,
+            "delta": float(row[f"{prefix}_delta"]) if f"{prefix}_delta" in row and pd.notna(row[f"{prefix}_delta"]) else 0.0,
+            "theta": float(row[f"{prefix}_theta"]) if f"{prefix}_theta" in row and pd.notna(row[f"{prefix}_theta"]) else 0.0,
+            "gamma": float(row[f"{prefix}_gamma"]) if f"{prefix}_gamma" in row and pd.notna(row[f"{prefix}_gamma"]) else 0.0,
+            "vega": float(row[f"{prefix}_vega"]) if f"{prefix}_vega" in row and pd.notna(row[f"{prefix}_vega"]) else 0.0,
+            "oi": float(row[f"{prefix}_oi"]) if f"{prefix}_oi" in row and pd.notna(row[f"{prefix}_oi"]) else 0.0,
+            "volume": int(row[f"{prefix}_volume"]) if f"{prefix}_volume" in row and pd.notna(row[f"{prefix}_volume"]) else 0,
+            "bid": float(row[f"{prefix}_bid"]) if f"{prefix}_bid" in row and pd.notna(row[f"{prefix}_bid"]) else 0.0,
+            "ask": float(row[f"{prefix}_ask"]) if f"{prefix}_ask" in row and pd.notna(row[f"{prefix}_ask"]) else 0.0,
+        }
+
     def get_atm_contract(
         self,
         date_str: str,
@@ -212,39 +302,14 @@ class OptionChainLoader:
         """
         Retrieves the exact ATM CE or PE contract snapshot for a given timestamp.
         """
-        chain = self.get_nearest_chain(date_str, timestamp, underlying)
-        if chain is None or chain.empty:
-            return None
-
-        underlying_ltp = float(chain["underlying_ltp"].iloc[0])
-        effective_step = step or InstrumentMaster.get_strike_interval(underlying, underlying_ltp)
-        atm_strike = self.get_atm_strike(underlying_ltp, step=effective_step, symbol=underlying)
-
-        match = chain[chain["strike_price"] == atm_strike]
-        if match.empty:
-            # Nearest available strike
-            diffs = (chain["strike_price"] - atm_strike).abs()
-            match = chain.loc[[diffs.idxmin()]]
-
-        row = match.iloc[0]
-        prefix = option_type.lower()
-
-        return {
-            "snapshot_time": row["snapshot_time"],
-            "underlying_ltp": underlying_ltp,
-            "strike_price": float(row["strike_price"]),
-            "security_id": int(row[f"{prefix}_security_id"]),
-            "ltp": float(row[f"{prefix}_ltp"]),
-            "iv": float(row[f"{prefix}_iv"]) if f"{prefix}_iv" in row and pd.notna(row[f"{prefix}_iv"]) else 0.0,
-            "delta": float(row[f"{prefix}_delta"]) if f"{prefix}_delta" in row and pd.notna(row[f"{prefix}_delta"]) else 0.0,
-            "theta": float(row[f"{prefix}_theta"]) if f"{prefix}_theta" in row and pd.notna(row[f"{prefix}_theta"]) else 0.0,
-            "gamma": float(row[f"{prefix}_gamma"]) if f"{prefix}_gamma" in row and pd.notna(row[f"{prefix}_gamma"]) else 0.0,
-            "vega": float(row[f"{prefix}_vega"]) if f"{prefix}_vega" in row and pd.notna(row[f"{prefix}_vega"]) else 0.0,
-            "oi": float(row[f"{prefix}_oi"]) if f"{prefix}_oi" in row and pd.notna(row[f"{prefix}_oi"]) else 0.0,
-            "volume": int(row[f"{prefix}_volume"]) if f"{prefix}_volume" in row and pd.notna(row[f"{prefix}_volume"]) else 0,
-            "bid": float(row[f"{prefix}_bid"]) if f"{prefix}_bid" in row and pd.notna(row[f"{prefix}_bid"]) else 0.0,
-            "ask": float(row[f"{prefix}_ask"]) if f"{prefix}_ask" in row and pd.notna(row[f"{prefix}_ask"]) else 0.0,
-        }
+        return self.get_contract(
+            date_str=date_str,
+            timestamp=timestamp,
+            option_type=option_type,
+            underlying=underlying,
+            strike_mode="ATM",
+            step=step
+        )
 
     def calculate_pcr(self, chain: pd.DataFrame) -> Dict[str, float]:
         """Calculates Put-Call Ratio by Open Interest and Volume."""
