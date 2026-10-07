@@ -469,10 +469,4 @@ def api_trading_engine_auto_tune():
 
 
 
-def run_server(port: int = DASHBOARD_PORT, host: str = DASHBOARD_HOST):
-    logger.info(f"Starting Testing Engine Dashboard at http://{host}:{port}")
-    app.run(host=host, port=port, debug=False)
-
-
-if __name__ == "__main__":
-    run_server()
+__all__ = ["trading_engine_bp"]
