@@ -12,7 +12,6 @@ from typing import List, Dict, Any, Optional, Union
 import numpy as np
 
 from data.data_loader import DataLoader
-from engine.backtest_engine import BacktestEngine
 from strategies.trading_engine_v4 import TradingEngineV4Strategy
 from analytics.metrics import calculate_performance_metrics
 
@@ -164,6 +163,7 @@ class FactorAttributionEngine:
         capital: float,
     ) -> Dict[str, Any]:
         """Runs backtest across dates and aggregates performance metrics."""
+        from engine.backtest_engine import BacktestEngine
         engine = BacktestEngine(data_loader=self.data_loader, capital=capital)
         all_trades = []
 

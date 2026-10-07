@@ -14,7 +14,6 @@ import pandas as pd
 
 from data.data_loader import DataLoader
 from execution.order import Trade
-from engine.backtest_engine import BacktestEngine
 from strategies.trading_engine_v4 import TradingEngineV4Strategy
 
 logger = logging.getLogger("reconciliation")
@@ -328,6 +327,7 @@ class ReconciliationEngine:
         symbols: Optional[List[str]] = None,
     ) -> List[Trade]:
         """Runs BacktestEngine with TradingEngineV4Strategy for the specified date."""
+        from engine.backtest_engine import BacktestEngine
         params = strategy_params or {}
         strategy = TradingEngineV4Strategy(params=params)
         engine = BacktestEngine(
