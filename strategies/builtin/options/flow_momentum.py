@@ -36,12 +36,16 @@ class OptionsFlowMomentumStrategy(BaseStrategy):
         self._vol_sma = self.math.sma(vols, 20)
 
     def on_candle(self, candle: Dict[str, Any], history: List[Dict[str, Any]], context: Optional[Dict[str, Any]] = None) -> Optional[Signal]:
+        if not hasattr(self, "_f_ema") or not hasattr(self, "_s_ema") or not hasattr(self, "_vol_sma"):
+            return None
         idx = (context or {}).get("candle_index", len(history))
+        if idx >= len(self._f_ema) or idx >= len(self._s_ema) or idx < 1:
+            return None
         if idx < self.current_params["slow_ema"] + 2:
             return None
 
         vol = float(candle.get("volume", 0))
-        vol_avg = self._vol_sma[idx] if hasattr(self, "_vol_sma") else 1.0
+        vol_avg = self._vol_sma[idx] if idx < len(self._vol_sma) else 1.0
         if np.isnan(vol_avg) or vol_avg <= 0:
             return None
 
@@ -80,13 +84,15 @@ class GammaScalpMomentumStrategy(BaseStrategy):
 
     def on_candle(self, candle: Dict[str, Any], history: List[Dict[str, Any]], context: Optional[Dict[str, Any]] = None) -> Optional[Signal]:
         idx = (context or {}).get("candle_index", len(history))
+        if not hasattr(self, "_atr") or idx >= len(self._atr) or idx < 1:
+            return None
         if idx < self.current_params["atr_period"] + 3:
             return None
 
         c_close = float(candle.get("close", 0))
-        p_close = float(history[-1].get("close", 0))
+        p_close = float(history[-1].get("close", 0)) if history else c_close
         c_range = abs(c_close - p_close)
-        cur_atr = self._atr[idx] if hasattr(self, "_atr") else 10.0
+        cur_atr = self._atr[idx]
 
         if cur_atr > 0 and (c_range / cur_atr) >= self.current_params["atr_spike_mult"]:
             if c_close > p_close:
@@ -120,12 +126,16 @@ class OptionBuyerVwapCrossStrategy(BaseStrategy):
         self._v_sma = self.math.sma(v, 15)
 
     def on_candle(self, candle: Dict[str, Any], history: List[Dict[str, Any]], context: Optional[Dict[str, Any]] = None) -> Optional[Signal]:
+        if not hasattr(self, "_vwap") or not hasattr(self, "_v_sma"):
+            return None
         idx = (context or {}).get("candle_index", len(history))
+        if idx >= len(self._vwap) or idx >= len(self._v_sma) or idx < 1:
+            return None
         if idx < 16:
             return None
 
         c_close = float(candle.get("close", 0))
-        p_close = float(history[-1].get("close", 0))
+        p_close = float(history[-1].get("close", 0)) if history else c_close
         cur_vwap = self._vwap[idx]
         prev_vwap = self._vwap[idx - 1]
         v_ratio = float(candle.get("volume", 0)) / max(self._v_sma[idx], 1.0)

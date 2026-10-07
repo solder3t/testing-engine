@@ -95,10 +95,10 @@ def get_archives():
     """
     Returns market archives and extracted session folders from a target directory or specific file.
     """
-    target_dir = request.args.get("dir")
+    target_dir = request.args.get("dir") or request.args.get("directory") or request.args.get("archive_dir")
     if not target_dir and request.is_json:
         req_json = request.get_json(silent=True) or {}
-        target_dir = req_json.get("directory")
+        target_dir = req_json.get("directory") or req_json.get("archive_dir") or req_json.get("dir")
     target_dir = target_dir or DOWNLOADS_DIR
 
     mgr = server.ArchiveManager(downloads_dir=target_dir)
@@ -116,7 +116,7 @@ def extract_archives():
     """Extracts specified archive dates into data cache."""
     data = request.json or {}
     dates = data.get("dates", [])
-    target_dir = data.get("directory") or DOWNLOADS_DIR
+    target_dir = data.get("directory") or data.get("archive_dir") or data.get("dir") or DOWNLOADS_DIR
     if not dates:
         return jsonify({"status": "error", "message": "No dates specified"}), 400
 

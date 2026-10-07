@@ -135,7 +135,10 @@ class BacktestEngine:
                 "error": f"No data found for requested symbols on {date_str}",
                 "metrics": calculate_performance_metrics([], port.initial_capital),
                 "trades": [],
-                "equity_curve": []
+                "equity_curve": [],
+                "final_equity": port.capital,
+                "ending_equity": port.capital,
+                "initial_capital": port.initial_capital
             }
 
         # 3. Synchronize all timestamps

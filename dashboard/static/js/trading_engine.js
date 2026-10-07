@@ -396,9 +396,11 @@ async function populateEngineDates() {
   const select = document.getElementById("teDateSelect");
   if (!select) return;
   try {
-    const res = await fetch("/api/archives");
+    const dirInput = document.getElementById("dirInput");
+    const dirParam = dirInput && dirInput.value ? `?dir=${encodeURIComponent(dirInput.value.trim())}` : "";
+    const res = await fetch(`/api/archives${dirParam}`);
     const json = await res.json();
-    if (json.status === "ok" && Array.isArray(json.archives)) {
+    if ((json.status === "ok" || json.status === "success") && Array.isArray(json.archives)) {
       const existing = Array.from(select.options).map(o => o.value);
       json.archives.forEach(a => {
         if (a.date && !existing.includes(a.date)) {

@@ -341,51 +341,108 @@ class ArchiveManager:
         p7z_bin = shutil.which("7z")
         unar_bin = shutil.which("unar")
 
-        # Patterns matching both root and nested paths (e.g. *equities.db or 2026_09_02/equities.db)
+        # Destination directory with trailing slash required by UNRAR CLI
+        cache_dest_dir = os.path.join(cache_target_dir, "")
+
+        def _flatten_and_check():
+            """Flattens any nested directories inside cache_target_dir and returns extracted files."""
+            for root, dirs, files in os.walk(cache_target_dir):
+                if root != cache_target_dir:
+                    for f in files:
+                        src_f = os.path.join(root, f)
+                        dst_f = os.path.join(cache_target_dir, f)
+                        if not os.path.exists(dst_f):
+                            try:
+                                shutil.move(src_f, dst_f)
+                            except Exception:
+                                pass
+            return [f for f in needed if os.path.exists(os.path.join(cache_target_dir, f))]
+
         extract_patterns = [f"*{item}" for item in needed]
         last_err = ""
 
         # A. Try unrar
         if unrar_bin:
-            cmd = [unrar_bin, "e", "-o+", arch_path] + extract_patterns + [cache_target_dir]
+            # 1. Try with wildcard patterns
+            cmd = [unrar_bin, "e", "-o+", arch_path] + extract_patterns + [cache_dest_dir]
             res = subprocess.run(cmd, capture_output=True, text=True, check=False)
-            if res.returncode == 0:
+            found = _flatten_and_check()
+            if found:
                 return {
                     "success": True,
-                    "message": f"Extracted {len(needed)} files for {norm_date} using unrar",
+                    "message": f"Extracted {len(found)} files for {norm_date} using unrar",
                     "cache_dir": cache_target_dir,
                     "extracted_files": os.listdir(cache_target_dir)
                 }
-            # Fallback to explicit nested prefix: {norm_date}/item
-            cmd_fb = [unrar_bin, "e", "-o+", arch_path] + [f"{norm_date}/{item}" for item in needed] + [cache_target_dir]
+
+            # 2. Try with exact filenames
+            cmd_exact = [unrar_bin, "e", "-o+", arch_path] + needed + [cache_dest_dir]
+            res_exact = subprocess.run(cmd_exact, capture_output=True, text=True, check=False)
+            found = _flatten_and_check()
+            if found:
+                return {
+                    "success": True,
+                    "message": f"Extracted {len(found)} files for {norm_date} using unrar exact",
+                    "cache_dir": cache_target_dir,
+                    "extracted_files": os.listdir(cache_target_dir)
+                }
+
+            # 3. Try with nested date prefix
+            cmd_fb = [unrar_bin, "e", "-o+", arch_path] + [f"{norm_date}/{item}" for item in needed] + [cache_dest_dir]
             res_fb = subprocess.run(cmd_fb, capture_output=True, text=True, check=False)
-            if res_fb.returncode == 0:
+            found = _flatten_and_check()
+            if found:
                 return {
                     "success": True,
-                    "message": f"Extracted {len(needed)} files for {norm_date} using unrar path fallback",
+                    "message": f"Extracted {len(found)} files for {norm_date} using unrar path fallback",
                     "cache_dir": cache_target_dir,
                     "extracted_files": os.listdir(cache_target_dir)
                 }
-            last_err = res.stderr or res_fb.stderr
+
+            # 4. Extract entire archive flatly into cache_dest_dir
+            cmd_all = [unrar_bin, "e", "-o+", arch_path, cache_dest_dir]
+            res_all = subprocess.run(cmd_all, capture_output=True, text=True, check=False)
+            found = _flatten_and_check()
+            if found:
+                return {
+                    "success": True,
+                    "message": f"Extracted archive files for {norm_date} using unrar full extract",
+                    "cache_dir": cache_target_dir,
+                    "extracted_files": os.listdir(cache_target_dir)
+                }
+            last_err = res.stderr or res_fb.stderr or res_all.stderr
 
         # B. Try 7z
         if p7z_bin:
             cmd = [p7z_bin, "e", "-y", f"-o{cache_target_dir}", arch_path] + extract_patterns
             res = subprocess.run(cmd, capture_output=True, text=True, check=False)
-            if res.returncode == 0:
+            found = _flatten_and_check()
+            if found:
                 return {
                     "success": True,
-                    "message": f"Extracted {len(needed)} files for {norm_date} using 7z",
+                    "message": f"Extracted {len(found)} files for {norm_date} using 7z",
                     "cache_dir": cache_target_dir,
                     "extracted_files": os.listdir(cache_target_dir)
                 }
-            last_err = res.stderr or last_err
+            # Fallback 7z full extract
+            cmd_all = [p7z_bin, "e", "-y", f"-o{cache_target_dir}", arch_path]
+            res_all = subprocess.run(cmd_all, capture_output=True, text=True, check=False)
+            found = _flatten_and_check()
+            if found:
+                return {
+                    "success": True,
+                    "message": f"Extracted files for {norm_date} using 7z full extract",
+                    "cache_dir": cache_target_dir,
+                    "extracted_files": os.listdir(cache_target_dir)
+                }
+            last_err = res.stderr or res_all.stderr or last_err
 
         # C. Try unar
         if unar_bin:
             cmd = [unar_bin, "-f", "-o", cache_target_dir, arch_path]
             res = subprocess.run(cmd, capture_output=True, text=True, check=False)
-            if res.returncode == 0:
+            found = _flatten_and_check()
+            if found:
                 return {
                     "success": True,
                     "message": f"Extracted files for {norm_date} using unar",
@@ -406,9 +463,8 @@ class ArchiveManager:
         """
         Get the absolute path to a database.
         Checks:
-        1. Direct folder if user pointed to an extracted directory
-
-        2. Cached directory
+        1. Direct folder if user pointed to an extracted directory (including 1-level subdirs)
+        2. Cached directory (including 1-level subdirs)
         3. Attempts selective extraction from RAR
         """
         norm_date = date_str.replace("-", "_")
@@ -419,15 +475,30 @@ class ArchiveManager:
             direct_file = os.path.join(arch["path"], db_name)
             if os.path.exists(direct_file):
                 return direct_file
+            if os.path.isdir(arch["path"]):
+                for root, dirs, files in os.walk(arch["path"]):
+                    if db_name in files:
+                        return os.path.join(root, db_name)
 
         # 2. Check cache directory
-        target_path = os.path.join(self.cache_dir, norm_date, db_name)
-        if os.path.exists(target_path):
-            return target_path
+        cache_session_dir = os.path.join(self.cache_dir, norm_date)
+        if os.path.isdir(cache_session_dir):
+            target_path = os.path.join(cache_session_dir, db_name)
+            if os.path.exists(target_path):
+                return target_path
+            for root, dirs, files in os.walk(cache_session_dir):
+                if db_name in files:
+                    return os.path.join(root, db_name)
 
         # 3. Attempt selective extraction
         res = self.extract_archive(norm_date, [db_name], target_dir=target_dir)
-        if res.get("success") and os.path.exists(target_path):
-            return target_path
+        if res.get("success"):
+            target_path = os.path.join(self.cache_dir, norm_date, db_name)
+            if os.path.exists(target_path):
+                return target_path
+            if os.path.isdir(cache_session_dir):
+                for root, dirs, files in os.walk(cache_session_dir):
+                    if db_name in files:
+                        return os.path.join(root, db_name)
 
         return None

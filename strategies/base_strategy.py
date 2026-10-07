@@ -76,6 +76,28 @@ class BaseStrategy(ABC):
     def on_session_start(self, date_str: str, portfolio: Portfolio, context: Dict[str, Any]):
         """Called once at the beginning of each trading day before bars stream."""
         self.reset()
+        ohlc_map = (context or {}).get("ohlc_data", {})
+        candles: List[Dict[str, Any]] = []
+        if isinstance(ohlc_map, dict) and ohlc_map:
+            target = getattr(self, "target_instruments", [])
+            chosen_df = None
+            if target:
+                for t in target:
+                    if t in ohlc_map:
+                        chosen_df = ohlc_map[t]
+                        break
+            if chosen_df is None:
+                chosen_df = next(iter(ohlc_map.values()))
+
+            if hasattr(chosen_df, "to_dict"):
+                candles = chosen_df.to_dict("records")
+            elif isinstance(chosen_df, list):
+                candles = chosen_df
+
+        try:
+            self.prepare_session(candles, context or {})
+        except Exception:
+            pass
 
     def on_session_end(self, date_str: str, portfolio: Portfolio, context: Dict[str, Any]):
         """Called once at the end of each trading day after bars stream."""
@@ -113,7 +135,14 @@ class BaseStrategy(ABC):
             candle["symbol"] = sym
 
             hist = self._history[sym]
-            sig = self.on_candle(candle, hist, context)
+            ctx = dict(context or {})
+            ctx["candle_index"] = len(hist)
+
+            try:
+                sig = self.on_candle(candle, hist, ctx)
+            except Exception:
+                sig = None
+
             hist.append(candle)
 
             if sig and sig.is_entry():

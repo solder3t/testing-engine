@@ -31,7 +31,7 @@ def run_walk_forward_api():
     """Executes rolling Walk-Forward Optimization across market sessions."""
     data = request.json or {}
     strategy_name = data.get("strategy", "orb")
-    source_dir = data.get("directory") or DOWNLOADS_DIR
+    source_dir = data.get("directory") or data.get("archive_dir") or DOWNLOADS_DIR
     mgr = server.ArchiveManager(downloads_dir=source_dir)
 
     selected_dates = data.get("dates", [])
@@ -94,7 +94,7 @@ def run_optimize_api():
     """Performs grid-search parameter optimization across historical market recordings."""
     data = request.json or {}
     strategy_name = data.get("strategy", "orb")
-    source_dir = data.get("directory") or DOWNLOADS_DIR
+    source_dir = data.get("directory") or data.get("archive_dir") or DOWNLOADS_DIR
     mgr = server.ArchiveManager(downloads_dir=source_dir)
 
     selected_dates = data.get("dates", [])
@@ -153,7 +153,7 @@ def run_validation():
         selected_dates = data.get("dates", [])
         capital = float(data.get("capital", DEFAULT_CAPITAL))
         risk_pct = float(data.get("risk_pct", DEFAULT_RISK_PCT_PER_TRADE))
-        source_dir = data.get("directory") or DOWNLOADS_DIR
+        source_dir = data.get("directory") or data.get("archive_dir") or DOWNLOADS_DIR
 
         symbols_input = data.get("symbols", ["auto"])
         resolved_syms = server.resolve_server_symbols(symbols_input)
@@ -198,7 +198,7 @@ def run_data_audit():
         symbols = data.get("symbols", ["NIFTY"])
         if isinstance(symbols, str):
             symbols = [s.strip() for s in symbols.split(",") if s.strip()]
-        data_dir = data.get("directory") or DOWNLOADS_DIR
+        data_dir = data.get("directory") or data.get("archive_dir") or data.get("dir") or DOWNLOADS_DIR
 
         dl = DataLoader(source_dir=data_dir)
         results = []

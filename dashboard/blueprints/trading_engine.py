@@ -229,7 +229,7 @@ def api_trading_engine_apply_config():
             }
 
         sync_result = sync_to_trading_engine(updates=updates, env_path=target_path)
-        return jsonify({"status": "ok", "data": sync_result})
+        return jsonify({"status": "ok", "data": sync_result, "sync_result": sync_result})
     except Exception as e:
         logger.error(f"Error applying config to trading-engine: {e}", exc_info=True)
         return jsonify({"status": "error", "message": str(e)}), 500

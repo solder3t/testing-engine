@@ -223,22 +223,23 @@ class MultiDayRunner:
                 timeframe=timeframe
             )
 
-            day_trades = session_res["trades"]
+            day_trades = session_res.get("trades", [])
             all_closed_trades.extend(day_trades)
-            full_equity_curve.extend(session_res["equity_curve"])
+            full_equity_curve.extend(session_res.get("equity_curve", []))
 
-            m = session_res["metrics"]
+            day_equity = session_res.get("final_equity", session_res.get("ending_equity", current_capital))
+            m = session_res.get("metrics") or calculate_performance_metrics([], current_capital)
             summary = {
                 "date": d,
-                "trades_count": m["total_trades"],
-                "win_rate": m["win_rate"],
-                "gross_pnl": m["gross_pnl"],
-                "charges": m["total_charges"],
-                "net_pnl": m["net_pnl"],
-                "ending_equity": session_res["final_equity"]
+                "trades_count": m.get("total_trades", 0),
+                "win_rate": m.get("win_rate", 0.0),
+                "gross_pnl": m.get("gross_pnl", 0.0),
+                "charges": m.get("total_charges", 0.0),
+                "net_pnl": m.get("net_pnl", 0.0),
+                "ending_equity": day_equity
             }
             daily_summaries.append(summary)
-            current_capital = session_res["final_equity"]
+            current_capital = day_equity
 
             # Yield progress event — dashboard renders a progress bar update
             yield {
@@ -246,10 +247,10 @@ class MultiDayRunner:
                 "day": i,
                 "total": total,
                 "date": d,
-                "trades": m["total_trades"],
-                "net_pnl": round(m["net_pnl"], 2),
+                "trades": m.get("total_trades", 0),
+                "net_pnl": round(m.get("net_pnl", 0.0), 2),
                 "equity": round(current_capital, 2),
-                "win_rate": m["win_rate"]
+                "win_rate": m.get("win_rate", 0.0)
             }
 
         # Final aggregate — same shape as run()

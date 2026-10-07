@@ -261,7 +261,7 @@ def run_backtest():
     """Executes a real backtest using MultiDayRunner on selectable directories."""
     data = request.json or {}
 
-    source_dir = data.get("directory") or DOWNLOADS_DIR
+    source_dir = data.get("directory") or data.get("archive_dir") or DOWNLOADS_DIR
     mgr = server.ArchiveManager(downloads_dir=source_dir)
 
     selected_dates = data.get("dates", [])
@@ -323,7 +323,7 @@ def run_backtest_stream():
     """Executes a real backtest and streams live session progress events via SSE."""
     data = request.json or {}
 
-    source_dir = data.get("directory") or DOWNLOADS_DIR
+    source_dir = data.get("directory") or data.get("archive_dir") or DOWNLOADS_DIR
     mgr = server.ArchiveManager(downloads_dir=source_dir)
 
     selected_dates = data.get("dates", [])

@@ -786,6 +786,10 @@ async function loadArchives(customDir = "") {
       `;
       listEl.appendChild(item);
     });
+
+    if (typeof populateEngineDates === "function") {
+      populateEngineDates();
+    }
   } catch (err) {
     listEl.innerHTML = `<div class="empty-state" style="color: var(--red);">Error connecting to testing engine API</div>`;
   }
@@ -853,6 +857,7 @@ async function runBacktest() {
 
   const payload = {
     archive_dir: archiveDir,
+    directory: archiveDir,
     dates: selectedDates,
     strategy: strat,
     timeframe: tf,
